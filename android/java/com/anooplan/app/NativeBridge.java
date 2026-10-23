@@ -5,6 +5,9 @@ import android.content.Context;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Environment;
+import android.os.VibrationEffect;
+import android.os.Vibrator;
+import android.os.VibratorManager;
 import android.provider.MediaStore;
 import android.util.Base64;
 import android.webkit.JavascriptInterface;
@@ -15,15 +18,24 @@ import java.io.FileOutputStream;
 import java.io.OutputStream;
 
 /**
- * Мост в JavaScript: сохранение экспортированных файлов (CSV, JSON-резервная копия)
- * в общую папку «Загрузки/AnOOPlan» без запроса опасных разрешений.
+ * Мост в JavaScript: сохранение экспортированных файлов в «Загрузки/AnOOPlan»,
+ * состояние несохранённых изменений, тактильный отклик и управляемый выход.
  */
 public class NativeBridge {
 
-    private final Context context;
+    /** Колбэки, которые реализует активити. */
+    interface Host {
+        void onDirtyChanged(boolean dirty);
 
-    NativeBridge(Context context) {
+        void onExitRequested();
+    }
+
+    private final Context context;
+    private final Host host;
+
+    NativeBridge(Context context, Host host) {
         this.context = context.getApplicationContext();
+        this.host = host;
     }
 
     @JavascriptInterface
@@ -92,6 +104,41 @@ public class NativeBridge {
             out.close();
         }
         return "ok:" + target.getAbsolutePath();
+    }
+
+    /** Приложение сообщает, есть ли несохранённые изменения — от этого зависит диалог выхода. */
+    @JavascriptInterface
+    public void setDirty(boolean dirty) {
+        if (host != null) host.onDirtyChanged(dirty);
+    }
+
+    /** Вызывается веб-частью после сохранения: можно закрывать приложение. */
+    @JavascriptInterface
+    public void exitNow() {
+        if (host != null) host.onExitRequested();
+    }
+
+    /** Короткая вибрация: попадание в привязку, долгое нажатие. */
+    @JavascriptInterface
+    public void vibrate(int milliseconds) {
+        try {
+            int duration = Math.max(1, Math.min(60, milliseconds));
+            Vibrator vibrator;
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                VibratorManager manager = (VibratorManager) context.getSystemService(Context.VIBRATOR_MANAGER_SERVICE);
+                vibrator = manager == null ? null : manager.getDefaultVibrator();
+            } else {
+                vibrator = (Vibrator) context.getSystemService(Context.VIBRATOR_SERVICE);
+            }
+            if (vibrator == null || !vibrator.hasVibrator()) return;
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                vibrator.vibrate(VibrationEffect.createOneShot(duration, VibrationEffect.DEFAULT_AMPLITUDE));
+            } else {
+                vibrator.vibrate(duration);
+            }
+        } catch (Exception ignored) {
+            // вибрация не критична для работы приложения
+        }
     }
 
     @JavascriptInterface

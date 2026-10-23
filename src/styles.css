@@ -450,3 +450,55 @@ td small { display: block; color: var(--muted); font-size: 12px; }
   .statusbar b { display: none; }
   .plan-legend { display: none; }
 }
+
+/* ── Нижние панели действий (bottom sheet) ───────────────────────────── */
+.export-trigger { white-space: nowrap; }
+
+.sheet-backdrop {
+  position: fixed; inset: 0; z-index: 95;
+  display: flex; align-items: flex-end; justify-content: center;
+  background: rgba(12, 29, 39, .48);
+  animation: sheet-fade .16s ease-out;
+}
+.sheet {
+  width: 100%; max-width: 560px; max-height: 82vh; overflow: auto;
+  background: var(--surface);
+  border-radius: 18px 18px 0 0;
+  padding: 6px 14px calc(16px + env(safe-area-inset-bottom, 0px));
+  box-shadow: 0 -12px 34px rgba(12, 29, 39, .32);
+  animation: sheet-up .2s ease-out;
+}
+.sheet-grip {
+  width: 46px; height: 4px; border-radius: 2px; margin: 6px auto 10px;
+  background: var(--border);
+}
+.sheet-head {
+  display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  padding-bottom: 8px; border-bottom: 1px solid var(--border-soft);
+}
+.sheet-head strong { font-size: 15px; }
+.sheet-head button {
+  border: none; background: transparent; color: var(--muted);
+  font-size: 22px; line-height: 1; padding: 4px 8px; min-height: 40px;
+}
+.sheet-list { display: flex; flex-direction: column; gap: 6px; padding-top: 10px; }
+.sheet-list button {
+  text-align: left; padding: 12px 14px; font-size: 15px; min-height: 48px;
+  justify-content: flex-start;
+}
+.sheet-list button.danger { color: var(--danger); border-color: rgba(220, 80, 113, .35); }
+
+@keyframes sheet-up { from { transform: translateY(14px); opacity: .65; } to { transform: translateY(0); opacity: 1; } }
+@keyframes sheet-fade { from { opacity: 0; } to { opacity: 1; } }
+
+/* Поле с десятичной запятой: курсор и вид как у обычного числа */
+input[inputmode="decimal"] { text-align: left; }
+
+@media (min-width: 1024px) {
+  .sheet-backdrop { align-items: center; }
+  .sheet { border-radius: 16px; max-width: 420px; margin: auto; }
+}
+
+@media (max-width: 1023px) {
+  .export-trigger { flex: 0 0 auto; padding: 6px 9px; font-size: 12px; }
+}

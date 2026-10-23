@@ -68,7 +68,13 @@ async function idbDelete(key: string): Promise<void> {
 }
 // Нативная оболочка Android (AnOOPlan) подключает мост AnOOPlanNative:
 // через него экспортированные файлы попадают в «Загрузки/AnOOPlan».
-type NativeBridgeApi = { platform?: () => string; saveFile?: (name: string, base64: string, mime: string) => string };
+type NativeBridgeApi = {
+  platform?: () => string;
+  saveFile?: (name: string, base64: string, mime: string) => string;
+  setDirty?: (dirty: boolean) => void;
+  exitNow?: () => void;
+  vibrate?: (milliseconds: number) => void;
+};
 const nativeBridge = (): NativeBridgeApi | null => (window as unknown as { AnOOPlanNative?: NativeBridgeApi }).AnOOPlanNative ?? null;
 const isNativeApp = (): boolean => typeof nativeBridge()?.saveFile === 'function';
 function bytesToBase64(bytes: Uint8Array): string {
@@ -84,6 +90,41 @@ async function saveBlobOnDevice(name: string, blob: Blob): Promise<string | null
   const result = bridge.saveFile(name, base64, blob.type || 'application/octet-stream');
   if (result.startsWith('ok:')) return result.slice(3);
   throw new Error(result.replace(/^err:\s*/, '') || 'Не удалось сохранить файл на устройстве');
+}
+
+const vibrate = (milliseconds = 12): void => { nativeBridge()?.vibrate?.(milliseconds); };
+
+// Числовое поле: принимает и точку, и запятую (русская раскладка) и не теряет ввод.
+function NumberField({ value, onCommit, placeholder, ariaLabel }: {
+  value: number | null;
+  onCommit: (raw: string) => void;
+  placeholder?: string;
+  ariaLabel?: string;
+}) {
+  const format = (input: number | null): string => (input === null || input === undefined || !Number.isFinite(input) ? '' : String(input));
+  const [text, setText] = useState<string>(() => format(value));
+  const external = useRef<number | null>(value);
+  useEffect(() => {
+    if (external.current !== value) { external.current = value; setText(format(value)); }
+  }, [value]);
+  return <input
+    type="text"
+    inputMode="decimal"
+    autoComplete="off"
+    spellCheck={false}
+    aria-label={ariaLabel}
+    placeholder={placeholder}
+    value={text}
+    onChange={event => {
+      const raw = event.target.value;
+      setText(raw);
+      const normalized = raw.replace(/,/g, '.').replace(/\s+/g, '');
+      if (normalized === '') { external.current = null; onCommit(''); return; }
+      const parsed = Number(normalized);
+      if (Number.isFinite(parsed)) { external.current = parsed; onCommit(normalized); }
+    }}
+    onBlur={() => setText(format(value))}
+  />;
 }
 
 export default function App() {
@@ -119,6 +160,8 @@ export default function App() {
   const [pdfError, setPdfError] = useState('');
   const [pointer, setPointer] = useState<Point | null>(null);
   const [staticMode, setStaticMode] = useState(false);
+  const [exportOpen, setExportOpen] = useState(false);
+  const [sheet, setSheet] = useState<{ kind: 'equipment' | 'route' | 'cable'; id: string } | null>(null);
   const canvas = useRef<HTMLCanvasElement>(null);
   const stage = useRef<HTMLDivElement>(null);
   const upload = useRef<HTMLInputElement>(null);
@@ -126,6 +169,9 @@ export default function App() {
   const projectRef = useRef(project);
   const drag = useRef<{ type: 'pan' | 'equipment' | 'vertex' | 'pinch'; id?: string; vertexId?: string; start: Point; pan: Point; before: Project; startDist?: number; startZoom?: number; startPan?: Point; startPdf?: Point } | null>(null);
   const pointers = useRef(new Map<number, Point>());
+  const snapVibe = useRef(false);
+  const pressStart = useRef<Point | null>(null);
+  const longPressTimer = useRef<number | null>(null);
   const pdfCache = useRef<{ key: string; canvas: HTMLCanvasElement } | null>(null);
   projectRef.current = project;
   const floor = project.floors.find(f => f.id === floorId) || project.floors[0];
@@ -158,13 +204,18 @@ export default function App() {
     setFloorId(p.floors[0]?.id || ''); setUndo([]); setRedo([]); setSelection(null); setDraft([]); setCableSegments([]); setView('plan'); setTool('select'); setError('');
   }
   async function run(task: () => Promise<void>) { setBusy(true); setError(''); try { await task(); } catch (e) { setError(e instanceof Error ? e.message : String(e)); } finally { setBusy(false); } }
-  async function saveProject(): Promise<Project> {
+  async function saveProject(silent = false): Promise<Project> {
     const snapshot = clone(projectRef.current);
-    if (staticMode) { lsSave(snapshot); setPersisted(true); setSaved(JSON.stringify(snapshot)); setMessage(`Проект «${snapshot.name}» сохранён в браузере`); return snapshot; }
+    if (staticMode) {
+      lsSave(snapshot); setPersisted(true); setSaved(JSON.stringify(snapshot));
+      if (!silent) setMessage(`Проект «${snapshot.name}» сохранён в браузере`);
+      return snapshot;
+    }
     const result = await api<Project>(persisted ? `/api/projects/${snapshot.id}` : '/api/projects', jsonOptions(persisted ? 'PUT' : 'POST', snapshot));
     setPersisted(true); setSaved(JSON.stringify(result));
     if (JSON.stringify(projectRef.current) === JSON.stringify(snapshot)) { setProject(result); projectRef.current = result; }
-    setMessage(`Проект «${result.name}» сохранён`); return result;
+    if (!silent) setMessage(`Проект «${result.name}» сохранён`);
+    return result;
   }
   async function deleteProject(id: string, name: string) {
     if (!window.confirm(`Удалить проект «${name}»? Это действие необратимо.`)) return;
@@ -194,6 +245,21 @@ export default function App() {
     const timer = setTimeout(() => { try { localStorage.setItem('cableplan:autosave', JSON.stringify(projectRef.current)); } catch { /* переполнение localStorage */ } }, 800);
     return () => clearTimeout(timer);
   }, [project, staticMode]);
+  // Проект, который уже лежит в списке, дописывается сам — «Сохранить» лишь для нового.
+  useEffect(() => {
+    if (!dirty || !persisted) return;
+    const timer = setTimeout(() => { void saveProject(true).catch(() => { /* повторим при следующем изменении */ }); }, 1500);
+    return () => clearTimeout(timer);
+  }, [dirty, project]);
+  // Нативная оболочка спрашивает, есть ли несохранённые изменения (кнопка/жест «Назад»).
+  useEffect(() => { nativeBridge()?.setDirty?.(dirty); }, [dirty]);
+  // Вызывается из Java: сохранить и только потом закрыть приложение.
+  useEffect(() => {
+    (window as Window & { __anooplanSaveAndExit?: () => Promise<void> }).__anooplanSaveAndExit = async () => {
+      try { await saveProject(true); } catch { /* выходим в любом случае */ }
+      nativeBridge()?.exitNow?.();
+    };
+  });
   useEffect(() => {
     if (!staticMode) return;
     try {
@@ -269,7 +335,11 @@ export default function App() {
     if (snap && useSnap) {
       const candidates = [...project.equipment.filter(eq => eq.floorId === floor?.id), ...project.routes.flatMap(r => r.segments.flatMap(s => [s.a, s.b])).filter(v => v.floorId === floor?.id)];
       const near = candidates.find(p => Math.hypot(p.x - x, p.y - y) < SNAP_PX / zoom);
-      if (near) return { x: near.x, y: near.y };
+      if (near) {
+        if (!snapVibe.current) { snapVibe.current = true; vibrate(8); }
+        return { x: near.x, y: near.y };
+      }
+      snapVibe.current = false;
       x = Math.round(x / gridSize) * gridSize; y = Math.round(y / gridSize) * gridSize;
     }
     return { x, y };
@@ -348,6 +418,7 @@ export default function App() {
     projectRef.current = next; setProject(next);
   }
   function pointerUp(e: ReactPointerEvent) {
+    cancelLongPress();
     pointers.current.delete(e.pointerId);
     const active = drag.current;
     if (active?.type === 'pinch') { if (pointers.current.size < 2) drag.current = null; return; }
@@ -391,28 +462,112 @@ export default function App() {
     const item: Cable = { id: uid(), number: `K${n}`, name: 'Новый кабель', brand: '', purpose: '', fromId: cableFrom, toId: cableTo, segmentIds: [...cableSegments], reservePercent: 0, reserveFixed: 0, startReserve: 0, endReserve: 0, quantity: 1, note: '' };
     mutate(p => p.cables.push(item)); setSelection({ kind: 'cable', id: item.id }); setTab('cables'); setTool('select'); setCableSegments([]); setMessage(`Кабель ${`K${n}`} создан. Устройства привязаны к концам трассы.`);
   }
-  function removeSelection() {
-    if (!selection) return;
-    const segmentIds = route?.segments.map(s => s.id) || [];
-    const affected = project.cables.filter(c => selection.kind === 'equipment' ? c.fromId === selection.id || c.toId === selection.id : selection.kind === 'route' ? c.segmentIds.some(id => segmentIds.includes(id)) : false);
-    if (!window.confirm(`Удалить выбранный объект?${affected.length ? ` Также будут удалены связанные кабели: ${affected.map(c => c.number).join(', ')}.` : ''}`)) return;
-    mutate(p => {
-      if (selection.kind === 'equipment') p.equipment = p.equipment.filter(e => e.id !== selection.id);
-      if (selection.kind === 'route') p.routes = p.routes.filter(r => r.id !== selection.id);
-      p.cables = p.cables.filter(c => c.id !== (selection.kind === 'cable' ? selection.id : '') && !affected.some(a => a.id === c.id));
-    }); setSelection(null);
+  type ObjectKind = 'equipment' | 'route' | 'cable';
+  function uniqueNumber(base: string, used: Set<string>): string {
+    let candidate = `${base}-копия`;
+    let index = 2;
+    while (used.has(candidate)) candidate = `${base}-копия ${index++}`;
+    return candidate;
   }
-  function copySelection() {
-    if (equipment) { const next = { ...clone(equipment), id: uid(), number: `${equipment.number}-копия`, x: equipment.x + gridSize, y: equipment.y + gridSize }; mutate(p => p.equipment.push(next)); setSelection({ kind: 'equipment', id: next.id }); }
-    if (route) { const next = clone(route); next.id = uid(); next.number += '-копия'; const ids = new Map<string, string>(); next.segments.forEach(s => { s.id = uid(); [s.a, s.b].forEach(v => { if (!ids.has(v.id)) ids.set(v.id, uid()); v.id = ids.get(v.id)!; v.x += gridSize; v.y += gridSize; }); }); mutate(p => p.routes.push(next)); setSelection({ kind: 'route', id: next.id }); }
-    if (cable) { const next = { ...clone(cable), id: uid(), number: `${cable.number}-копия` }; mutate(p => p.cables.push(next)); setSelection({ kind: 'cable', id: next.id }); }
+  function copyObject(kind: ObjectKind, id: string) {
+    const source = projectRef.current;
+    if (kind === 'equipment') {
+      const item = source.equipment.find(e => e.id === id); if (!item) return;
+      const used = new Set(source.equipment.map(e => e.number));
+      const next: Equipment = { ...clone(item), id: uid(), number: uniqueNumber(item.number, used), x: item.x + gridSize, y: item.y + gridSize };
+      mutate(p => p.equipment.push(next)); setSelection({ kind: 'equipment', id: next.id }); setMessage(`Копия оборудования: ${next.number}.`);
+      return;
+    }
+    if (kind === 'route') {
+      const item = source.routes.find(r => r.id === id); if (!item) return;
+      const used = new Set(source.routes.map(r => r.number));
+      const next = clone(item);
+      next.id = uid(); next.number = uniqueNumber(item.number, used);
+      const vertexIds = new Map<string, string>();
+      next.segments.forEach(segment => { segment.id = uid(); [segment.a, segment.b].forEach(vertex => { if (!vertexIds.has(vertex.id)) vertexIds.set(vertex.id, uid()); vertex.id = vertexIds.get(vertex.id)!; vertex.x += gridSize; vertex.y += gridSize; }); });
+      mutate(p => p.routes.push(next)); setSelection({ kind: 'route', id: next.id }); setMessage(`Копия трассы: ${next.number}.`);
+      return;
+    }
+    const item = source.cables.find(c => c.id === id); if (!item) return;
+    const used = new Set(source.cables.map(c => c.number));
+    const next: Cable = { ...clone(item), id: uid(), number: uniqueNumber(item.number, used) };
+    mutate(p => p.cables.push(next)); setSelection({ kind: 'cable', id: next.id }); setMessage(`Копия кабеля: ${next.number}.`);
+  }
+  function removeObject(kind: ObjectKind, id: string) {
+    const source = projectRef.current;
+    const target = kind === 'equipment' ? source.equipment.find(e => e.id === id) : kind === 'route' ? source.routes.find(r => r.id === id) : source.cables.find(c => c.id === id);
+    if (!target) return;
+    const segmentIds = kind === 'route' ? (target as Route).segments.map(s => s.id) : [];
+    const affected = source.cables.filter(c => kind === 'equipment' ? c.fromId === id || c.toId === id : kind === 'route' ? c.segmentIds.some(s => segmentIds.includes(s)) : false);
+    const label = kind === 'equipment' ? 'оборудование' : kind === 'route' ? 'трассу' : 'кабель';
+    if (!window.confirm(`Удалить ${label} ${target.number}?${affected.length ? ` Также будут удалены связанные кабели: ${affected.map(c => c.number).join(', ')}.` : ''}`)) return;
+    mutate(p => {
+      if (kind === 'equipment') p.equipment = p.equipment.filter(e => e.id !== id);
+      if (kind === 'route') p.routes = p.routes.filter(r => r.id !== id);
+      p.cables = p.cables.filter(c => c.id !== (kind === 'cable' ? id : '') && !affected.some(a => a.id === c.id));
+    });
+    setSelection(null); setSheet(null); setPropsOpen(false);
+  }
+  function copySelection() { if (selection) copyObject(selection.kind, selection.id); }
+  function removeSelection() { if (selection) removeObject(selection.kind, selection.id); }
+  function openObjectSheet(kind: ObjectKind, id: string) {
+    cancelLongPress();
+    setSelection({ kind, id });
+    setSheet({ kind, id });
+    setPropsOpen(false);
+    vibrate(18);
+  }
+  function sheetTitle(value: { kind: ObjectKind; id: string }) {
+    const label = value.kind === 'equipment' ? 'Оборудование' : value.kind === 'route' ? 'Трасса' : 'Кабель';
+    const item = value.kind === 'equipment' ? project.equipment.find(e => e.id === value.id) : value.kind === 'route' ? project.routes.find(r => r.id === value.id) : project.cables.find(c => c.id === value.id);
+    return item ? `${label} ${item.number}` : label;
+  }
+  function cancelLongPress() {
+    if (longPressTimer.current !== null) { clearTimeout(longPressTimer.current); longPressTimer.current = null; }
+    pressStart.current = null;
+  }
+  function beginLongPress(event: ReactPointerEvent, fire: () => void) {
+    cancelLongPress();
+    pressStart.current = { x: event.clientX, y: event.clientY };
+    longPressTimer.current = window.setTimeout(() => { longPressTimer.current = null; fire(); }, 550);
+  }
+  function moveLongPress(event: ReactPointerEvent) {
+    if (longPressTimer.current === null || !pressStart.current) return;
+    if (Math.hypot(event.clientX - pressStart.current.x, event.clientY - pressStart.current.y) > 10) cancelLongPress();
+  }
+  function zoomAt(clientX: number, clientY: number, target: number) {
+    const rect = stage.current?.getBoundingClientRect(); if (!rect) return;
+    const next = Math.max(.04, Math.min(8, target));
+    const px = (clientX - rect.left - pan.x) / zoom, py = (clientY - rect.top - pan.y) / zoom;
+    setZoom(next); setPan({ x: clientX - rect.left - px * next, y: clientY - rect.top - py * next });
+  }
+  function listPressDown(event: ReactPointerEvent) {
+    const row = (event.target as Element).closest('.object-row[data-id]') as HTMLElement | null;
+    if (!row) return;
+    const kind = row.dataset.kind as ObjectKind | undefined;
+    const id = row.dataset.id;
+    if (!kind || !id) return;
+    beginLongPress(event, () => openObjectSheet(kind, id));
+  }
+  function stagePressDown(event: ReactPointerEvent) {
+    const element = (event.target as Element).closest('[data-object]') as HTMLElement | null;
+    if (!element) return;
+    const kind = element.getAttribute('data-object');
+    const id = element.getAttribute('data-id');
+    const owner = element.getAttribute('data-route');
+    if (kind === 'equipment' && id) beginLongPress(event, () => openObjectSheet('equipment', id));
+    else if ((kind === 'segment' || kind === 'vertex') && owner) beginLongPress(event, () => openObjectSheet('route', owner));
   }
   function setItem(key: string, value: unknown) {
     if (!selection) return;
     mutate(p => { const collection = selection.kind === 'equipment' ? p.equipment : selection.kind === 'route' ? p.routes : p.cables; const item = collection.find(i => i.id === selection.id); if (item) Object.assign(item, { [key]: value }); });
   }
   function field(label: string, value: string | number | null, change: (value: string) => void, numeric = false, hint?: string) {
-    return <label className="field">{label}<input type={numeric ? 'number' : 'text'} step="any" value={value ?? ''} placeholder={numeric ? 'Не задано' : ''} onChange={e => change(e.target.value)} />{hint && <small>{hint}</small>}</label>;
+    if (numeric) {
+      const current = typeof value === 'number' && Number.isFinite(value) ? value : null;
+      return <label className="field">{label}<NumberField value={current} placeholder="Не задано" onCommit={change} />{hint && <small>{hint}</small>}</label>;
+    }
+    return <label className="field">{label}<input type="text" value={value ?? ''} onChange={e => change(e.target.value)} />{hint && <small>{hint}</small>}</label>;
   }
   function itemField(label: string, key: string, numeric = false) {
     const item = equipment || route || cable;
@@ -510,21 +665,25 @@ export default function App() {
   const toolHints: Record<Tool, string> = { select: 'Выберите объект • тяните оборудование и узлы трассы', pan: 'Перетаскивайте план • колесо — масштаб', equipment: 'Клик на плане — добавить оборудование', route: 'Клики — вершины • Enter — завершить • Esc — отменить', calibrate: 'Укажите две точки известного размера на PDF', cable: 'Выбирайте сегменты по порядку от начала к концу' };
 
   return <div className="app-shell">
-    <header className="topbar"><button className="menu-toggle" aria-label="Меню" onClick={() => setMenuOpen(v => !v)}>☰</button><div className="brand"><span className="brand-mark">A</span><div>AnOOPlan<small>кабельный план</small></div></div><div className="project-heading"><input aria-label="Название проекта" value={project.name} onChange={e => mutate(p => { p.name = e.target.value; })} /><span className={dirty ? 'save-indicator dirty' : 'save-indicator'}>{dirty ? '● Не сохранён' : '● Сохранён'}</span></div><div className="top-actions"><button className="desk-only" onClick={() => { if (mayLeave()) load(freshProject(), false); }}>Новый</button><button className="desk-only" disabled={busy} onClick={() => void run(async () => { setProjects(staticMode ? lsProjects().map(p => ({ id: p.id, name: p.name, updatedAt: p.updatedAt })) : await api('/api/projects')); })}>Открыть</button><button disabled={busy} title="Загрузить ранее экспортированный JSON-проект" onClick={() => restoreInput.current?.click()}>Загрузить</button><button className="primary" disabled={busy} onClick={() => void run(async () => { await saveProject(); })}>{busy ? 'Подождите…' : 'Сохранить'}</button></div></header>
-    <div className="commandbar"><div className="view-tabs">{([['plan', 'План'], ['journal', 'Журнал'], ['specs', 'Ведомости']] as const).map(([id, label]) => <button key={id} className={view === id ? 'active' : ''} onClick={() => setView(id)}>{label}</button>)}</div><div className="command-actions"><button className="desk-only" onClick={() => { if (mayLeave()) { load(createDemoProject(), false); setMessage('Учебный проект: синтетические данные, не рабочая документация.'); } }}>Учебный проект</button><details className="export-menu"><summary>Экспорт / копия ↓</summary><div>{(['csv', 'xlsx', 'pdf', 'backup'] as const).map(format => <button key={format} disabled={busy} onClick={() => void run(() => download(format))}>{format === 'backup' ? 'JSON с исходными PDF' : format.toUpperCase()}</button>)}<button onClick={() => restoreInput.current?.click()}>Восстановить JSON…</button></div></details></div></div>
+    <header className="topbar"><button className="menu-toggle" aria-label="Меню" onClick={() => setMenuOpen(v => !v)}>☰</button><div className="brand"><span className="brand-mark">A</span><div>AnOOPlan<small>кабельный план</small></div></div><div className="project-heading"><input aria-label="Название проекта" value={project.name} onChange={e => mutate(p => { p.name = e.target.value; })} /><span className={dirty ? 'save-indicator dirty' : 'save-indicator'}>{dirty ? '● Не сохранён' : '● Сохранён'}</span></div><div className="top-actions"><button className="desk-only" onClick={() => { if (mayLeave()) load(freshProject(), false); }}>Новый</button><button className="desk-only" disabled={busy} onClick={() => void run(async () => { setProjects(staticMode ? lsProjects().map(p => ({ id: p.id, name: p.name, updatedAt: p.updatedAt })) : await api('/api/projects')); })}>Открыть</button><button disabled={busy} title="Загрузить ранее экспортированный JSON-проект" onClick={() => restoreInput.current?.click()}>Загрузить</button><button className="primary" disabled={busy || (persisted && !dirty)} onClick={() => void run(async () => { await saveProject(); })}>{busy ? 'Подождите…' : persisted && !dirty ? 'Сохранено ✓' : 'Сохранить'}</button></div></header>
+    <div className="commandbar"><div className="view-tabs">{([['plan', 'План'], ['journal', 'Журнал'], ['specs', 'Ведомости']] as const).map(([id, label]) => <button key={id} className={view === id ? 'active' : ''} onClick={() => setView(id)}>{label}</button>)}</div><div className="command-actions"><button className="desk-only" onClick={() => { if (mayLeave()) { load(createDemoProject(), false); setMessage('Учебный проект: синтетические данные, не рабочая документация.'); } }}>Учебный проект</button><button className="export-trigger" onClick={() => setExportOpen(true)}>Экспорт / копия ↓</button></div></div>
     {error && <div className="banner error" role="alert"><strong>Не удалось выполнить действие.</strong> {error}<button onClick={() => setError('')}>×</button></div>}
     <div className="workspace"><aside className={`sidebar ${menuOpen ? 'open' : ''}`}><div className="sidebar-title">Структура проекта <span>{project.floors.length} эт.</span></div><div className="structure-tabs">{([['floors', 'Этажи'], ['equipment', 'Оборуд.'], ['routes', 'Трассы'], ['cables', 'Кабели']] as const).map(([id, name]) => <button className={tab === id ? 'active' : ''} key={id} onClick={() => setTab(id)}>{name}<span>{project[id].length}</span></button>)}</div>
-      <div className="object-list">{tab === 'floors' ? project.floors.map((f, i) => <button key={f.id} className={`object-row ${floor?.id === f.id ? 'selected' : ''}`} onClick={() => { setFloorId(f.id); setSelection(null); setMenuOpen(false); }}><span className="object-icon">{String(i + 1).padStart(2, '0')}</span><span><strong>{f.name}</strong><small>{f.pdfId ? `PDF · страница ${f.page}` : 'Без подложки'} · {f.elevation === null ? 'отметка не задана' : `${number(f.elevation)} м`}</small></span><i className={f.metersPerUnit ? 'dot calibrated' : 'dot'} /></button>) : tab === 'equipment' ? project.equipment.map(eq => <button key={eq.id} className={`object-row ${selection?.id === eq.id ? 'selected' : ''}`} onClick={() => { setSelection({ kind: 'equipment', id: eq.id }); setFloorId(eq.floorId); setView('plan'); setMenuOpen(false); }}><span className="object-icon equipment-icon">▣</span><span><strong>{eq.number}</strong><small>{eq.name}</small></span></button>) : tab === 'routes' ? project.routes.map(r => <button key={r.id} className={`object-row ${selection?.id === r.id ? 'selected' : ''}`} onClick={() => { setSelection({ kind: 'route', id: r.id }); if (r.segments[0]) setFloorId(r.segments[0].a.floorId); setView('plan'); setMenuOpen(false); }}><span className="object-icon route-icon">⌁</span><span><strong>{r.number} · {r.type}</strong><small>{r.segments.length} сегм.</small></span></button>) : project.cables.map(c => { const calc = cableCalcs.get(c.id)!; return <button key={c.id} className={`object-row ${selection?.id === c.id ? 'selected' : ''}`} onClick={() => { setSelection({ kind: 'cable', id: c.id }); setMenuOpen(false); }}><span className="object-icon cable-icon">↝</span><span><strong>{c.number} · {c.brand || c.name}</strong><small>{calc.complete ? `${number(calc.total)} м` : 'Неполный расчёт'}</small></span><i className={calc.complete ? 'dot calibrated' : 'dot warning'} /></button>; })}
+      <div className="object-list" onPointerDown={listPressDown} onPointerMove={moveLongPress} onPointerUp={cancelLongPress} onPointerCancel={cancelLongPress} onPointerLeave={cancelLongPress}>{tab === 'floors' ? project.floors.map((f, i) => <button key={f.id} className={`object-row ${floor?.id === f.id ? 'selected' : ''}`} onClick={() => { setFloorId(f.id); setSelection(null); setMenuOpen(false); }}><span className="object-icon">{String(i + 1).padStart(2, '0')}</span><span><strong>{f.name}</strong><small>{f.pdfId ? `PDF · страница ${f.page}` : 'Без подложки'} · {f.elevation === null ? 'отметка не задана' : `${number(f.elevation)} м`}</small></span><i className={f.metersPerUnit ? 'dot calibrated' : 'dot'} /></button>) : tab === 'equipment' ? project.equipment.map(eq => <button key={eq.id} data-kind="equipment" data-id={eq.id} className={`object-row ${selection?.id === eq.id ? 'selected' : ''}`} onClick={() => { setSelection({ kind: 'equipment', id: eq.id }); setFloorId(eq.floorId); setView('plan'); setMenuOpen(false); }}><span className="object-icon equipment-icon">▣</span><span><strong>{eq.number}</strong><small>{eq.name}</small></span></button>) : tab === 'routes' ? project.routes.map(r => <button key={r.id} data-kind="route" data-id={r.id} className={`object-row ${selection?.id === r.id ? 'selected' : ''}`} onClick={() => { setSelection({ kind: 'route', id: r.id }); if (r.segments[0]) setFloorId(r.segments[0].a.floorId); setView('plan'); setMenuOpen(false); }}><span className="object-icon route-icon">⌁</span><span><strong>{r.number} · {r.type}</strong><small>{r.segments.length} сегм.</small></span></button>) : project.cables.map(c => { const calc = cableCalcs.get(c.id)!; return <button key={c.id} data-kind="cable" data-id={c.id} className={`object-row ${selection?.id === c.id ? 'selected' : ''}`} onClick={() => { setSelection({ kind: 'cable', id: c.id }); setMenuOpen(false); }}><span className="object-icon cable-icon">↝</span><span><strong>{c.number} · {c.brand || c.name}</strong><small>{calc.complete ? `${number(calc.total)} м` : 'Неполный расчёт'}</small></span><i className={calc.complete ? 'dot calibrated' : 'dot warning'} /></button>; })}
       {project[tab].length === 0 && <div className="empty-list">Объектов пока нет.<br />Добавьте их на плане.</div>}</div>
       <div className="sidebar-actions">{tab === 'floors' ? <><button onClick={() => { const f = freshFloor(`Этаж ${project.floors.length + 1}`); mutate(p => p.floors.push(f)); setFloorId(f.id); setSelection(null); }}>＋ Добавить этаж</button><button onClick={() => upload.current?.click()} disabled={!floor || busy}>↑ Загрузить PDF</button></> : <button onClick={() => { setView('plan'); setTool(tab === 'equipment' ? 'equipment' : tab === 'routes' ? 'route' : 'cable'); }}>＋ {tab === 'equipment' ? 'Оборудование на плане' : tab === 'routes' ? 'Начертить трассу' : 'Создать кабель'}</button>}</div>
       <div className="sidebar-project"><button onClick={() => { setMenuOpen(false); if (mayLeave()) load(freshProject(), false); }}>＋ Новый проект</button><button disabled={busy} onClick={() => { setMenuOpen(false); void run(async () => { setProjects(staticMode ? lsProjects().map(p => ({ id: p.id, name: p.name, updatedAt: p.updatedAt })) : await api('/api/projects')); }); }}>📂 Открыть проект</button><button disabled={busy} onClick={() => { setMenuOpen(false); restoreInput.current?.click(); }}>⬆ Загрузить JSON</button><button onClick={() => { setMenuOpen(false); if (mayLeave()) { load(createDemoProject(), false); setMessage('Учебный проект: синтетические данные, не рабочая документация.'); } }}>📘 Учебный проект</button></div>
       <div className="project-health"><span className="eyebrow">КОНТРОЛЬ ДАННЫХ</span><strong>{issueCount ? `${issueCount} замечаний` : 'Проверка проекта'}</strong><small>Неизвестные отметки, масштаб и разрывы исключают итоговый метраж.</small><button onClick={() => setView('specs')}>Показать проверку →</button></div></aside>
       <main className="main-area">{view === 'plan' ? <div className="plan-view"><div className="drawing-toolbar"><div className="tool-group">{([['select', '↖', 'Выбор'], ['pan', '✥', 'Панорама'], ['equipment', '▣', 'Оборудование'], ['route', '⌁', 'Трасса'], ['cable', '↝', 'Кабель'], ['calibrate', '↔', 'Масштаб']] as const).map(([id, icon, label]) => <button key={id} title={label} className={tool === id ? 'active' : ''} onClick={() => { setTool(id); setDraft([]); setCalibration([]); }}><b>{icon}</b><span>{label}</span></button>)}</div><div className="tool-group history"><button title="Отменить Ctrl+Z" disabled={!undo.length} onClick={() => history(true)}>↶</button><button title="Повторить Ctrl+Shift+Z" disabled={!redo.length} onClick={() => history(false)}>↷</button></div></div>
       <div className="drawing-options"><label><input type="checkbox" checked={grid} onChange={e => setGrid(e.target.checked)} />Сетка</label><label><input type="checkbox" checked={snap} onChange={e => setSnap(e.target.checked)} />Привязка</label><label><input type="checkbox" checked={ortho} onChange={e => setOrtho(e.target.checked)} />Ортогонально</label><label>Шаг<input className="mini-input" type="number" min="1" value={gridSize} onChange={e => setGridSize(Math.max(1, Number(e.target.value) || 1))} /></label><span className="grow" />{floor?.pdfId && <label>Страница <input className="mini-input" type="number" min="1" max={pdfPages || 9999} value={floor.page} onChange={e => { const page = Math.max(1, Math.min(pdfPages || 9999, Number(e.target.value) || 1)); if (page !== floor.page && window.confirm('Смена страницы сохраняет объекты и сбрасывает масштаб. Продолжить?')) mutate(p => { const f = p.floors.find(f => f.id === floor.id)!; f.page = page; f.metersPerUnit = null; }); }} /> / {pdfPages || '…'}</label>}<button onClick={fit}>Вписать</button><button onClick={() => changeZoom(zoom / 1.2)}>−</button><span>{Math.round(zoom * 100)}%</span><button onClick={() => changeZoom(zoom * 1.2)}>＋</button></div>
-      {tool === 'route' && <div className="contextbar"><span>Трасса: {draft.length} вершин</span><label>Высота, м <input type="number" step="any" value={routeHeight} onChange={e => setRouteHeight(e.target.value)} /></label><button className="primary" disabled={draft.length < 2} onClick={finishRoute}>Завершить · Enter</button><button onClick={() => setDraft([])}>Сбросить</button></div>}
+      {tool === 'route' && <div className="contextbar"><span>Трасса: {draft.length} вершин</span><label>Высота, м <input type="text" inputMode="decimal" value={routeHeight} onChange={e => setRouteHeight(e.target.value.replace(',', '.'))} /></label><button className="primary" disabled={draft.length < 2} onClick={finishRoute}>Завершить · Enter</button><button onClick={() => setDraft([])}>Сбросить</button></div>}
       {tool === 'cable' && <div className="contextbar cable-builder"><label>От {equipmentSelect(cableFrom, setCableFrom)}</label><span>→</span><label>До {equipmentSelect(cableTo, setCableTo)}</label><button onClick={() => { if (!cableFrom || !cableTo) { setError('Сначала выберите «От» и «До».'); return; } const res = findRoute(project, cableFrom, cableTo); if (res.error) setError(res.error); else { setCableSegments(res.segmentIds); setMessage(`Маршрут построен: ${res.segmentIds.length} сегм.`); } }}>Автомаршрут</button><span>{cableSegments.length} сегм.</span><button className="primary" onClick={finishCable}>Создать</button><button onClick={() => setCableSegments([])}>Сброс</button><small>Выберите «От» и «До» — маршрут строится сам. Можно скорректировать сегменты кликами.</small></div>}
       {pdfError && <div className="banner error">{pdfError}</div>}
-      <div className={`drawing-stage tool-${tool}`} ref={stage} onPointerDown={pointerDown} onPointerMove={pointerMove} onPointerUp={pointerUp} onPointerCancel={pointerUp} onWheel={e => { e.preventDefault(); changeZoom(zoom * (e.deltaY < 0 ? 1.1 : 1 / 1.1)); }}>
+      <div className={`drawing-stage tool-${tool}`} ref={stage}
+        onPointerDown={pointerDown} onPointerMove={pointerMove} onPointerUp={pointerUp} onPointerCancel={pointerUp}
+        onPointerDownCapture={stagePressDown} onPointerMoveCapture={moveLongPress} onPointerUpCapture={cancelLongPress}
+        onWheel={e => { e.preventDefault(); changeZoom(zoom * (e.deltaY < 0 ? 1.1 : 1 / 1.1)); }}
+        onDoubleClick={e => { if ((e.target as Element).closest('[data-object]')) return; e.preventDefault(); if (zoom < 1.5) zoomAt(e.clientX, e.clientY, zoom * 2.4); else fit(); }}>
         {floor && <div className="drawing-sheet" style={{ width: floor.width, height: floor.height, transform: `translate(${pan.x}px,${pan.y}px) scale(${zoom})` }}>
           {floor.pdfId ? <canvas ref={canvas} style={{ width: '100%', height: '100%' }} /> : <div className="no-pdf"><span>AnOOPlan / {floor.name.toUpperCase()}</span><p>Рабочее поле без PDF</p><small>{project.name.includes('Учеб') ? 'Синтетическая схема для проверки расчёта' : 'Загрузите план PDF и задайте масштаб по двум точкам'}</small></div>}
           <svg className="plan-overlay" width={floor.width} height={floor.height} viewBox={`0 0 ${floor.width} ${floor.height}`}>
@@ -533,15 +692,15 @@ export default function App() {
             {project.routes.flatMap(r => r.segments.map((s, index) => {
               const visibleA = s.a.floorId === floor.id, visibleB = s.b.floorId === floor.id; if (!visibleA && !visibleB) return null;
               const chosen = cableSegments.includes(s.id) || cable?.segmentIds.includes(s.id); const selected = selection?.id === r.id;
-              return <g key={s.id} data-object="segment" className={`route-segment ${chosen ? 'cable-selected' : ''} ${selected ? 'is-selected' : ''}`} onPointerDown={e => { e.stopPropagation(); if (tool === 'cable') setCableSegments(ids => ids.includes(s.id) ? ids.filter(id => id !== s.id) : [...ids, s.id]); else if (tool === 'route') { const p = position(e); setDraft(points => [...points, p]); } else if (tool === 'select') setSelection({ kind: 'route', id: r.id }); }}>
+              return <g key={s.id} data-object="segment" data-id={s.id} data-route={r.id} className={`route-segment ${chosen ? 'cable-selected' : ''} ${selected ? 'is-selected' : ''}`} onPointerDown={e => { e.stopPropagation(); if (tool === 'cable') setCableSegments(ids => ids.includes(s.id) ? ids.filter(id => id !== s.id) : [...ids, s.id]); else if (tool === 'route') { const p = position(e); setDraft(points => [...points, p]); } else if (tool === 'select') setSelection({ kind: 'route', id: r.id }); }}>
                 <line x1={s.a.x} y1={s.a.y} x2={s.b.x} y2={s.b.y} stroke="transparent" strokeWidth={26 / zoom} />
                 <line x1={s.a.x} y1={s.a.y} x2={s.b.x} y2={s.b.y} strokeWidth={(chosen ? 5 : selected ? 4 : 3) / zoom} className="visible-route" pointerEvents="none" strokeDasharray={!visibleA || !visibleB ? `${7 / zoom} ${4 / zoom}` : undefined} />
                 {(!visibleA || !visibleB) && <g transform={`translate(${s.a.x},${s.a.y})`}><circle r={9 / zoom} fill="white" stroke="#875ec5" strokeWidth={2 / zoom} /><text textAnchor="middle" y={4 / zoom} fontSize={12 / zoom} fill="#875ec5">↕</text></g>}
                 {(selected || chosen) && <text x={(s.a.x + s.b.x) / 2 + 6 / zoom} y={(s.a.y + s.b.y) / 2 - 7 / zoom} fontSize={11 / zoom} fill="#126e71" className="svg-label">{tool === 'cable' ? cableSegments.indexOf(s.id) + 1 || '' : `${r.number}.${index + 1}`}</text>}
               </g>;
             }))}
-            {route && tool === 'select' && Array.from(new Map(route.segments.flatMap(s => [s.a, s.b]).filter(v => v.floorId === floor.id).map(v => [v.id, v])).values()).map(v => <circle data-object="vertex" key={v.id} cx={v.x} cy={v.y} r={5 / zoom} fill="white" stroke="#008e94" strokeWidth={2 / zoom} className="vertex-handle" onPointerDown={e => startDrag(e, 'vertex', route.id, v.id)} />)}
-            {project.equipment.filter(eq => eq.floorId === floor.id).map(eq => <g data-object="equipment" key={eq.id} transform={`translate(${eq.x},${eq.y})`} className={`equipment-symbol ${selection?.id === eq.id ? 'is-selected' : ''}`} onPointerDown={e => { if (tool === 'select') { setSelection({ kind: 'equipment', id: eq.id }); startDrag(e, 'equipment', eq.id); } else if (tool === 'route') { e.stopPropagation(); setDraft(points => { const p = { x: eq.x, y: eq.y }; const last = points[points.length - 1]; return ortho && last && last.x !== p.x && last.y !== p.y ? [...points, { x: p.x, y: last.y }, p] : [...points, p]; }); } else if (tool === 'cable') { e.stopPropagation(); if (!cableFrom) { setCableFrom(eq.id); setMessage(`Начало: ${eq.number}. Коснитесь конечного устройства.`); } else if (cableTo !== eq.id) { setCableTo(eq.id); const res = findRoute(project, cableFrom, eq.id); if (res.error) { setCableSegments([]); setError(res.error); } else { setCableSegments(res.segmentIds); setMessage(`Конец: ${eq.number}. Маршрут построен автоматически: ${res.segmentIds.length} сегм.`); } } } }}>
+            {route && tool === 'select' && Array.from(new Map(route.segments.flatMap(s => [s.a, s.b]).filter(v => v.floorId === floor.id).map(v => [v.id, v])).values()).map(v => <circle data-object="vertex" data-route={route.id} key={v.id} cx={v.x} cy={v.y} r={5 / zoom} fill="white" stroke="#008e94" strokeWidth={2 / zoom} className="vertex-handle" onPointerDown={e => startDrag(e, 'vertex', route.id, v.id)} />)}
+            {project.equipment.filter(eq => eq.floorId === floor.id).map(eq => <g data-object="equipment" data-id={eq.id} key={eq.id} transform={`translate(${eq.x},${eq.y})`} className={`equipment-symbol ${selection?.id === eq.id ? 'is-selected' : ''}`} onPointerDown={e => { if (tool === 'select') { setSelection({ kind: 'equipment', id: eq.id }); startDrag(e, 'equipment', eq.id); } else if (tool === 'route') { e.stopPropagation(); setDraft(points => { const p = { x: eq.x, y: eq.y }; const last = points[points.length - 1]; return ortho && last && last.x !== p.x && last.y !== p.y ? [...points, { x: p.x, y: last.y }, p] : [...points, p]; }); } else if (tool === 'cable') { e.stopPropagation(); if (!cableFrom) { setCableFrom(eq.id); setMessage(`Начало: ${eq.number}. Коснитесь конечного устройства.`); } else if (cableTo !== eq.id) { setCableTo(eq.id); const res = findRoute(project, cableFrom, eq.id); if (res.error) { setCableSegments([]); setError(res.error); } else { setCableSegments(res.segmentIds); setMessage(`Конец: ${eq.number}. Маршрут построен автоматически: ${res.segmentIds.length} сегм.`); } } } }}>
               <circle r={16 / zoom} fill="transparent" /><rect x={-7 / zoom} y={-7 / zoom} width={14 / zoom} height={14 / zoom} rx={2 / zoom} strokeWidth={2 / zoom} /><path d={`M ${-3 / zoom} 0 H ${3 / zoom} M 0 ${-3 / zoom} V ${3 / zoom}`} stroke="#fff" strokeWidth={1.5 / zoom} pointerEvents="none" /><text x={11 / zoom} y={4 / zoom} fontSize={12 / zoom} className="svg-label">{eq.number}</text>
             </g>)}
             {draft.length > 0 && <g pointerEvents="none"><polyline points={draft.map(p => `${p.x},${p.y}`).join(' ')} fill="none" stroke="#e78c22" strokeWidth={3 / zoom} strokeDasharray={`${6 / zoom} ${3 / zoom}`} />{draft.map((p, i) => <circle key={i} cx={p.x} cy={p.y} r={4 / zoom} fill="#e78c22" />)}</g>}
@@ -559,6 +718,8 @@ export default function App() {
     </div><footer className="statusbar"><span><i className="dot calibrated" />{message}</span><span>{project.equipment.length} оборуд. · {project.routes.length} трасс · {project.cables.length} кабелей <b>{staticMode ? 'БРАУЗЕР' : 'СЕРВЕР'}</b></span></footer>
     {(menuOpen || propsOpen) && <div className="scrim" onClick={() => { setMenuOpen(false); setPropsOpen(false); }} />}
     <button className={`props-fab ${propsOpen ? 'active' : ''}`} aria-label="Свойства" onClick={() => setPropsOpen(v => !v)}>⚙</button>
+    {exportOpen && <div className="sheet-backdrop" onClick={() => setExportOpen(false)}><section className="sheet" role="dialog" aria-label="Экспорт и копия" onClick={event => event.stopPropagation()}><div className="sheet-grip" /><div className="sheet-head"><strong>Экспорт и копия</strong><button aria-label="Закрыть" onClick={() => setExportOpen(false)}>×</button></div><div className="sheet-list">{(['csv', 'xlsx', 'pdf', 'backup'] as const).map(format => <button key={format} disabled={busy} onClick={() => { setExportOpen(false); void run(() => download(format)); }}>{format === 'backup' ? 'JSON с исходными PDF' : format.toUpperCase()}</button>)}<button onClick={() => { setExportOpen(false); restoreInput.current?.click(); }}>Восстановить JSON…</button></div></section></div>}
+    {sheet && <div className="sheet-backdrop" onClick={() => setSheet(null)}><section className="sheet" role="dialog" aria-label="Действия с объектом" onClick={event => event.stopPropagation()}><div className="sheet-grip" /><div className="sheet-head"><strong>{sheetTitle(sheet)}</strong><button aria-label="Закрыть" onClick={() => setSheet(null)}>×</button></div><div className="sheet-list"><button onClick={() => { setPropsOpen(true); setSheet(null); }}>⚙ Свойства</button><button onClick={() => { copyObject(sheet.kind, sheet.id); setSheet(null); }}>⧉ Копировать</button><button className="danger" onClick={() => removeObject(sheet.kind, sheet.id)}>🗑 Удалить</button></div></section></div>}
     <input hidden ref={upload} type="file" accept="application/pdf,.pdf" onChange={e => { const file = e.target.files?.[0]; if (file) void run(() => uploadPdf(file)); e.target.value = ''; }} />
     <input hidden ref={restoreInput} type="file" accept="application/json,.json" onChange={e => { const file = e.target.files?.[0]; if (file && mayLeave()) void run(async () => { const parsed = JSON.parse(await file.text()) as Record<string, unknown>; if (staticMode) { const proj = (parsed && typeof parsed === 'object' && 'project' in parsed) ? parsed.project : parsed; if (proj && (proj as Partial<Project>).schemaVersion === 1 && Array.isArray((proj as Partial<Project>).floors)) { const rawPdfs = (parsed && typeof parsed === 'object' && 'pdfs' in parsed && Array.isArray(parsed.pdfs)) ? parsed.pdfs as { id: string; dataBase64?: string }[] : []; for (const pdf of rawPdfs) { if (pdf && pdf.id && pdf.dataBase64) { const bytes = Uint8Array.from(atob(pdf.dataBase64), c => c.charCodeAt(0)); await idbPut(pdf.id.replace(/^idb:/, ''), new Blob([bytes], { type: 'application/pdf' })); } } load(proj as unknown as Project, true); setMessage('Проект загружен из файла.'); } else { setError('Файл не является проектом AnOOPlan.'); } } else if (parsed && typeof parsed === 'object' && 'project' in parsed) { const result = await api<Project>('/api/restore', jsonOptions('POST', parsed)); load(result, true); setMessage('Резервная копия с PDF восстановлена.'); } else if (parsed && (parsed as Partial<Project>).schemaVersion === 1 && Array.isArray((parsed as Partial<Project>).floors)) { load(parsed as unknown as Project, false); setMessage('Проект загружен из файла. Подложку PDF при необходимости загрузите заново.'); } else { setError('Файл не является проектом или резервной копией AnOOPlan.'); } }); e.target.value = ''; }} />
     {projects && <div className="modal-backdrop"><section className="modal"><div className="modal-heading"><h2>Открыть проект</h2><button onClick={() => setProjects(null)}>×</button></div>{projects.length ? projects.map(p => <div className="project-row" key={p.id}><button className="project-option" disabled={busy} onClick={() => { if (mayLeave()) void run(async () => { const result = staticMode ? lsProjects().find(x => x.id === p.id)! : await api<Project>(`/api/projects/${p.id}`); load(result, true); setProjects(null); setMessage(`Проект «${result.name}» открыт.`); }); }}><strong>{p.name}</strong><small>{new Date(p.updatedAt).toLocaleString('ru-RU')}</small><span>→</span></button><button className="project-delete" disabled={busy} title="Удалить проект" onClick={() => void run(() => deleteProject(p.id, p.name))}>🗑</button></div>) : <p className="help">Сохранённых проектов пока нет.</p>}</section></div>}

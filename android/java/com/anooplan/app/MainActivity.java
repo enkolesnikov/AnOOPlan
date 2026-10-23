@@ -2,18 +2,26 @@ package com.anooplan.app;
 
 import android.annotation.SuppressLint;
 import android.app.Activity;
+import android.app.AlertDialog;
 import android.content.ActivityNotFoundException;
+import android.content.DialogInterface;
 import android.content.Intent;
 import android.graphics.Color;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
+import android.text.InputType;
 import android.view.Window;
+import android.view.WindowManager;
+import android.view.inputmethod.InputMethodManager;
+import android.webkit.DownloadListener;
+import android.webkit.JsPromptResult;
+import android.webkit.JsResult;
 import android.webkit.ValueCallback;
 import android.webkit.WebChromeClient;
-import android.webkit.DownloadListener;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
+import android.widget.EditText;
 import android.widget.Toast;
 
 /**
@@ -22,13 +30,18 @@ import android.widget.Toast;
  * Статическая сборка веб-приложения лежит в assets/www и отдаётся WebView через
  * {@link AssetServer} по защищённому origin https://appassets.local/, поэтому
  * в WebView доступны localStorage, IndexedDB и crypto.randomUUID().
+ *
+ * Оболочка добавляет то, чего нет у сайта: системные диалоги, сохранение перед выходом,
+ * горящий экран при работе с планом и тактильный отклик.
  */
-public class MainActivity extends Activity {
+public class MainActivity extends Activity implements NativeBridge.Host {
 
     private static final int REQUEST_FILE_CHOOSER = 1001;
 
     private WebView webView;
     private ValueCallback<Uri[]> fileChooserCallback;
+    private volatile boolean pageDirty = false;
+    private volatile boolean exiting = false;
 
     @SuppressLint("SetJavaScriptEnabled")
     @Override
@@ -38,6 +51,8 @@ public class MainActivity extends Activity {
         Window window = getWindow();
         window.setStatusBarColor(Color.parseColor("#122936"));
         window.setNavigationBarColor(Color.parseColor("#0C1D27"));
+        // Черчение трасс на объекте: экран не должен гаснуть, пока приложение на переднем плане.
+        window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
 
         webView = new WebView(this);
         webView.setBackgroundColor(Color.parseColor("#122936"));
@@ -65,7 +80,7 @@ public class MainActivity extends Activity {
 
         webView.setWebViewClient(new AssetServer(this));
         webView.setWebChromeClient(new FileChooserClient());
-        webView.addJavascriptInterface(new NativeBridge(this), "AnOOPlanNative");
+        webView.addJavascriptInterface(new NativeBridge(this, this), "AnOOPlanNative");
         webView.setDownloadListener(new DownloadListener() {
             @Override
             public void onDownloadStart(String url, String userAgent, String contentDisposition, String mimetype, long contentLength) {
@@ -86,6 +101,7 @@ public class MainActivity extends Activity {
         webView.loadUrl(AssetServer.START_URL);
     }
 
+    /** Выбор PDF-плана или JSON-копии из памяти телефона + системные диалоги JS. */
     private class FileChooserClient extends WebChromeClient {
         @Override
         public boolean onShowFileChooser(WebView view, ValueCallback<Uri[]> callback, FileChooserParams params) {
@@ -127,6 +143,87 @@ public class MainActivity extends Activity {
             }
             return true;
         }
+
+        @Override
+        public boolean onJsAlert(WebView view, String url, String message, final JsResult result) {
+            new AlertDialog.Builder(MainActivity.this)
+                    .setMessage(message)
+                    .setPositiveButton("ОК", new DialogInterface.OnClickListener() {
+                        public void onClick(DialogInterface dialog, int which) {
+                            result.confirm();
+                        }
+                    })
+                    .setOnCancelListener(new DialogInterface.OnCancelListener() {
+                        public void onCancel(DialogInterface dialog) {
+                            result.cancel();
+                        }
+                    })
+                    .show();
+            return true;
+        }
+
+        @Override
+        public boolean onJsConfirm(WebView view, String url, String message, final JsResult result) {
+            new AlertDialog.Builder(MainActivity.this)
+                    .setMessage(message)
+                    .setPositiveButton("Да", new DialogInterface.OnClickListener() {
+                        public void onClick(DialogInterface dialog, int which) {
+                            result.confirm();
+                        }
+                    })
+                    .setNegativeButton("Отмена", new DialogInterface.OnClickListener() {
+                        public void onClick(DialogInterface dialog, int which) {
+                            result.cancel();
+                        }
+                    })
+                    .setOnCancelListener(new DialogInterface.OnCancelListener() {
+                        public void onCancel(DialogInterface dialog) {
+                            result.cancel();
+                        }
+                    })
+                    .show();
+            return true;
+        }
+
+        @Override
+        public boolean onJsPrompt(WebView view, String url, String message, String defaultValue, final JsPromptResult result) {
+            final EditText input = new EditText(MainActivity.this);
+            input.setText(defaultValue == null ? "" : defaultValue);
+            input.setSelectAllOnFocus(true);
+            String hint = message == null ? "" : message.toLowerCase();
+            if (hint.contains("метр") || hint.contains("расстоян") || hint.contains("число")) {
+                input.setInputType(InputType.TYPE_CLASS_NUMBER | InputType.TYPE_NUMBER_FLAG_DECIMAL);
+            }
+
+            AlertDialog dialog = new AlertDialog.Builder(MainActivity.this)
+                    .setMessage(message)
+                    .setView(input)
+                    .setPositiveButton("ОК", new DialogInterface.OnClickListener() {
+                        public void onClick(DialogInterface d, int which) {
+                            result.confirm(input.getText().toString());
+                        }
+                    })
+                    .setNegativeButton("Отмена", new DialogInterface.OnClickListener() {
+                        public void onClick(DialogInterface d, int which) {
+                            result.cancel();
+                        }
+                    })
+                    .setOnCancelListener(new DialogInterface.OnCancelListener() {
+                        public void onCancel(DialogInterface d) {
+                            result.cancel();
+                        }
+                    })
+                    .create();
+            dialog.setOnShowListener(new DialogInterface.OnShowListener() {
+                public void onShow(DialogInterface d) {
+                    input.requestFocus();
+                    InputMethodManager keyboard = (InputMethodManager) getSystemService(INPUT_METHOD_SERVICE);
+                    if (keyboard != null) keyboard.showSoftInput(input, InputMethodManager.SHOW_IMPLICIT);
+                }
+            });
+            dialog.show();
+            return true;
+        }
     }
 
     @Override
@@ -149,13 +246,77 @@ public class MainActivity extends Activity {
         super.onActivityResult(requestCode, resultCode, data);
     }
 
+    // ── NativeBridge.Host ────────────────────────────────────────────────────
+
+    @Override
+    public void onDirtyChanged(boolean dirty) {
+        pageDirty = dirty;
+    }
+
+    @Override
+    public void onExitRequested() {
+        exiting = true;
+        runOnUiThread(new Runnable() {
+            public void run() {
+                finish();
+            }
+        });
+    }
+
+    // ── «Назад»: сохранить перед выходом ─────────────────────────────────────
+
     @Override
     public void onBackPressed() {
         if (webView != null && webView.canGoBack()) {
             webView.goBack();
             return;
         }
-        finish();
+        if (!pageDirty) {
+            finish();
+            return;
+        }
+        new AlertDialog.Builder(this)
+                .setTitle("Есть несохранённые изменения")
+                .setMessage("Сохранить проект перед выходом?")
+                .setPositiveButton("Сохранить", new DialogInterface.OnClickListener() {
+                    public void onClick(DialogInterface dialog, int which) {
+                        saveAndExit();
+                    }
+                })
+                .setNegativeButton("Выйти", new DialogInterface.OnClickListener() {
+                    public void onClick(DialogInterface dialog, int which) {
+                        finish();
+                    }
+                })
+                .setNeutralButton("Отмена", null)
+                .show();
+    }
+
+    /** Просит веб-часть сохранить проект, затем закрывает приложение. */
+    private void saveAndExit() {
+        exiting = false;
+        if (webView == null) {
+            finish();
+            return;
+        }
+        webView.evaluateJavascript(
+                "(function(){try{if(window.__anooplanSaveAndExit){window.__anooplanSaveAndExit();return 'ok';}}catch(e){}return 'manual';})()",
+                new ValueCallback<String>() {
+                    public void onReceiveValue(String value) {
+                        if (value != null && value.contains("manual")) {
+                            exiting = true;
+                            finish();
+                        }
+                    }
+                });
+        webView.postDelayed(new Runnable() {
+            public void run() {
+                if (!exiting) {
+                    exiting = true;
+                    finish();
+                }
+            }
+        }, 2500);
     }
 
     @Override
