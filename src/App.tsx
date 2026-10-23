@@ -720,15 +720,17 @@ export default function App() {
   async function printJournal() {
     const current = projectRef.current;
     const [{ buildJournalPdf }, { loadJournalFonts }] = await Promise.all([import('./export-pdf'), import('./export-fonts')]);
-    const bytes = await buildJournalPdf(current, await loadJournalFonts(), { photos: await collectPhotos(current), plans: await collectPlans(current) });
+    const plans = await collectPlans(current, (done, total) => { if (total > 1) setMessage(`Планы: ${done} из ${total}…`); });
+    const bytes = await buildJournalPdf(current, await loadJournalFonts(), { photos: await collectPhotos(current), plans: plans.plans });
     nativeBridge()?.printPdf?.(current.name, bytesToBase64(bytes));
-    setMessage('Открыт системный диалог печати: выберите принтер или «Сохранить в PDF».');
+    setMessage(`Открыт системный диалог печати: выберите принтер или «Сохранить в PDF».${plans.warnings.length ? ` ${plans.warnings.join(' ')}` : ''}`);
   }
   async function download(kind: 'csv' | 'xlsx' | 'pdf' | 'backup') {
     if (staticMode) {
       const current = projectRef.current;
       const fileName = `${current.name}.${kind === 'backup' ? 'json' : kind}`;
       let blob: Blob;
+      let planWarnings: string[] = [];
       if (kind === 'xlsx') {
         // Офлайн-таблицы: тот же набор листов, что отдаёт серверная версия.
         const { buildWorkbook } = await import('./export-xlsx');
@@ -736,7 +738,9 @@ export default function App() {
       } else if (kind === 'pdf') {
         // Офлайн-PDF: pdf-lib + встроенный PT Sans, без сервера и системных шрифтов.
         const [{ buildJournalPdf }, { loadJournalFonts }] = await Promise.all([import('./export-pdf'), import('./export-fonts')]);
-        blob = new Blob([await buildJournalPdf(current, await loadJournalFonts(), { photos: await collectPhotos(current), plans: await collectPlans(current) }) as unknown as BlobPart], { type: 'application/pdf' });
+        const plans = await collectPlans(current, (done, total) => { if (total > 1) setMessage(`Планы: ${done} из ${total}…`); });
+        planWarnings = plans.warnings;
+        blob = new Blob([await buildJournalPdf(current, await loadJournalFonts(), { photos: await collectPhotos(current), plans: plans.plans }) as unknown as BlobPart], { type: 'application/pdf' });
       } else if (kind === 'backup') {
         const ids = [...new Set(current.floors.flatMap(f => f.pdfId && f.pdfId.startsWith('idb:') ? [f.pdfId.slice(4)] : []))];
         const pdfs: { id: string; name: string; dataBase64: string }[] = [];
@@ -762,13 +766,14 @@ export default function App() {
         pdf: 'Журнал PDF сохранён',
         backup: 'Резервная копия сохранена',
       };
+      const warning = planWarnings.length ? ` ${planWarnings.join(' ')}` : '';
       const savedPath = await saveBlobOnDevice(fileName, blob);
       if (savedPath) {
-        setMessage(`${done[kind]}: ${savedPath}`);
+        setMessage(`${done[kind]}: ${savedPath}${warning}`);
         return;
       }
       const link = document.createElement('a'); link.href = URL.createObjectURL(blob); link.download = fileName; link.click(); setTimeout(() => URL.revokeObjectURL(link.href), 1000);
-      setMessage(`${done[kind].replace('сохранён', 'готов').replace('сохранены', 'готовы')}.`);
+      setMessage(`${done[kind].replace('сохранён', 'готов').replace('сохранены', 'готовы')}.${warning}`);
       return;
     }
     const current = await saveProject();

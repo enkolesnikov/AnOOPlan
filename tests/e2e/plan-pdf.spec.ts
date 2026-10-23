@@ -32,9 +32,11 @@ test('PDF-подложка попадает в лист «План» выгру�
 
   // Пурпурный PDF: цвет легко отличить от трасс (#008e94) и оборудования (#122936).
   const source = await PDFDocument.create();
-  const sourcePage = source.addPage([1000, 700]);
+  const sourcePage = await source.addPage([1000, 700]);
   sourcePage.drawRectangle({ x: 0, y: 0, width: 1000, height: 700, color: rgb(1, 0, 1) });
   sourcePage.drawRectangle({ x: 100, y: 100, width: 300, height: 200, color: rgb(0, 1, 0) });
+  const secondPage = await source.addPage([1000, 700]);
+  secondPage.drawRectangle({ x: 0, y: 0, width: 1000, height: 700, color: rgb(0, 1, 1) });
   const sourceBytes = Buffer.from(await source.save());
 
   await page.locator('input[type=file][accept*="pdf"]').setInputFiles({
@@ -68,12 +70,12 @@ test('PDF-подложка попадает в лист «План» выгру�
   const bytes = readFileSync(downloadedPath!);
   expect(bytes.subarray(0, 5).toString()).toBe('%PDF-');
   const exported = await PDFDocument.load(bytes);
-  expect(exported.getPageCount()).toBeGreaterThanOrEqual(2);
+  expect(exported.getPageCount()).toBeGreaterThanOrEqual(3);
 
   const result = await page.evaluate(async () => {
     const state = window as Window & { __planBlobs?: string[]; __planError?: string };
     const blobs = state.__planBlobs || [];
-    const stats: { width: number; height: number; magenta: number; nonWhite: number }[] = [];
+    const stats: { width: number; height: number; magenta: number; cyan: number; nonWhite: number }[] = [];
     for (const url of blobs) {
       const image = new Image();
       image.src = url;
@@ -85,21 +87,24 @@ test('PDF-подложка попадает в лист «План» выгру�
       context.drawImage(image, 0, 0);
       const data = context.getImageData(0, 0, canvas.width, canvas.height).data;
       let magenta = 0;
+      let cyan = 0;
       let nonWhite = 0;
       for (let index = 0; index < data.length; index += 4) {
         const red = data[index];
         const green = data[index + 1];
         const blue = data[index + 2];
         if (red > 200 && blue > 200 && green < 80) magenta += 1;
+        if (blue > 200 && green > 200 && red < 80) cyan += 1;
         if (red < 240 || green < 240 || blue < 240) nonWhite += 1;
       }
-      stats.push({ width: canvas.width, height: canvas.height, magenta, nonWhite });
+      stats.push({ width: canvas.width, height: canvas.height, magenta, cyan, nonWhite });
     }
     return { count: blobs.length, stats, error: state.__planError || null };
   });
 
   expect(result.error).toBeNull();
-  expect(result.count).toBeGreaterThanOrEqual(2);
+  expect(result.count).toBeGreaterThanOrEqual(3);
   expect(result.stats.some(item => item.magenta > 100_000)).toBeTruthy();
+  expect(result.stats.some(item => item.cyan > 100_000)).toBeTruthy();
   expect(pageErrors).toEqual([]);
 });
