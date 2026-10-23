@@ -66,6 +66,25 @@ async function idbDelete(key: string): Promise<void> {
     tx.onerror = () => reject(tx.error);
   });
 }
+// Нативная оболочка Android (AnOOPlan) подключает мост AnOOPlanNative:
+// через него экспортированные файлы попадают в «Загрузки/AnOOPlan».
+type NativeBridgeApi = { platform?: () => string; saveFile?: (name: string, base64: string, mime: string) => string };
+const nativeBridge = (): NativeBridgeApi | null => (window as unknown as { AnOOPlanNative?: NativeBridgeApi }).AnOOPlanNative ?? null;
+const isNativeApp = (): boolean => typeof nativeBridge()?.saveFile === 'function';
+function bytesToBase64(bytes: Uint8Array): string {
+  let binary = '';
+  const chunk = 0x4000;
+  for (let i = 0; i < bytes.length; i += chunk) binary += String.fromCharCode(...bytes.subarray(i, i + chunk));
+  return btoa(binary);
+}
+async function saveBlobOnDevice(name: string, blob: Blob): Promise<string | null> {
+  const bridge = nativeBridge();
+  if (typeof bridge?.saveFile !== 'function') return null;
+  const base64 = bytesToBase64(new Uint8Array(await blob.arrayBuffer()));
+  const result = bridge.saveFile(name, base64, blob.type || 'application/octet-stream');
+  if (result.startsWith('ok:')) return result.slice(3);
+  throw new Error(result.replace(/^err:\s*/, '') || 'Не удалось сохранить файл на устройстве');
+}
 
 export default function App() {
   const [project, setProject] = useState<Project>(freshProject);
@@ -456,7 +475,7 @@ export default function App() {
   }
   async function download(kind: 'csv' | 'xlsx' | 'pdf' | 'backup') {
     if (staticMode) {
-      if (kind === 'xlsx' || kind === 'pdf') { setError('Экспорт XLSX/PDF доступен только в локальной версии. Используйте CSV.'); return; }
+      if (kind === 'xlsx' || kind === 'pdf') { setError(isNativeApp() ? 'В мобильной версии доступны экспорт CSV и JSON-копия. XLSX и PDF формируются в настольной версии.' : 'Экспорт XLSX/PDF доступен только в локальной версии. Используйте CSV.'); return; }
       const current = projectRef.current;
       let text: string;
       if (kind === 'backup') {
@@ -472,7 +491,13 @@ export default function App() {
       }
       const type = kind === 'backup' ? 'application/json' : 'text/csv;charset=utf-8';
       const blob = new Blob([text], { type });
-      const link = document.createElement('a'); link.href = URL.createObjectURL(blob); link.download = `${current.name}.${kind === 'backup' ? 'json' : 'csv'}`; link.click(); setTimeout(() => URL.revokeObjectURL(link.href), 1000);
+      const fileName = `${current.name}.${kind === 'backup' ? 'json' : 'csv'}`;
+      const savedPath = await saveBlobOnDevice(fileName, blob);
+      if (savedPath) {
+        setMessage(kind === 'backup' ? `Резервная копия сохранена: ${savedPath}` : `Экспорт CSV сохранён: ${savedPath}`);
+        return;
+      }
+      const link = document.createElement('a'); link.href = URL.createObjectURL(blob); link.download = fileName; link.click(); setTimeout(() => URL.revokeObjectURL(link.href), 1000);
       setMessage(kind === 'backup' ? 'Резервная копия выгружена.' : 'Экспорт CSV готов.');
       return;
     }
@@ -485,7 +510,7 @@ export default function App() {
   const toolHints: Record<Tool, string> = { select: 'Выберите объект • тяните оборудование и узлы трассы', pan: 'Перетаскивайте план • колесо — масштаб', equipment: 'Клик на плане — добавить оборудование', route: 'Клики — вершины • Enter — завершить • Esc — отменить', calibrate: 'Укажите две точки известного размера на PDF', cable: 'Выбирайте сегменты по порядку от начала к концу' };
 
   return <div className="app-shell">
-    <header className="topbar"><button className="menu-toggle" aria-label="Меню" onClick={() => setMenuOpen(v => !v)}>☰</button><div className="brand"><span className="brand-mark">C</span><div>CablePlan<small>кабельный план</small></div></div><div className="project-heading"><input aria-label="Название проекта" value={project.name} onChange={e => mutate(p => { p.name = e.target.value; })} /><span className={dirty ? 'save-indicator dirty' : 'save-indicator'}>{dirty ? '● Не сохранён' : '● Сохранён'}</span></div><div className="top-actions"><button className="desk-only" onClick={() => { if (mayLeave()) load(freshProject(), false); }}>Новый</button><button className="desk-only" disabled={busy} onClick={() => void run(async () => { setProjects(staticMode ? lsProjects().map(p => ({ id: p.id, name: p.name, updatedAt: p.updatedAt })) : await api('/api/projects')); })}>Открыть</button><button disabled={busy} title="Загрузить ранее экспортированный JSON-проект" onClick={() => restoreInput.current?.click()}>Загрузить</button><button className="primary" disabled={busy} onClick={() => void run(async () => { await saveProject(); })}>{busy ? 'Подождите…' : 'Сохранить'}</button></div></header>
+    <header className="topbar"><button className="menu-toggle" aria-label="Меню" onClick={() => setMenuOpen(v => !v)}>☰</button><div className="brand"><span className="brand-mark">A</span><div>AnOOPlan<small>кабельный план</small></div></div><div className="project-heading"><input aria-label="Название проекта" value={project.name} onChange={e => mutate(p => { p.name = e.target.value; })} /><span className={dirty ? 'save-indicator dirty' : 'save-indicator'}>{dirty ? '● Не сохранён' : '● Сохранён'}</span></div><div className="top-actions"><button className="desk-only" onClick={() => { if (mayLeave()) load(freshProject(), false); }}>Новый</button><button className="desk-only" disabled={busy} onClick={() => void run(async () => { setProjects(staticMode ? lsProjects().map(p => ({ id: p.id, name: p.name, updatedAt: p.updatedAt })) : await api('/api/projects')); })}>Открыть</button><button disabled={busy} title="Загрузить ранее экспортированный JSON-проект" onClick={() => restoreInput.current?.click()}>Загрузить</button><button className="primary" disabled={busy} onClick={() => void run(async () => { await saveProject(); })}>{busy ? 'Подождите…' : 'Сохранить'}</button></div></header>
     <div className="commandbar"><div className="view-tabs">{([['plan', 'План'], ['journal', 'Журнал'], ['specs', 'Ведомости']] as const).map(([id, label]) => <button key={id} className={view === id ? 'active' : ''} onClick={() => setView(id)}>{label}</button>)}</div><div className="command-actions"><button className="desk-only" onClick={() => { if (mayLeave()) { load(createDemoProject(), false); setMessage('Учебный проект: синтетические данные, не рабочая документация.'); } }}>Учебный проект</button><details className="export-menu"><summary>Экспорт / копия ↓</summary><div>{(['csv', 'xlsx', 'pdf', 'backup'] as const).map(format => <button key={format} disabled={busy} onClick={() => void run(() => download(format))}>{format === 'backup' ? 'JSON с исходными PDF' : format.toUpperCase()}</button>)}<button onClick={() => restoreInput.current?.click()}>Восстановить JSON…</button></div></details></div></div>
     {error && <div className="banner error" role="alert"><strong>Не удалось выполнить действие.</strong> {error}<button onClick={() => setError('')}>×</button></div>}
     <div className="workspace"><aside className={`sidebar ${menuOpen ? 'open' : ''}`}><div className="sidebar-title">Структура проекта <span>{project.floors.length} эт.</span></div><div className="structure-tabs">{([['floors', 'Этажи'], ['equipment', 'Оборуд.'], ['routes', 'Трассы'], ['cables', 'Кабели']] as const).map(([id, name]) => <button className={tab === id ? 'active' : ''} key={id} onClick={() => setTab(id)}>{name}<span>{project[id].length}</span></button>)}</div>
@@ -501,7 +526,7 @@ export default function App() {
       {pdfError && <div className="banner error">{pdfError}</div>}
       <div className={`drawing-stage tool-${tool}`} ref={stage} onPointerDown={pointerDown} onPointerMove={pointerMove} onPointerUp={pointerUp} onPointerCancel={pointerUp} onWheel={e => { e.preventDefault(); changeZoom(zoom * (e.deltaY < 0 ? 1.1 : 1 / 1.1)); }}>
         {floor && <div className="drawing-sheet" style={{ width: floor.width, height: floor.height, transform: `translate(${pan.x}px,${pan.y}px) scale(${zoom})` }}>
-          {floor.pdfId ? <canvas ref={canvas} style={{ width: '100%', height: '100%' }} /> : <div className="no-pdf"><span>CablePlan / {floor.name.toUpperCase()}</span><p>Рабочее поле без PDF</p><small>{project.name.includes('Учеб') ? 'Синтетическая схема для проверки расчёта' : 'Загрузите план PDF и задайте масштаб по двум точкам'}</small></div>}
+          {floor.pdfId ? <canvas ref={canvas} style={{ width: '100%', height: '100%' }} /> : <div className="no-pdf"><span>AnOOPlan / {floor.name.toUpperCase()}</span><p>Рабочее поле без PDF</p><small>{project.name.includes('Учеб') ? 'Синтетическая схема для проверки расчёта' : 'Загрузите план PDF и задайте масштаб по двум точкам'}</small></div>}
           <svg className="plan-overlay" width={floor.width} height={floor.height} viewBox={`0 0 ${floor.width} ${floor.height}`}>
             <defs><pattern id="drawing-grid" width={gridSize} height={gridSize} patternUnits="userSpaceOnUse"><path d={`M ${gridSize} 0 L 0 0 0 ${gridSize}`} fill="none" stroke="#63828e" strokeOpacity=".19" strokeWidth={.5 / zoom} /></pattern></defs>
             {grid && <rect width="100%" height="100%" fill="url(#drawing-grid)" pointerEvents="none" />}
@@ -535,7 +560,7 @@ export default function App() {
     {(menuOpen || propsOpen) && <div className="scrim" onClick={() => { setMenuOpen(false); setPropsOpen(false); }} />}
     <button className={`props-fab ${propsOpen ? 'active' : ''}`} aria-label="Свойства" onClick={() => setPropsOpen(v => !v)}>⚙</button>
     <input hidden ref={upload} type="file" accept="application/pdf,.pdf" onChange={e => { const file = e.target.files?.[0]; if (file) void run(() => uploadPdf(file)); e.target.value = ''; }} />
-    <input hidden ref={restoreInput} type="file" accept="application/json,.json" onChange={e => { const file = e.target.files?.[0]; if (file && mayLeave()) void run(async () => { const parsed = JSON.parse(await file.text()) as Record<string, unknown>; if (staticMode) { const proj = (parsed && typeof parsed === 'object' && 'project' in parsed) ? parsed.project : parsed; if (proj && (proj as Partial<Project>).schemaVersion === 1 && Array.isArray((proj as Partial<Project>).floors)) { const rawPdfs = (parsed && typeof parsed === 'object' && 'pdfs' in parsed && Array.isArray(parsed.pdfs)) ? parsed.pdfs as { id: string; dataBase64?: string }[] : []; for (const pdf of rawPdfs) { if (pdf && pdf.id && pdf.dataBase64) { const bytes = Uint8Array.from(atob(pdf.dataBase64), c => c.charCodeAt(0)); await idbPut(pdf.id.replace(/^idb:/, ''), new Blob([bytes], { type: 'application/pdf' })); } } load(proj as unknown as Project, true); setMessage('Проект загружен из файла.'); } else { setError('Файл не является проектом CablePlan.'); } } else if (parsed && typeof parsed === 'object' && 'project' in parsed) { const result = await api<Project>('/api/restore', jsonOptions('POST', parsed)); load(result, true); setMessage('Резервная копия с PDF восстановлена.'); } else if (parsed && (parsed as Partial<Project>).schemaVersion === 1 && Array.isArray((parsed as Partial<Project>).floors)) { load(parsed as unknown as Project, false); setMessage('Проект загружен из файла. Подложку PDF при необходимости загрузите заново.'); } else { setError('Файл не является проектом или резервной копией CablePlan.'); } }); e.target.value = ''; }} />
+    <input hidden ref={restoreInput} type="file" accept="application/json,.json" onChange={e => { const file = e.target.files?.[0]; if (file && mayLeave()) void run(async () => { const parsed = JSON.parse(await file.text()) as Record<string, unknown>; if (staticMode) { const proj = (parsed && typeof parsed === 'object' && 'project' in parsed) ? parsed.project : parsed; if (proj && (proj as Partial<Project>).schemaVersion === 1 && Array.isArray((proj as Partial<Project>).floors)) { const rawPdfs = (parsed && typeof parsed === 'object' && 'pdfs' in parsed && Array.isArray(parsed.pdfs)) ? parsed.pdfs as { id: string; dataBase64?: string }[] : []; for (const pdf of rawPdfs) { if (pdf && pdf.id && pdf.dataBase64) { const bytes = Uint8Array.from(atob(pdf.dataBase64), c => c.charCodeAt(0)); await idbPut(pdf.id.replace(/^idb:/, ''), new Blob([bytes], { type: 'application/pdf' })); } } load(proj as unknown as Project, true); setMessage('Проект загружен из файла.'); } else { setError('Файл не является проектом AnOOPlan.'); } } else if (parsed && typeof parsed === 'object' && 'project' in parsed) { const result = await api<Project>('/api/restore', jsonOptions('POST', parsed)); load(result, true); setMessage('Резервная копия с PDF восстановлена.'); } else if (parsed && (parsed as Partial<Project>).schemaVersion === 1 && Array.isArray((parsed as Partial<Project>).floors)) { load(parsed as unknown as Project, false); setMessage('Проект загружен из файла. Подложку PDF при необходимости загрузите заново.'); } else { setError('Файл не является проектом или резервной копией AnOOPlan.'); } }); e.target.value = ''; }} />
     {projects && <div className="modal-backdrop"><section className="modal"><div className="modal-heading"><h2>Открыть проект</h2><button onClick={() => setProjects(null)}>×</button></div>{projects.length ? projects.map(p => <div className="project-row" key={p.id}><button className="project-option" disabled={busy} onClick={() => { if (mayLeave()) void run(async () => { const result = staticMode ? lsProjects().find(x => x.id === p.id)! : await api<Project>(`/api/projects/${p.id}`); load(result, true); setProjects(null); setMessage(`Проект «${result.name}» открыт.`); }); }}><strong>{p.name}</strong><small>{new Date(p.updatedAt).toLocaleString('ru-RU')}</small><span>→</span></button><button className="project-delete" disabled={busy} title="Удалить проект" onClick={() => void run(() => deleteProject(p.id, p.name))}>🗑</button></div>) : <p className="help">Сохранённых проектов пока нет.</p>}</section></div>}
   </div>;
 }
