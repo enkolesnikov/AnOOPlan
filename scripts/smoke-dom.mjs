@@ -244,16 +244,18 @@ if (pdfEntry) {
   const bytes = Buffer.from(pdfEntry.base64, 'base64');
   check(bytes.subarray(0, 5).toString() === '%PDF-', 'файл начинается с %PDF-');
   const pdfjs = await import('pdfjs-dist/legacy/build/pdf.mjs');
-  const document = await pdfjs.getDocument({ data: new Uint8Array(bytes), useSystemFonts: false }).promise;
+  const task = pdfjs.getDocument({ data: new Uint8Array(bytes), useSystemFonts: false });
+  const document = await task.promise;
   let text = '';
   for (let index = 1; index <= document.numPages; index += 1) {
     const page = await document.getPage(index);
     const content = await page.getTextContent();
     text += content.items.map(item => ('str' in item ? item.str : '')).join(' ') + '\n';
   }
-  await document.destroy();
+  const pages = document.numPages;
+  await task.destroy();
   check(text.includes('Кабельный журнал') && text.includes('Итого, м'), 'в тексте PDF есть журнал и колонка итога');
-  check(document.numPages >= 1, `страниц в PDF: ${document.numPages}`);
+  check(pages >= 1, `страниц в PDF: ${pages}`);
 }
 check(/Download\/AnOOPlan/.test(bodyText()), 'путь сохранения показан в интерфейсе');
 
@@ -384,14 +386,15 @@ if (printButton) {
     check(bytes.subarray(0, 5).toString() === '%PDF-', 'в печать ушёл корректный PDF');
     check(printCalls[0].name.length > 0, `имя задания: ${printCalls[0].name}`);
     const pdfjs = await import('pdfjs-dist/legacy/build/pdf.mjs');
-    const document = await pdfjs.getDocument({ data: new Uint8Array(bytes), useSystemFonts: false }).promise;
+    const task = pdfjs.getDocument({ data: new Uint8Array(bytes), useSystemFonts: false });
+    const document = await task.promise;
     let text = '';
     for (let index = 1; index <= document.numPages; index += 1) {
       const page = await document.getPage(index);
       const content = await page.getTextContent();
       text += content.items.map(item => ('str' in item ? item.str : '')).join(' ') + '\n';
     }
-    await document.destroy();
+    await task.destroy();
     check(text.includes('Составил') && text.includes('Иванов И.И.'), 'подпись составителя попала в PDF');
     check(text.includes('Итого кабеля по журналу'), 'итог по смете попал в PDF');
   }

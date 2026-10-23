@@ -432,7 +432,7 @@ export default function App() {
           const base64 = pdfId.slice(pdfId.indexOf(',') + 1);
           loadingTask = pdfjs.getDocument({ data: Uint8Array.from(atob(base64), c => c.charCodeAt(0)) });
         } else {
-          loadingTask = pdfjs.getDocument(`/api/pdfs/${pdfId}`);
+          loadingTask = pdfjs.getDocument({ url: `/api/pdfs/${pdfId}` });
         }
         const document = await loadingTask.promise; if (cancelled) return; setPdfPages(document.numPages);
         const page = await document.getPage(Math.min(Math.max(1, currentFloor.page), document.numPages)); if (cancelled) return;
@@ -1002,7 +1002,7 @@ export default function App() {
           const stored = floorItem.pdfId.startsWith('idb:') ? await idbGet(floorItem.pdfId.slice(4)) : null;
           const loading = stored
             ? pdfjs.getDocument({ data: await stored.arrayBuffer() })
-            : pdfjs.getDocument(`/api/pdfs/${floorItem.pdfId}`);
+            : pdfjs.getDocument({ url: `/api/pdfs/${floorItem.pdfId}` });
           const pdfDocument = await loading.promise;
           const page = await pdfDocument.getPage(Math.min(Math.max(1, floorItem.page), pdfDocument.numPages));
           const viewport = page.getViewport({ scale: width / page.getViewport({ scale: 1 }).width });
@@ -1012,7 +1012,7 @@ export default function App() {
           const layerContext = layer.getContext('2d');
           if (layerContext) await page.render({ canvasContext: layerContext, viewport, canvas: layer }).promise;
           context.drawImage(layer, 0, 0, width, height);
-          void pdfDocument.destroy();
+          void loading.destroy();
         } catch { /* план выгружается без подложки */ }
       }
       const image = new Image();

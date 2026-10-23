@@ -28,15 +28,17 @@ const emptyProject = (): Project => ({
 
 async function pdfText(bytes: Uint8Array): Promise<{ text: string; pages: number }> {
   const pdfjs = await import('pdfjs-dist/legacy/build/pdf.mjs');
-  const document = await pdfjs.getDocument({ data: new Uint8Array(bytes), useSystemFonts: false }).promise;
+  const task = pdfjs.getDocument({ data: new Uint8Array(bytes), useSystemFonts: false });
+  const document = await task.promise;
   let text = '';
   for (let index = 1; index <= document.numPages; index += 1) {
     const page = await document.getPage(index);
     const content = await page.getTextContent();
     text += content.items.map(item => ('str' in item ? item.str : '')).join(' ') + '\n';
   }
-  await document.destroy();
-  return { text, pages: document.numPages };
+  const pages = document.numPages;
+  await task.destroy();
+  return { text, pages };
 }
 
 test('листы выгрузки совпадают по набору с серверными', () => {
