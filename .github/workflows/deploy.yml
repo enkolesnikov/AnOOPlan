@@ -25,7 +25,7 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm test
-      - run: BASE_URL=/ooplan/ npm run build
+      - run: BASE_URL=/AnOOPlan/ npm run build
       - uses: actions/upload-pages-artifact@v3
         with:
           path: dist
