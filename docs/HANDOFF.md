@@ -12,7 +12,7 @@
 - Репозиторий: <https://github.com/enkolesnikov/AnOOPlan>
 - Релизы с APK: <https://github.com/enkolesnikov/AnOOPlan/releases>
 - Веб-версия (GitHub Pages): <https://enkolesnikov.github.io/AnOOPlan/>
-- Текущая версия: **1.8.1**, versionCode 12, APK ~1,8 МБ, `com.anooplan.app`, minSdk 24, targetSdk 35
+- Текущая версия: **1.8.2**, versionCode 13, APK ~1,8 МБ, `com.anooplan.app`, minSdk 24, targetSdk 35
 
 ## Стек и устройство
 
@@ -78,6 +78,8 @@ bash scripts/fetch-tools.sh # скачать platform-35, build-tools 35.0.0 и 
 - **1.8.0** — экран «О программе / Лицензии» с полным текстом OFL для PT Sans и списком компонентов.
 - **1.8.1** — `pdfjs-dist` 6.4.299 (закрыта high-уязвимость GHSA-hq66-cqwq-w95j), переход на API 6:
   `getDocument({url})` и `loadingTask.destroy()`.
+- **1.8.2** — исправлен edge-to-edge на Android 15: insets применяются к `FrameLayout`-контейнеру,
+  потому что WebView игнорирует собственный padding. Проверено на эмуляторе Android 15.
 
 ## Известные проблемы и техдолг (P0 → P2)
 

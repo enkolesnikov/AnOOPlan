@@ -42,4 +42,8 @@ test('Android 15 edge-to-edge: MainActivity учитывает системны�
   assert.match(activity, /WindowInsets\.Type\.systemBars\(\)/);
   assert.match(activity, /WindowInsets\.Type\.ime\(\)/);
   assert.match(activity, /setPadding\(/);
+  // WebView игнорирует padding, поэтому insets применяются к FrameLayout-контейнеру.
+  assert.match(activity, /FrameLayout root = new FrameLayout/);
+  assert.match(activity, /root\.addView\(webView/);
+  assert.match(activity, /setContentView\(root\)/);
 });

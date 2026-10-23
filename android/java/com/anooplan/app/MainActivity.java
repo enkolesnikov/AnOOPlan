@@ -30,6 +30,7 @@ import android.webkit.WebChromeClient;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.widget.EditText;
+import android.widget.FrameLayout;
 import android.widget.Toast;
 
 /**
@@ -70,7 +71,12 @@ public class MainActivity extends Activity implements NativeBridge.Host {
 
         webView = new WebView(this);
         webView.setBackgroundColor(Color.parseColor("#122936"));
-        webView.setOnApplyWindowInsetsListener(new View.OnApplyWindowInsetsListener() {
+
+        // WebView игнорирует padding для своего содержимого, поэтому отступы edge-to-edge
+        // задаём контейнеру: он уменьшает область, в которую WebView раскладывает страницу.
+        FrameLayout root = new FrameLayout(this);
+        root.setBackgroundColor(Color.parseColor("#122936"));
+        root.setOnApplyWindowInsetsListener(new View.OnApplyWindowInsetsListener() {
             @Override
             public WindowInsets onApplyWindowInsets(View view, WindowInsets insets) {
                 if (Build.VERSION.SDK_INT >= 35) {
@@ -122,8 +128,10 @@ public class MainActivity extends Activity implements NativeBridge.Host {
             }
         });
 
-        setContentView(webView);
-        webView.requestApplyInsets();
+        root.addView(webView, new FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT));
+        setContentView(root);
+        root.requestApplyInsets();
         webView.loadUrl(AssetServer.START_URL);
     }
 
