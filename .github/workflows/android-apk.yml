@@ -21,14 +21,28 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Инструменты упаковки APK
-        run: sudo apt-get update && sudo apt-get install -y aapt zipalign apksigner zip python3
+      # На образах GitHub Android SDK уже установлен: берём из него build-tools и платформу,
+      # поэтому apt-get и скачивание SDK не нужны.
+      - name: Инструменты Android из образа раннера
+        run: |
+          set -euo pipefail
+          SDK="${ANDROID_HOME:-/usr/local/lib/android/sdk}"
+          BT="$(ls -d "$SDK"/build-tools/* | sort -V | tail -1)"
+          PLATFORM="$(ls -d "$SDK"/platforms/android-3* | sort -V | tail -1)"
+          {
+            echo "ANDROID_JAR=$PLATFORM/android.jar"
+            echo "AAPT=$BT/aapt"
+            echo "ZIPALIGN=$BT/zipalign"
+            echo "APKSIGNER=$BT/apksigner"
+            echo "D8_CMD=$BT/d8"
+          } >> "$GITHUB_ENV"
+          echo "build-tools: $BT"
+          echo "platform:    $PLATFORM"
+          "$BT/aapt" version
+          "$BT/d8" --version || true
 
       - name: Зависимости
         run: npm ci
-
-      - name: Android SDK platform и R8
-        run: bash scripts/fetch-tools.sh
 
       - name: Тесты
         run: npm test

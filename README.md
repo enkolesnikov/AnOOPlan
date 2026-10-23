@@ -5,6 +5,16 @@
 
 Загрузите PDF-план, откалибруйте масштаб по двум точкам, расставьте оборудование (камеры, шкафы), начертите трассы (лоток, гофра, стояк) и привяжите к ним кабели. Программа сама проложит маршрут между устройствами, посчитает длины с учётом высот прокладки и запасов и сформирует кабельный журнал и ведомости.
 
+## Скачать и установить
+
+[![Скачать APK](https://img.shields.io/badge/%D1%81%D0%BA%D0%B0%D1%87%D0%B0%D1%82%D1%8C-APK-2ea043?logo=android&logoColor=white)](https://github.com/enkolesnikov/AnOOPlan/releases/latest)
+
+- **APK:** [AnOOPlan-1.0.0.apk](https://github.com/enkolesnikov/AnOOPlan/releases/download/v1.0.0/AnOOPlan-1.0.0.apk) — 614 КБ, Android 7.0+ (minSdk 24), без интернета;
+- **Веб-версия:** [enkolesnikov.github.io/AnOOPlan](https://enkolesnikov.github.io/AnOOPlan/);
+- **Исходный проект:** [enkolesnikov/ooplan](https://github.com/enkolesnikov/ooplan).
+
+Установка: скачайте APK на телефон → откройте файл → «Установить» (разрешите установку из этого источника для браузера или файлового менеджера).
+
 ## Возможности
 
 **Работа с планами**
@@ -81,6 +91,8 @@ bash scripts/build-apk.sh     # результат: build/AnOOPlan-1.0.0.apk
 
 Нужны `JDK 17+`, `aapt`, `zipalign`, `apksigner`, `zip`, Node.js и Python 3 (генерация иконок).
 Версию можно переопределить: `VERSION_NAME=1.1.0 VERSION_CODE=2 bash scripts/build-apk.sh`.
+Если инструменты лежат в другом месте, их пути задаются переменными `ANDROID_JAR`, `AAPT`, `ZIPALIGN`, `APKSIGNER`, `D8_CMD` — именно так собирает CI из предустановленного Android SDK раннера
+([workflow](.github/workflows/android-apk.yml), результат — артефакт `AnOOPlan-apk`, подписанный временным ключом CI).
 
 Подпись: при первой сборке создаётся `keystore/anooplan.jks` (пароль — в `keystore/README.txt`).
 Этот файл и пароль нужно сохранить: без них нельзя выпустить обновление поверх установленного приложения.
