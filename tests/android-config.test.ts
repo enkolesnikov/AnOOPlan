@@ -21,7 +21,9 @@ test('сборка APK использует targetSdk 35 и официальны
   assert.match(script, /TARGET_SDK="\$\{TARGET_SDK:-35\}"/);
   assert.match(script, /build-tools\/35\.0\.0/);
   assert.match(script, /--target-sdk-version "\$TARGET_SDK"/);
-  assert.match(script, /VERSION_NAME="\$\{VERSION_NAME:-1\.7\.1\}"/);
+  const version = JSON.parse(read('package.json')).version;
+  assert.ok(script.includes(`VERSION_NAME="\${VERSION_NAME:-${version}}"`));
+  assert.ok(script.includes(`VERSION_CODE="\${VERSION_CODE:-`));
 });
 
 test('fetch-tools скачивает platform 35 и build-tools 35', () => {

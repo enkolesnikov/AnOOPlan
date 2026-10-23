@@ -560,3 +560,25 @@ input[inputmode="decimal"] { text-align: left; }
   }
   .drawing-toolbar .tool-group.history { display: none; }
 }
+
+/* ── О программе и лицензии ─────────────────────────────────────────── */
+.sidebar-about { padding: 8px 10px; border-top: 1px solid var(--border-soft); }
+.sidebar-about button { width: 100%; text-align: left; font-size: 13px; color: var(--muted); background: transparent; border-color: transparent; }
+.sidebar-about button:hover { background: var(--surface-3); color: var(--accent-2); }
+.about-sheet { max-width: 640px; }
+.about-body { padding: 12px 2px 4px; }
+.about-title { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
+.about-title strong { display: block; font-size: 18px; }
+.about-title small { color: var(--muted); }
+.about-body h3 { margin: 18px 0 6px; font-size: 14px; }
+.about-body p { margin: 0 0 10px; }
+.about-copy, .about-help { color: var(--muted); font-size: 12px; }
+.license-text {
+  max-height: 280px; overflow: auto; white-space: pre-wrap;
+  background: var(--surface-3); border: 1px solid var(--border-soft); border-radius: 8px;
+  padding: 10px; font-size: 11px; line-height: 1.4;
+}
+.component-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.component-list li { display: flex; justify-content: space-between; gap: 10px; font-size: 13px; border-bottom: 1px dashed var(--border-soft); padding-bottom: 4px; }
+.component-list i { color: var(--muted); font-style: normal; text-align: right; }
+@media (max-width: 1023px) { .about-sheet { max-height: 90vh; } }

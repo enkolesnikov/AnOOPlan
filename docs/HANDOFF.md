@@ -12,7 +12,7 @@
 - Репозиторий: <https://github.com/enkolesnikov/AnOOPlan>
 - Релизы с APK: <https://github.com/enkolesnikov/AnOOPlan/releases>
 - Веб-версия (GitHub Pages): <https://enkolesnikov.github.io/AnOOPlan/>
-- Текущая версия: **1.7.1**, versionCode 10, APK ~1,8 МБ, `com.anooplan.app`, minSdk 24, targetSdk 35
+- Текущая версия: **1.8.0**, versionCode 11, APK ~1,8 МБ, `com.anooplan.app`, minSdk 24, targetSdk 35
 
 ## Стек и устройство
 
@@ -26,11 +26,11 @@
 | Рендер больших листов | `src/render-plan.ts` | бюджет 12 Мпикс, рендер видимой области для A1/A0 |
 | Оболочка Android | `android/java/com/anooplan/app/` | `MainActivity`, `AssetServer`, `NativeBridge`, `PdfPrinter` |
 | Сборка APK | `scripts/build-apk.sh` + `scripts/fetch-tools.sh` | aapt + javac + d8 + zipalign + apksigner, **без Gradle** |
-| Тесты | `tests/*.test.ts`, `scripts/smoke-dom.mjs` | 66 юнит-тестов + смоук интерфейса в happy-dom |
+| Тесты | `tests/*.test.ts`, `scripts/smoke-dom.mjs` | 68 юнит-тестов + смоук интерфейса в happy-dom |
 
 ### Ключевые решения (не пересматривать без причины)
 
-1. **WebView вместо Kotlin-переписывания.** Одна кодовая база для сайта и APK, 66 тестов, быстрые итерации.
+1. **WebView вместо Kotlin-переписывания.** Одна кодовая база для сайта и APK, 68 тестов, быстрые итерации.
    Kotlin оправдан только при ежедневном рисовании пером и листах A1+ — тогда начинать с порта `engine.ts` в KMP.
 2. **Статика отдаётся по origin `https://appassets.local/`** через `AssetServer.shouldInterceptRequest`.
    На `file://` не работают IndexedDB и `crypto.randomUUID()`. Запросы `/api/*` получают 404 → приложение
@@ -44,7 +44,7 @@
 
 ```bash
 npm ci                     # зависимости (Node 22.5+, проверено на 24)
-npm test                   # 66 тестов
+npm test                   # 68 тестов
 npm run smoke              # смоук интерфейса (happy-dom)
 npm run build              # tsc --noEmit + vite build
 npm run build:apk          # tools/android.jar + build-tools/35.0.0 + r8.jar → build/AnOOPlan-<версия>.apk
@@ -75,12 +75,12 @@ bash scripts/fetch-tools.sh # скачать platform-35, build-tools 35.0.0 и 
   экран «Обновите WebView» (Chrome 98+).
 - **1.7.1** — targetSdk 35 и официальные build-tools 35, обработка edge-to-edge insets на Android 15,
   CI на platform-35/build-tools 35.0.0.
+- **1.8.0** — экран «О программе / Лицензии» с полным текстом OFL для PT Sans и списком компонентов.
 
 ## Известные проблемы и техдолг (P0 → P2)
 
 **P0**
-1. В APK нет экрана «О программе / Лицензии» — по OFL уведомление о PT Sans обязательно.
-2. `npm audit`: `pdfjs-dist` (есть фикс, обновить), `xlsx` 0.18.5 (фикса нет; используется на запись и в тестах).
+1. `npm audit`: `pdfjs-dist` (есть фикс, обновить), `xlsx` 0.18.5 (фикса нет; используется на запись и в тестах).
 
 **P1**
 - План в PDF — только `floor.page`; для многостраничных этажей выгружать все страницы.

@@ -30,8 +30,14 @@ await build({
   target: 'es2022',
   outfile: bundleFile,
   logLevel: 'error',
-  loader: { '.css': 'empty' },
+  loader: { '.css': 'empty', '.txt': 'text' },
   plugins: [{
+    // Vite-импорт `?raw` (текст OFL) отдаём esbuild как обычный .txt.
+    name: 'raw-suffix',
+    setup(b) {
+      b.onResolve({ filter: /\?raw$/ }, args => ({ path: resolve(args.resolveDir, args.path.replace(/\?raw$/, '')) }));
+    },
+  }, {
     // PDF.js в smoke не рендерим: подложка демо-проекта недоступна без WebView.
     // Заглушка повторяет публичный API, чтобы динамический импорт не падал в Node.
     name: 'pdfjs-stub',
@@ -440,6 +446,24 @@ if (routeRow) {
 }
 const health = document.querySelector('.project-health')?.textContent || '';
 check(/замечани/.test(health), `контроль данных показывает замечания: ${health.slice(0, 60)}`);
+
+console.log('\n7i. О программе и лицензии');
+const aboutButton = buttons().find(button => (button.textContent || '').includes('О программе'));
+check(Boolean(aboutButton), 'кнопка «О программе / Лицензии» доступна');
+if (aboutButton) {
+  aboutButton.click();
+  await sleep(250);
+  const aboutSheet = document.querySelector('.about-sheet');
+  check(Boolean(aboutSheet), 'экран «О программе» открылся');
+  const aboutText = aboutSheet?.textContent || '';
+  check(aboutText.includes('SIL OPEN FONT LICENSE'), 'текст OFL для PT Sans показан');
+  check(aboutText.includes('PT Sans'), 'шрифт PT Sans указан в лицензиях');
+  check(/версия \d+\.\d+\.\d+/.test(aboutText), 'версия приложения показана');
+  const closeAbout = aboutSheet?.querySelector('.sheet-head button');
+  if (closeAbout) closeAbout.click();
+  await sleep(150);
+  check(!document.querySelector('.about-sheet'), 'экран «О программе» закрывается');
+}
 
 console.log('\n8. Выход с сохранением (кнопка «Назад» в Android)');
 const saveAndExit = window.__anooplanSaveAndExit;
