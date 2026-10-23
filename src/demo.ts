@@ -18,7 +18,7 @@ const equipment = (
 const cable = (
   id: string, number: string, name: string, brand: string, purpose: string,
   fromId: string, toId: string, segmentIds: string[], quantity = 1,
-): Cable => ({ id, number, name, brand, purpose, fromId, toId, segmentIds, reservePercent: 10, reserveFixed: 0, startReserve: 0.5, endReserve: 0.5, quantity, note: '' });
+): Cable => ({ id, number, name, brand, purpose, fromId, toId, segmentIds, reservePercent: 10, reserveFixed: 0, startReserve: 0.5, endReserve: 0.5, quantity, note: '', outerDiameterMm: 6 });
 
 /** Простейший схематичный план здания в виде PDF (вектор, стандартный шрифт, без внешних файлов). */
 export function demoPlanPdf(): string {
@@ -107,9 +107,9 @@ export function createDemoProject(): Project {
   const s7 = segment(uid(), v7, v8);
 
   const routes: Route[] = [
-    { id: uid(), number: 'Т1', type: 'Лоток', note: 'Горизонтальная трасса этажа 1', segments: [s1, s2, s3, s4] },
-    { id: uid(), number: 'Т2', type: 'Стояк', note: 'Межэтажный вертикальный стояк', segments: [s5] },
-    { id: uid(), number: 'Т3', type: 'Лоток', note: 'Горизонтальная трасса этажа 2', segments: [s6, s7] },
+    { id: uid(), number: 'Т1', type: 'Лоток', note: 'Горизонтальная трасса этажа 1', segments: [s1, s2, s3, s4], trayWidthMm: 100, trayHeightMm: 50 },
+    { id: uid(), number: 'Т2', type: 'Стояк', note: 'Межэтажный вертикальный стояк', segments: [s5], trayWidthMm: 50, trayHeightMm: 50 },
+    { id: uid(), number: 'Т3', type: 'Лоток', note: 'Горизонтальная трасса этажа 2', segments: [s6, s7], trayWidthMm: 100, trayHeightMm: 50 },
   ];
 
   const cables: Cable[] = [

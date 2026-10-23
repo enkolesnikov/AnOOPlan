@@ -1,4 +1,4 @@
-import type { Cable, Equipment, Project, Segment, Vertex } from './model';
+import type { Cable, Equipment, Project, Route, Segment, Vertex } from './model';
 
 const EPS = 1e-6;
 const finite = (value: unknown): value is number => typeof value === 'number' && Number.isFinite(value);
@@ -255,6 +255,230 @@ export function calculateCable(project: Project, cable: Cable): CableCalculation
   return { complete: errors.length === 0, errors: [...new Set(errors)], geometry: errors.length ? null : geometry, routeReserve, cableReserve, endReserve, total: completeTotal, pricePerMeter, cost, segments: results };
 }
 
+/** Рекомендуемое заполнение лотка, % от площади сечения. */
+export const TRAY_FILL_RECOMMENDED_PERCENT = 40;
+/** Предельно допустимое заполнение лотка, % от площади сечения. */
+export const TRAY_FILL_LIMIT_PERCENT = 50;
+/** Допуск на погрешность вычислений при сравнении с границами 40/50 %. */
+const TRAY_FILL_BOUNDARY_EPS = 1e-9;
+
+export type TrayFillStatus = 'ok' | 'warning' | 'over' | 'empty' | 'incomplete';
+
+export interface CableSection {
+  areaMm2: number | null;
+  source: 'area' | 'diameter' | null;
+  errors: string[];
+}
+
+export interface SegmentFill {
+  segmentId: string;
+  routeId: string;
+  routeNumber: string;
+  routeType: string;
+  trayWidthMm: number | null;
+  trayHeightMm: number | null;
+  trayAreaMm2: number | null;
+  cables: number;
+  lines: number;
+  unknownCables: number;
+  usedAreaMm2: number | null;
+  fillPercent: number | null;
+  status: TrayFillStatus;
+  warnings: string[];
+}
+
+export interface TrayFillResult {
+  segments: SegmentFill[];
+  complete: boolean;
+  maxFillPercent: number | null;
+  overSegments: number;
+  warnings: string[];
+}
+
+const isGiven = (value: unknown): boolean => value !== undefined && value !== null;
+const givenNumber = (value: unknown): number | null => (isGiven(value) && finite(value) ? value : null);
+
+/** Площадь внешнего сечения кабеля: crossSectionMm2 приоритетнее outerDiameterMm. */
+export function cableSection(cable: Cable): CableSection {
+  const prefix = `Кабель ${cable.number}`;
+  if (isGiven(cable.crossSectionMm2)) {
+    const area = cable.crossSectionMm2;
+    // Некорректное значение не подменяется диаметром: иначе неверные данные стали бы «расчётом».
+    if (!finite(area) || area <= 0) return { areaMm2: null, source: null, errors: [`${prefix}: неверная площадь сечения`] };
+    return { areaMm2: area, source: 'area', errors: [] };
+  }
+  if (isGiven(cable.outerDiameterMm)) {
+    const diameter = cable.outerDiameterMm;
+    if (!finite(diameter) || diameter <= 0) return { areaMm2: null, source: null, errors: [`${prefix}: неверный внешний диаметр`] };
+    const area = Math.PI * diameter * diameter / 4;
+    if (!finite(area)) return { areaMm2: null, source: null, errors: [`${prefix}: неверный внешний диаметр`] };
+    return { areaMm2: area, source: 'diameter', errors: [] };
+  }
+  return { areaMm2: null, source: null, errors: [] };
+}
+
+type DimensionState = 'missing' | 'invalid' | 'valid';
+const dimensionState = (value: unknown): DimensionState => {
+  if (!isGiven(value)) return 'missing';
+  return finite(value) && value > 0 ? 'valid' : 'invalid';
+};
+
+interface TrayDimensions {
+  areaMm2: number | null;
+  problem: 'missing' | 'invalid' | null;
+}
+
+/** Площадь лотка: trayAreaMm2 приоритетнее произведения ширины и высоты; без фолбэка с некорректных данных. */
+function trayDimensions(route: Route): TrayDimensions {
+  const areaState = dimensionState(route.trayAreaMm2);
+  if (areaState === 'valid') return { areaMm2: route.trayAreaMm2 as number, problem: null };
+  if (areaState === 'invalid') return { areaMm2: null, problem: 'invalid' };
+  const widthState = dimensionState(route.trayWidthMm);
+  const heightState = dimensionState(route.trayHeightMm);
+  if (widthState === 'invalid' || heightState === 'invalid') return { areaMm2: null, problem: 'invalid' };
+  if (widthState === 'valid' && heightState === 'valid') {
+    const area = (route.trayWidthMm as number) * (route.trayHeightMm as number);
+    return finite(area) && area > 0 ? { areaMm2: area, problem: null } : { areaMm2: null, problem: 'invalid' };
+  }
+  return { areaMm2: null, problem: 'missing' };
+}
+
+const TRAY_PROBLEM_TEXT: Record<'missing' | 'invalid', string> = {
+  missing: 'не заданы размеры лотка',
+  invalid: 'неверный размер лотка',
+};
+
+/** Текстовое обозначение лотка для ведомости: площадь (она приоритетнее), размеры или прочерк. */
+function trayLabel(route: Route): string {
+  if (dimensionState(route.trayAreaMm2) === 'valid') return `S=${route.trayAreaMm2} мм²`;
+  if (dimensionState(route.trayWidthMm) === 'valid' && dimensionState(route.trayHeightMm) === 'valid') {
+    return `${route.trayWidthMm}×${route.trayHeightMm}`;
+  }
+  return '—';
+}
+
+const validQuantity = (cable: Cable): boolean => Number.isInteger(cable.quantity) && cable.quantity > 0;
+
+/** Заполнение лотка по каждому сегменту всех трасс проекта. */
+export function trayFill(project: Project): TrayFillResult {
+  const warnings: string[] = [];
+  const segments: SegmentFill[] = [];
+  for (const route of project.routes) {
+    const tray = trayDimensions(route);
+    const safeTrayArea = tray.problem === null && finite(tray.areaMm2) && tray.areaMm2 > 0 ? tray.areaMm2 : null;
+    const trayWidthMm = givenNumber(route.trayWidthMm);
+    const trayHeightMm = givenNumber(route.trayHeightMm);
+    const routeHasCables = route.segments.some(segment => project.cables.some(cable => cable.segmentIds.includes(segment.id)));
+    if (routeHasCables && tray.problem) warnings.push(`Трасса ${route.number}: ${TRAY_PROBLEM_TEXT[tray.problem]} — заполнение не рассчитано`);
+    route.segments.forEach((segment, index) => {
+      const label = `${route.number}.${index + 1}`;
+      const prefix = `Трасса ${route.number}, сегмент ${label}`;
+      const passing = project.cables.filter(cable => cable.segmentIds.includes(segment.id));
+      const segmentWarnings: string[] = [];
+      let lines = 0;
+      let usedAreaMm2: number | null = 0;
+      let unknownCables = 0;
+      let sectionUnknown = false;
+      let quantityUnknown = false;
+      const unknownSectionNumbers: string[] = [];
+      const unknownQuantityNumbers: string[] = [];
+      for (const cable of passing) {
+        const section = cableSection(cable);
+        const quantityOk = validQuantity(cable);
+        if (quantityOk) lines += cable.quantity;
+        if (section.areaMm2 === null) {
+          sectionUnknown = true;
+          unknownSectionNumbers.push(cable.number);
+        }
+        if (!quantityOk) {
+          quantityUnknown = true;
+          unknownQuantityNumbers.push(cable.number);
+        }
+        if (section.areaMm2 === null || !quantityOk) {
+          unknownCables += 1;
+          continue;
+        }
+        usedAreaMm2 += section.areaMm2 * cable.quantity;
+      }
+      if (sectionUnknown) {
+        const noun = unknownSectionNumbers.length === 1 ? 'кабеля' : 'кабелей';
+        segmentWarnings.push(`${prefix}: не задано сечение ${noun} ${unknownSectionNumbers.join(', ')} — заполнение не рассчитано`);
+      }
+      if (quantityUnknown) {
+        const noun = unknownQuantityNumbers.length === 1 ? 'кабеля' : 'кабелей';
+        segmentWarnings.push(`${prefix}: неверное количество ${noun} ${unknownQuantityNumbers.join(', ')} — заполнение не рассчитано`);
+      }
+      if (sectionUnknown || quantityUnknown) usedAreaMm2 = null;
+      const areaMm2 = safeTrayArea;
+      let fillPercent: number | null = null;
+      let status: TrayFillStatus;
+      if (!passing.length) {
+        fillPercent = areaMm2 === null ? null : 0;
+        status = 'empty';
+      } else if (usedAreaMm2 === null || areaMm2 === null) {
+        status = 'incomplete';
+      } else {
+        const rawPercent = usedAreaMm2 / areaMm2 * 100;
+        if (!finite(rawPercent)) {
+          status = 'incomplete';
+        } else {
+          fillPercent = rawPercent;
+          if (rawPercent > TRAY_FILL_LIMIT_PERCENT + TRAY_FILL_BOUNDARY_EPS) status = 'over';
+          else if (rawPercent > TRAY_FILL_RECOMMENDED_PERCENT + TRAY_FILL_BOUNDARY_EPS) status = 'warning';
+          else status = 'ok';
+          if (status === 'over') segmentWarnings.push(`${prefix}: заполнение ${Math.round(rawPercent)} % — превышен предел ${TRAY_FILL_LIMIT_PERCENT} %`);
+          else if (status === 'warning') segmentWarnings.push(`${prefix}: заполнение ${Math.round(rawPercent)} % — больше рекомендуемых ${TRAY_FILL_RECOMMENDED_PERCENT} %`);
+        }
+      }
+      warnings.push(...segmentWarnings);
+      segments.push({
+        segmentId: segment.id,
+        routeId: route.id,
+        routeNumber: route.number,
+        routeType: route.type,
+        trayWidthMm,
+        trayHeightMm,
+        trayAreaMm2: areaMm2,
+        cables: passing.length,
+        lines,
+        unknownCables,
+        usedAreaMm2,
+        fillPercent,
+        status,
+        warnings: [...new Set(segmentWarnings)],
+      });
+    });
+  }
+  const known = segments.map(segment => segment.fillPercent).filter((value): value is number => value !== null);
+  return {
+    segments,
+    complete: !segments.some(segment => segment.status === 'incomplete'),
+    maxFillPercent: known.length ? Math.max(...known) : null,
+    overSegments: segments.filter(segment => segment.status === 'over').length,
+    warnings: [...new Set(warnings)],
+  };
+}
+
+export interface TrayFillRow {
+  route: string;
+  segment: string;
+  routeType: string;
+  tray: string;
+  trayAreaMm2: number | null;
+  lines: number;
+  areaMm2: number | null;
+  fillPercent: number | null;
+  status: 'ок' | 'внимание' | 'превышено' | 'пусто' | 'неполный';
+}
+
+const TRAY_STATUS_LABELS: Record<TrayFillStatus, TrayFillRow['status']> = {
+  ok: 'ок',
+  warning: 'внимание',
+  over: 'превышено',
+  empty: 'пусто',
+  incomplete: 'неполный',
+};
+
 export function specifications(project: Project) {
   const equipment: { type: string; model: string; floor: string; quantity: number }[] = [];
   for (const item of project.equipment) {
@@ -276,12 +500,12 @@ export function specifications(project: Project) {
     group.geometry = group.geometry === null || calculation.geometry === null || !validQuantity ? null : group.geometry + calculation.geometry * cable.quantity;
     group.total = group.total === null || calculation.total === null || !validQuantity ? null : group.total + calculation.total * cable.quantity;
   }
-  const infrastructure: { type: string; length: number | null; segments: number; cables: number }[] = [];
+  const infrastructure: { type: string; length: number | null; segments: number; cables: number; maxFillPercent: number | null; overSegments: number }[] = [];
   const { duplicates } = segmentIndex(project);
   const seen = new Set<string>();
   for (const route of project.routes) {
     let group = infrastructure.find(g => g.type === route.type);
-    if (!group) { group = { type: route.type, length: 0, segments: 0, cables: 0 }; infrastructure.push(group); }
+    if (!group) { group = { type: route.type, length: 0, segments: 0, cables: 0, maxFillPercent: null, overSegments: 0 }; infrastructure.push(group); }
     for (const segment of route.segments) {
       if (duplicates.has(segment.id)) { group.length = null; errors.push(`Неоднозначный ID сегмента ${segment.id}`); }
       if (seen.has(segment.id)) continue;
@@ -296,7 +520,33 @@ export function specifications(project: Project) {
     const ids = new Set(project.routes.filter(r => r.type === group.type).flatMap(r => r.segments.map(s => s.id)));
     group.cables = project.cables.filter(c => c.segmentIds.some(id => ids.has(id))).reduce((sum, c) => sum + (Number.isInteger(c.quantity) && c.quantity > 0 ? c.quantity : 0), 0);
   }
-  return { equipment, cables, infrastructure, errors: [...new Set(errors)] };
+  const fill = trayFill(project);
+  const trayFillRows: TrayFillRow[] = [];
+  let fillIndex = 0;
+  for (const route of project.routes) {
+    for (let index = 0; index < route.segments.length; index += 1) {
+      const segmentFill = fill.segments[fillIndex];
+      fillIndex += 1;
+      trayFillRows.push({
+        route: route.number,
+        segment: `${route.number}.${index + 1}`,
+        routeType: route.type,
+        tray: trayLabel(route),
+        trayAreaMm2: segmentFill?.trayAreaMm2 ?? null,
+        lines: segmentFill?.lines ?? 0,
+        areaMm2: segmentFill?.usedAreaMm2 ?? null,
+        fillPercent: segmentFill?.fillPercent ?? null,
+        status: TRAY_STATUS_LABELS[segmentFill?.status ?? 'incomplete'],
+      });
+    }
+  }
+  for (const group of infrastructure) {
+    const typeSegments = fill.segments.filter(segment => segment.routeType === group.type);
+    const known = typeSegments.map(segment => segment.fillPercent).filter((value): value is number => value !== null);
+    group.maxFillPercent = known.length ? Math.max(...known) : null;
+    group.overSegments = typeSegments.filter(segment => segment.status === 'over').length;
+  }
+  return { equipment, cables, infrastructure, trayFill: trayFillRows, errors: [...new Set(errors)] };
 }
 
 /** Доменные предупреждения: не мешают расчёту, но важны для сдачи документации. */
@@ -314,6 +564,9 @@ export function domainWarnings(project: Project): string[] {
   }
   for (const route of project.routes) {
     if (!route.segments.length) warnings.push(`Трасса ${route.number}: нет сегментов`);
+  }
+  for (const warning of trayFill(project).warnings) {
+    if (!warnings.includes(warning)) warnings.push(warning);
   }
   return [...new Set(warnings)];
 }
@@ -360,9 +613,19 @@ export function validateProject(project: Project): string[] {
   }
   const { duplicates } = segmentIndex(project);
   for (const id of duplicates) errors.push(`Неоднозначный ID сегмента ${id}`);
-  for (const route of project.routes) for (const segment of route.segments) {
-    errors.push(...segmentErrors(project, segment), ...reserveErrors(`Сегмент ${segment.id}`, segment.reservePercent, segment.reserveFixed));
+  for (const route of project.routes) {
+    const trayValues = [route.trayWidthMm, route.trayHeightMm, route.trayAreaMm2];
+    if (trayValues.some(value => isGiven(value) && (!finite(value) || value <= 0))) errors.push(`Трасса ${route.number}: неверный размер лотка`);
+    for (const segment of route.segments) {
+      errors.push(...segmentErrors(project, segment), ...reserveErrors(`Сегмент ${segment.id}`, segment.reservePercent, segment.reserveFixed));
+    }
   }
-  for (const cable of project.cables) errors.push(...calculateCable(project, cable).errors);
+  for (const cable of project.cables) {
+    const outerDiameterMm = cable.outerDiameterMm;
+    if (isGiven(outerDiameterMm) && (!finite(outerDiameterMm) || outerDiameterMm <= 0)) errors.push(`Кабель ${cable.number}: неверный внешний диаметр`);
+    const crossSectionMm2 = cable.crossSectionMm2;
+    if (isGiven(crossSectionMm2) && (!finite(crossSectionMm2) || crossSectionMm2 <= 0)) errors.push(`Кабель ${cable.number}: неверная площадь сечения`);
+    errors.push(...calculateCable(project, cable).errors);
+  }
   return [...new Set(errors)];
 }

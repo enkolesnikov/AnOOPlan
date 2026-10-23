@@ -130,7 +130,7 @@ test('спецификация объединяет модели и марки, 
   const spec = specifications(p);
   assert.deepEqual(spec.equipment, [{ type: 'Датчик', model: 'Д-1', floor: 'Первый', quantity: 2 }]);
   assert.deepEqual(spec.cables, [{ brand: 'ВВГ', lines: 5, geometry: 70, total: 70 }]);
-  assert.deepEqual(spec.infrastructure, [{ type: 'Лоток', length: 10, segments: 1, cables: 5 }]);
+  assert.deepEqual(spec.infrastructure, [{ type: 'Лоток', length: 10, segments: 1, cables: 5, maxFillPercent: null, overSegments: 0 }]);
   assert.deepEqual(spec.errors, []);
 });
 

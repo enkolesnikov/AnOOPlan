@@ -325,6 +325,23 @@ td small { display: block; color: var(--muted); font-size: 12px; }
 .calculation-card.incomplete strong { color: var(--warn); }
 .calculation-card small { font-size: 13px; }
 .calculation-card .breakdown { margin-top: 6px; font-size: 12px; color: var(--muted); display: flex; flex-direction: column; gap: 2px; }
+/* Заполнение лотка: компактные строки по сегментам, статус — цветом слева. */
+.tray-fill { display: flex; flex-direction: column; gap: 6px; }
+.tray-fill-row {
+  display: grid; grid-template-columns: auto 1fr auto; gap: 8px; align-items: baseline;
+  border: 1px solid var(--border-soft); border-left: 3px solid var(--border); border-radius: 8px;
+  padding: 7px 9px; background: var(--surface-3); font-size: 13px;
+}
+.tray-fill-row strong { font-weight: 600; }
+.tray-fill-row span { color: var(--muted); }
+.tray-fill-row em { font-style: normal; font-weight: 600; color: var(--muted); white-space: nowrap; }
+.tray-fill-row small { grid-column: 1 / -1; color: #a5610f; font-size: 12px; }
+.tray-fill-row.ok { border-left-color: var(--good); }
+.tray-fill-row.ok em { color: var(--good); }
+.tray-fill-row.warning { border-left-color: var(--warn); }
+.tray-fill-row.warning em { color: #a5610f; }
+.tray-fill-row.over { border-left-color: var(--danger); }
+.tray-fill-row.over em { color: var(--danger); }
 .property-actions { display: flex; gap: 8px; border-top: 1px solid var(--border-soft); padding-top: 10px; margin-top: 4px; }
 .property-actions button { flex: 1; }
 .scale-card {

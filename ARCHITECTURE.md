@@ -15,8 +15,8 @@ interface Floor { id:string; name:string; elevation:number|null; metersPerUnit:n
 interface Equipment { id:string; number:string; name:string; type:string; floorId:string; x:number; y:number; height:number|null; note:string; properties:Record<string,string> }
 interface Vertex { id:string; floorId:string; x:number; y:number; height:number|null }
 interface Segment { id:string; a:Vertex; b:Vertex; mode:'orthogonal'|'spatial'; reservePercent:number; reserveFixed:number }
-interface Route { id:string; number:string; type:string; segments:Segment[]; note:string }
-interface Cable { id:string; number:string; name:string; brand:string; purpose:string; fromId:string; toId:string; segmentIds:string[]; reservePercent:number; reserveFixed:number; startReserve:number; endReserve:number; quantity:number; note:string }
+interface Route { id:string; number:string; type:string; segments:Segment[]; note:string; trayWidthMm?:number|null; trayHeightMm?:number|null; trayAreaMm2?:number|null }
+interface Cable { id:string; number:string; name:string; brand:string; purpose:string; fromId:string; toId:string; segmentIds:string[]; reservePercent:number; reserveFixed:number; startReserve:number; endReserve:number; quantity:number; note:string; outerDiameterMm?:number|null; crossSectionMm2?:number|null }
 interface Pin { id:string; number:string; floorId:string; x:number; y:number; comment:string; status:'open'|'closed'; photos?:string[]; createdAt:string; updatedAt:string }
 interface Project { schemaVersion:1|2; id:string; name:string; floors:Floor[]; equipment:Equipment[]; routes:Route[]; cables:Cable[]; pins:Pin[]; updatedAt:string }
 ```
@@ -24,6 +24,14 @@ interface Project { schemaVersion:1|2; id:string; name:string; floors:Floor[]; e
 Сегменты связаны совпадающими координатами и этажом с допуском 1e-6; height также совпадает. Кабель содержит упорядоченный список ID сегментов, каждый физический сегмент допускается один раз. Направление сегмента определяется обходом цепочки. Концы кабеля должны совпадать в плане с началом/концом цепочки на соответствующем этаже; вертикальные подводы от высоты оборудования до высоты трассы учитываются отдельно. Межэтажный сегмент разрешён только при совпадающих x,y (общая система координат этажей), учитывает отметки полов. Неизвестные высоты/масштаб и разрывы означают неполный расчёт; итог null.
 
 Формула: G = сумма пространственных длин сегментов + вертикальные подводы концов. Rт = сумма(Lсегмента × %сегмента / 100 + фиксированный запас сегмента). Итог = G + Rт + G × %кабеля / 100 + фиксированный запас кабеля + запас начала + запас конца. Количество кабелей умножает итог только в спецификации. Инфраструктура учитывается однократно. Промежуточные результаты не округляются. Ортогональный сегмент не допускает одновременных изменений x,y; горизонтальное и вертикальное движение — сумма, spatial — гипотенуза.
+
+## Заполнение лотка
+
+`cableSection(cable)` принимает площадь внешнего сечения: `crossSectionMm2`, если задана и положительна, иначе `π·d²/4` от `outerDiameterMm`. Заданное некорректное значение (0, отрицательное, NaN/Infinity) даёт ошибку и `null` — второй источник не подставляется, чтобы неверные данные не выглядели расчётом; если не задано ничего, площадь тоже `null` (данных нет).
+
+`trayFill(project)` идёт по всем сегментам всех трасс в порядке проекта. Площадь лотка: `trayAreaMm2`, иначе `trayWidthMm·trayHeightMm`; некорректные заданные размеры дают `null`, а не 0. Занятая площадь сегмента — сумма `площадь кабеля · quantity` по кабелям, чей `segmentIds` содержит сегмент. Заполнение = занятая площадь / площадь лотка · 100 %. Статусы: `ok` (≤ 40 %), `warning` (> 40 %), `over` (> 50 %), `empty` (кабелей нет), `incomplete` (неизвестен лоток, сечение или количество). Неизвестные значения не заменяются нулём; `complete` ложно, если есть `incomplete`, а `maxFillPercent`/`overSegments` дают сводку. Предупреждения вида «Трасса Т1, сегмент Т1.1: заполнение 63 % — превышен предел 50 %» попадают в `domainWarnings` и PDF. `specifications(project).trayFill` — строки по сегментам для ведомости/PDF/XLSX/CSV, в `infrastructure` — `maxFillPercent` и `overSegments` по типу трассы. Размеры лотка задаются на трассу: все её сегменты используют один лоток.
+
+Порог 40 % — рекомендуемый, 50 % — предел; сравнение с границами идёт с допуском 1e-9, чтобы ровно 40 % не становилось вниманием из-за погрешности double, а ровно 50 % — превышением.
 
 ## Автопрокладка маршрута
 
@@ -63,9 +71,11 @@ interface Project { schemaVersion:1|2; id:string; name:string; floors:Floor[]; e
 При ширине до 1023 px панели становятся off-canvas: «Структура» выезжает слева, «Свойства» открываются снизу как шторка; фон затемняется, закрытие — кнопкой или касанием вне панели. Инструменты плана вынесены в нижнюю панель с крупными кнопками, шапка компактная, для свойств есть плавающая кнопка. На десктопе те же панели показаны постоянно по бокам рабочей области.
 
 ## Владение модулями
-Главный агент: scaffold, src/model.ts, src/demo.ts, интеграция, README.
-Frontend: src/App.tsx, src/styles.css, src/main.tsx, index.html; не редактировать модель.
-Расчёты/QA: src/engine.ts, tests/engine.test.ts; экспортировать calculateCable(project,cable), segmentLength(project,segment), specifications(project), validateProject(project). Результат calculateCable: {complete:boolean,errors:string[],geometry:number|null,routeReserve:number,cableReserve:number,endReserve:number,total:number|null,segments:{id:string,length:number|null}[]}.
-Backend: server/**, tests/api.test.ts; импортирует общую модель и engine. Экспорты API и backup внутри backend.
+`src/model.ts` — модель данных (общая для клиента и сервера); схема версионируется, менять осторожно.
+`src/engine.ts` — расчёты: длины, запасы, автопрокладка, заполнение лотка, спецификации, валидация.
+`src/App.tsx`, `src/styles.css` — интерфейс; расчёты импортируются из движка и мемоизируются.
+`src/sheets.ts`, `src/export-xlsx.ts`, `src/export-pdf.ts`, `src/client-csv.ts` — выгрузки.
+`src/migrations.ts` — схема и нормализация; `src/idb.ts`, `src/local-projects.ts`, `src/storage-gc.ts` — хранение.
+`server/**` — API и SQLite, использует те же модель и движок. `tests/**` — node:test; `scripts/smoke-dom.mjs` — смоук интерфейса.
 
 Проверки: node:test через tsx, сборка tsc + vite, HTTP smoke test и браузерная проверка при наличии Playwright. Проект демонстрации помечен как синтетический, не используется как подмена PDF пользователя.

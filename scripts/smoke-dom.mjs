@@ -516,6 +516,71 @@ if (aboutButton) {
   check(!document.querySelector('.about-sheet'), 'экран «О программе» закрывается');
 }
 
+console.log('\n7j. Заполнение лотка: свойства и ведомости');
+const cablesTabFill = Array.from(document.querySelectorAll('.structure-tabs button')).find(button => (button.textContent || '').includes('Кабели'));
+if (cablesTabFill) cablesTabFill.click();
+await sleep(200);
+const fillCableRow = document.querySelector('.object-row[data-kind="cable"]');
+check(Boolean(fillCableRow), 'в демо-проекте есть кабель для проверки диаметра');
+if (fillCableRow) {
+  fillCableRow.click();
+  await sleep(250);
+  const cableLabels = Array.from(document.querySelectorAll('.properties label')).map(label => label.textContent || '');
+  check(cableLabels.some(text => text.includes('Внешний диаметр, мм')), 'в свойствах кабеля есть поле «Внешний диаметр, мм»');
+  check(cableLabels.some(text => text.includes('Площадь сечения, мм²')), 'в свойствах кабеля есть поле «Площадь сечения, мм²»');
+  const diameterField = Array.from(document.querySelectorAll('.properties label')).find(label => (label.textContent || '').includes('Внешний диаметр, мм'));
+  const diameterInput = diameterField?.querySelector('input');
+  const diameterValue = Number((diameterInput?.value || '').replace(',', '.'));
+  check(Number.isFinite(diameterValue) && diameterValue > 0, `демо-кабель имеет диаметр (${diameterInput?.value || '—'})`);
+  const calculationText = document.querySelector('.calculation-card')?.textContent || '';
+  check(calculationText.includes('Сечение') && calculationText.includes('мм²'), 'в расчёте кабеля показано сечение, мм²');
+  check(calculationText.includes('Заполнение лотка'), 'в расчёте кабеля показано заполнение лотка');
+}
+
+const routesTabFill = Array.from(document.querySelectorAll('.structure-tabs button')).find(button => (button.textContent || '').includes('Трассы'));
+if (routesTabFill) routesTabFill.click();
+await sleep(200);
+const fillRouteRow = document.querySelector('.object-row[data-kind="route"]');
+check(Boolean(fillRouteRow), 'в демо-проекте есть трасса для проверки лотка');
+if (fillRouteRow) {
+  fillRouteRow.click();
+  await sleep(250);
+}
+const routeLabels = Array.from(document.querySelectorAll('.properties label')).map(label => label.textContent || '');
+check(routeLabels.some(text => text.includes('Ширина лотка, мм')), 'в свойствах трассы есть поле «Ширина лотка, мм»');
+check(routeLabels.some(text => text.includes('Высота борта, мм')), 'в свойствах трассы есть поле «Высота борта, мм»');
+check(routeLabels.some(text => text.includes('Площадь лотка, мм²')), 'в свойствах трассы есть поле «Площадь лотка, мм²»');
+const routeProperties = document.querySelector('.properties')?.textContent || '';
+check(routeProperties.includes('Заполнение лотка'), 'в свойствах трассы есть блок «Заполнение лотка»');
+const trayFillRows = Array.from(document.querySelectorAll('.tray-fill-row'));
+check(trayFillRows.length > 0, `в блоке заполнения есть строки сегментов (${trayFillRows.length})`);
+check(trayFillRows.some(row => /\d+([.,]\d+)?\s*%/.test(row.textContent || '')), 'в строке сегмента показан процент заполнения');
+const trayFillStatuses = Array.from(document.querySelectorAll('.tray-fill-row em')).map(cell => (cell.textContent || '').trim());
+check(trayFillStatuses.some(text => ['ок', 'внимание', 'превышено', 'пусто', 'неполный'].includes(text)), `статус сегмента по-русски: ${trayFillStatuses.slice(0, 3).join(' | ') || '—'}`);
+
+const specsTabFill = Array.from(document.querySelectorAll('.view-tabs button')).find(button => (button.textContent || '').trim() === 'Ведомости');
+check(Boolean(specsTabFill), 'вкладка «Ведомости» доступна');
+if (specsTabFill) {
+  specsTabFill.click();
+  await sleep(300);
+}
+const traySection = Array.from(document.querySelectorAll('.spec-section')).find(section => (section.querySelector('h2')?.textContent || '').includes('Заполнение лотков'));
+check(Boolean(traySection), 'в ведомостях есть раздел «Заполнение лотков»');
+if (traySection) {
+  const headers = Array.from(traySection.querySelectorAll('th')).map(cell => (cell.textContent || '').trim());
+  check(headers.includes('Заполнение, %'), `в таблице есть колонка «Заполнение, %»: ${headers.join(', ')}`);
+  check(headers.includes('Статус'), 'в таблице заполнения есть колонка «Статус»');
+  const percentIndex = headers.indexOf('Заполнение, %');
+  const statusIndex = headers.indexOf('Статус');
+  const rows = Array.from(traySection.querySelectorAll('tbody tr'));
+  const percents = rows.map(row => (row.children[percentIndex]?.textContent || '').trim());
+  check(percents.some(value => /^\d/.test(value) && Number(value.replace(/\s/g, '').replace(',', '.')) > 0), `в таблице есть рассчитанный процент: ${percents.slice(0, 3).join(' | ') || '—'}`);
+  const statuses = rows.map(row => (row.children[statusIndex]?.textContent || '').trim());
+  check(statuses.some(value => ['ок', 'внимание', 'превышено', 'пусто', 'неполный'].includes(value)), `статусы в ведомости читаемые: ${statuses.slice(0, 3).join(' | ') || '—'}`);
+}
+const infrastructureSection = Array.from(document.querySelectorAll('.spec-section')).find(section => (section.querySelector('h2')?.textContent || '').includes('Кабельная инфраструктура'));
+check(Boolean(infrastructureSection) && (infrastructureSection.textContent || '').includes('Макс. заполнение, %'), 'в инфраструктуре есть колонка «Макс. заполнение, %»');
+
 console.log('\n8. Выход с сохранением (кнопка «Назад» в Android)');
 const saveAndExit = window.__anooplanSaveAndExit;
 check(typeof saveAndExit === 'function', 'оболочке доступна функция saveAndExit');

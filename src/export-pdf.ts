@@ -2,8 +2,8 @@
 // Документ A4 landscape, повторяющиеся заголовки таблиц, колонтитулы и отметка неполного расчёта.
 import { PDFDocument, rgb, type PDFFont, type PDFPage } from 'pdf-lib';
 import fontkit from '@pdf-lib/fontkit';
-import type { Project } from './model';
-import { calculateCable, domainWarnings, specifications, validateProject } from './engine';
+import type { Cable, Project } from './model';
+import { cableSection, calculateCable, domainWarnings, specifications, validateProject } from './engine';
 import type { JournalFonts } from './export-fonts';
 
 export interface JournalPhoto { number: string; name: string; data: ArrayBuffer; mime: string }
@@ -24,6 +24,12 @@ const WHITE = rgb(1, 1, 1);
 export const formatNumber = (value: number | null): string => {
   if (value === null || value === undefined || !Number.isFinite(value)) return '—';
   return value.toLocaleString('ru-RU', { maximumFractionDigits: 3 });
+};
+
+/** Внешний диаметр кабеля: незаданное значение не подменяется нулём. */
+const cableDiameter = (cable: Cable): number | null => {
+  const value = cable.outerDiameterMm;
+  return typeof value === 'number' && Number.isFinite(value) ? value : null;
 };
 
 interface Column { title: string; width: number; align?: 'left' | 'right' }
@@ -283,9 +289,12 @@ function buildSections(project: Project): Section[] {
 
   const journal = project.cables.map(cable => {
     const result = calculateCable(project, cable);
+    const section = cableSection(cable);
     return [
       cable.number,
       [cable.name, cable.brand].filter(Boolean).join(' · ') || '—',
+      formatNumber(cableDiameter(cable)),
+      formatNumber(section.areaMm2),
       `${equipmentNumber(cable.fromId)} - ${equipmentNumber(cable.toId)}`,
       formatNumber(result.geometry),
       formatNumber(result.routeReserve),
@@ -307,6 +316,8 @@ function buildSections(project: Project): Section[] {
       columns: [
         { title: '№', width: 32 },
         { title: 'Кабель / марка', width: 148 },
+        { title: 'Ø, мм', width: 36, align: 'right' },
+        { title: 'S, мм²', width: 44, align: 'right' },
         { title: 'От - до', width: 74 },
         { title: 'Геометрия, м', width: 56, align: 'right' },
         { title: 'Запас трасс', width: 50, align: 'right' },
@@ -344,12 +355,38 @@ function buildSections(project: Project): Section[] {
     {
       title: 'Кабельная инфраструктура',
       columns: [
-        { title: 'Тип', width: 220 },
-        { title: 'Длина, м', width: 160, align: 'right' },
-        { title: 'Сегментов', width: 140, align: 'right' },
-        { title: 'Кабелей', width: 140, align: 'right' },
+        { title: 'Тип', width: 180 },
+        { title: 'Длина, м', width: 120, align: 'right' },
+        { title: 'Сегментов', width: 110, align: 'right' },
+        { title: 'Кабелей', width: 100, align: 'right' },
+        { title: 'Макс. заполнение, %', width: 130, align: 'right' },
+        { title: 'Сегментов с превышением', width: 150, align: 'right' },
       ],
-      rows: specs.infrastructure.map(row => [row.type, formatNumber(row.length), String(row.segments), String(row.cables)]),
+      rows: specs.infrastructure.map(row => [row.type, formatNumber(row.length), String(row.segments), String(row.cables), formatNumber(row.maxFillPercent), String(row.overSegments)]),
+    },
+    {
+      title: 'Заполнение лотков',
+      note: 'Заполнение — отношение площади сечения кабелей к площади лотка. Внимание выше 40 %, превышение выше 50 %. «Неполный» означает, что размеры не заданы и не заменены нулём.',
+      columns: [
+        { title: 'Трасса', width: 44 },
+        { title: 'Сегмент', width: 56 },
+        { title: 'Лоток, мм', width: 72 },
+        { title: 'Площадь лотка, мм²', width: 84, align: 'right' },
+        { title: 'Линий', width: 40, align: 'right' },
+        { title: 'Площадь кабелей, мм²', width: 90, align: 'right' },
+        { title: 'Заполнение, %', width: 80, align: 'right' },
+        { title: 'Статус', width: 80 },
+      ],
+      rows: specs.trayFill.map(row => [
+        row.route,
+        row.segment,
+        row.tray || '—',
+        formatNumber(row.trayAreaMm2),
+        String(row.lines),
+        formatNumber(row.areaMm2),
+        formatNumber(row.fillPercent),
+        row.status,
+      ]),
     },
     {
       title: 'Замечания',

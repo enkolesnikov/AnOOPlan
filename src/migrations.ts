@@ -19,6 +19,21 @@ const isRecord = (value: unknown): value is RawProject =>
   Boolean(value) && typeof value === 'object' && !Array.isArray(value);
 
 /**
+ * Необязательное числовое поле из JSON: отсутствие (null/undefined) и мусор
+ * (не число, NaN, Infinity, пустая строка, boolean, массив) превращаются в undefined,
+ * а не в 0. Строки с числом («6.5») допускаются для совместимости со старыми копиями.
+ * Отрицательные и нулевые значения сохраняются — их проверяет движок.
+ */
+const optionalNumber = (value: unknown): number | undefined => {
+  if (typeof value === 'number') return Number.isFinite(value) ? value : undefined;
+  if (typeof value === 'string' && value.trim() !== '') {
+    const number = Number(value);
+    return Number.isFinite(number) ? number : undefined;
+  }
+  return undefined;
+};
+
+/**
  * Миграции "с версии N на N+1". Пока пусто; при добавлении v2 сюда
  * кладётся функция 1 → 2, и migrateProject применит её к старым файлам.
  */
@@ -71,6 +86,9 @@ function normalizeRoute(value: unknown): Project['routes'][number] {
     type: typeof value.type === 'string' ? value.type : 'Трасса',
     segments: Array.isArray(value.segments) ? value.segments : [],
     note: typeof value.note === 'string' ? value.note : '',
+    trayWidthMm: optionalNumber(value.trayWidthMm),
+    trayHeightMm: optionalNumber(value.trayHeightMm),
+    trayAreaMm2: optionalNumber(value.trayAreaMm2),
   } as Project['routes'][number];
 }
 
@@ -111,6 +129,8 @@ function normalizeCable(value: unknown): Project['cables'][number] {
     quantity: Number(value.quantity) > 0 ? Number(value.quantity) : 1,
     note: typeof value.note === 'string' ? value.note : '',
     pricePerMeter: typeof value.pricePerMeter === 'number' ? value.pricePerMeter : undefined,
+    outerDiameterMm: optionalNumber(value.outerDiameterMm),
+    crossSectionMm2: optionalNumber(value.crossSectionMm2),
   };
 }
 

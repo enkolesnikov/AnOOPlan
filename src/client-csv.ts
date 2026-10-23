@@ -1,16 +1,22 @@
-import type { Project } from './model';
-import { calculateCable, specifications } from './engine';
+import type { Cable, Project } from './model';
+import { cableSection, calculateCable, specifications } from './engine';
+
+/** Диаметр кабеля для выгрузки: незаданное значение остаётся пустым, а не превращается в 0. */
+function cableDiameter(cable: Cable): number | null {
+  const value = cable.outerDiameterMm;
+  return typeof value === 'number' && Number.isFinite(value) ? value : null;
+}
 
 /** CSV с BOM и точкой с запятой: открывается в Excel без импорта. */
 export function clientCsv(project: Project): string {
   const specs = specifications(project);
   const rows: (string | number | null)[][] = [];
   rows.push(['Кабельный журнал']);
-  rows.push(['Номер', 'Наименование', 'Марка', 'От', 'До', 'Количество', 'Итог одного, м', 'Итог всего, м', 'Полный']);
+  rows.push(['Номер', 'Наименование', 'Марка', 'Диаметр, мм', 'Сечение, мм²', 'От', 'До', 'Количество', 'Итог одного, м', 'Итог всего, м', 'Полный']);
   for (const cable of project.cables) {
     const result = calculateCable(project, cable);
     const name = (id: string) => project.equipment.find(item => item.id === id)?.number || id;
-    rows.push([cable.number, cable.name, cable.brand, name(cable.fromId), name(cable.toId), cable.quantity, result.total, result.total === null ? null : result.total * cable.quantity, result.complete ? 'Да' : 'Нет']);
+    rows.push([cable.number, cable.name, cable.brand, cableDiameter(cable), cableSection(cable).areaMm2, name(cable.fromId), name(cable.toId), cable.quantity, result.total, result.total === null ? null : result.total * cable.quantity, result.complete ? 'Да' : 'Нет']);
   }
   rows.push([]); rows.push(['Оборудование']); rows.push(['Тип', 'Модель', 'Этаж', 'Количество']);
   for (const group of specs.equipment) rows.push([group.type, group.model, group.floor, group.quantity]);
@@ -18,8 +24,10 @@ export function clientCsv(project: Project): string {
   for (const group of specs.cables) rows.push([group.brand, group.lines, group.geometry, group.total]);
   rows.push([]); rows.push(['Замечания']); rows.push(['Номер', 'Этаж', 'X', 'Y', 'Замечание', 'Статус']);
   for (const pin of project.pins ?? []) rows.push([pin.number, project.floors.find(floor => floor.id === pin.floorId)?.name || '', pin.x, pin.y, pin.comment, pin.status === 'closed' ? 'закрыто' : 'открыто']);
-  rows.push([]); rows.push(['Инфраструктура']); rows.push(['Тип', 'Длина, м', 'Сегментов', 'Кабелей']);
-  for (const group of specs.infrastructure) rows.push([group.type, group.length, group.segments, group.cables]);
+  rows.push([]); rows.push(['Инфраструктура']); rows.push(['Тип', 'Длина, м', 'Сегментов', 'Кабелей', 'Макс. заполнение, %', 'Сегментов с превышением']);
+  for (const group of specs.infrastructure) rows.push([group.type, group.length, group.segments, group.cables, group.maxFillPercent, group.overSegments]);
+  rows.push([]); rows.push(['Заполнение лотков']); rows.push(['Трасса', 'Сегмент', 'Лоток, мм', 'Линий', 'Площадь кабелей, мм²', 'Заполнение, %', 'Статус']);
+  for (const row of specs.trayFill) rows.push([row.route, row.segment, row.tray, row.lines, row.areaMm2, row.fillPercent, row.status]);
   const cell = (value: string | number | null) => {
     let text = value === null ? '' : String(value);
     if (typeof value === 'string' && /^[=+\-@\t\r]/.test(text)) text = `'${text}`;

@@ -75,6 +75,40 @@ test('engineering incompleteness is saved; malformed structure, references and d
   } finally { await h.close(); }
 });
 
+test('необязательные размеры кабеля и лотка сохраняются, а неверные значения отклоняются', async () => {
+  const h = await harness();
+  try {
+    const p = fixture();
+    p.cables[0].outerDiameterMm = 6;
+    p.routes[0].trayWidthMm = 100;
+    p.routes[0].trayHeightMm = 50;
+    assert.equal((await h.request('/api/projects', 'POST', p)).status, 201);
+    const stored = await (await h.request('/api/projects/project-1')).json() as Project;
+    assert.equal(stored.cables[0].outerDiameterMm, 6);
+    assert.equal(stored.cables[0].crossSectionMm2, undefined, 'отсутствующее сечение остаётся неизвестным');
+    assert.equal(stored.routes[0].trayWidthMm, 100);
+    assert.equal(stored.routes[0].trayHeightMm, 50);
+    assert.equal(stored.routes[0].trayAreaMm2, undefined, 'отсутствующая площадь лотка остаётся неизвестной');
+
+    const invalid: Array<(project: Project) => void> = [
+      project => { project.cables[0].outerDiameterMm = -1; },
+      project => { project.cables[0].crossSectionMm2 = 0; },
+      project => { project.routes[0].trayWidthMm = 0; },
+      project => { project.routes[0].trayHeightMm = -5; },
+      project => { project.routes[0].trayAreaMm2 = 0; },
+    ];
+    for (const mutate of invalid) {
+      const bad = fixture(); mutate(bad);
+      assert.equal((await h.request('/api/projects/project-1', 'PUT', bad)).status, 422);
+    }
+    const badPost = fixture(); badPost.id = 'project-2'; badPost.cables[0].outerDiameterMm = -1;
+    assert.equal((await h.request('/api/projects', 'POST', badPost)).status, 422);
+    // Отклонённые PUT не испортили сохранённые данные.
+    const after = await (await h.request('/api/projects/project-1')).json() as Project;
+    assert.equal(after.cables[0].outerDiameterMm, 6);
+  } finally { await h.close(); }
+});
+
 test('PDF multipart and portable backup restore preserve original bytes; restore is atomic', async () => {
   const a = await harness(); const b = await harness();
   try {
@@ -106,12 +140,17 @@ test('exports contain journal and specifications, BOM CSV, workbook sheets and P
     await h.request('/api/projects', 'POST', p);
     const response = await h.request('/api/projects/project-1/export?format=csv'); assert.equal(response.status, 200);
     const bytes = Buffer.from(await response.arrayBuffer()); assert.deepEqual([...bytes.subarray(0, 3)], [0xef, 0xbb, 0xbf]);
-    const text = bytes.toString('utf8'); assert.match(text, /Кабельный журнал/); assert.match(text, /Инфраструктура/); assert.match(text, /ВВГ/); assert.match(text, /'\=1\+1/);
+    const text = bytes.toString('utf8'); assert.match(text, /Кабельный журнал/); assert.match(text, /Инфраструктура/); assert.match(text, /Заполнение лотков/); assert.match(text, /ВВГ/); assert.match(text, /'\=1\+1/);
     const workbookResponse = await h.request('/api/projects/project-1/export?format=xlsx'); assert.equal(workbookResponse.status, 200);
     const wb = XLSX.read(Buffer.from(await workbookResponse.arrayBuffer()), { type: 'buffer' });
-    assert.equal(wb.SheetNames.length, 6); assert.ok(wb.SheetNames.includes('Кабельный журнал'));
+    assert.deepEqual(wb.SheetNames, ['Кабельный журнал', 'Оборудование', 'Кабели', 'Инфраструктура', 'Заполнение лотков', 'Замечания', 'Предупреждения']);
+    assert.ok(wb.SheetNames.includes('Кабельный журнал'));
     const journal = XLSX.utils.sheet_to_json<any[]>(wb.Sheets['Кабельный журнал'], { header: 1 });
-    assert.equal(journal[1][12], 3); assert.equal(journal[1][13], 6);
+    const journalHeader = journal[0] as string[];
+    assert.ok(journalHeader.includes('Диаметр, мм')); assert.ok(journalHeader.includes('Сечение, мм²'));
+    const one = journalHeader.indexOf('Итог одного, м'); const withQuantity = journalHeader.indexOf('Итог с количеством, м');
+    assert.ok(one > 0 && withQuantity === one + 1);
+    assert.equal(journal[1][one], 3); assert.equal(journal[1][withQuantity], 6);
     const result = await h.request('/api/projects/project-1/export?format=pdf');
     if (result.status === 503) assert.match((await result.json()).error, /PDF_FONT_PATH/);
     else { assert.equal(result.status, 200); assert.equal(Buffer.from(await result.arrayBuffer()).subarray(0, 5).toString(), '%PDF-'); }

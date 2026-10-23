@@ -65,3 +65,80 @@ test('повреждённые обязательные списки и иден
   delete noId.id;
   assert.throws(() => migrateProject(noId), /идентификатор/);
 });
+
+function rawProject(): Record<string, unknown> {
+  return JSON.parse(JSON.stringify(project())) as Record<string, unknown>;
+}
+
+function pushRoute(raw: Record<string, unknown>, extra: Record<string, unknown>): void {
+  (raw.routes as Record<string, unknown>[]).push({ id: 'r1', number: 'Т1', type: 'Лоток', note: '', segments: [], ...extra });
+}
+
+function pushCable(raw: Record<string, unknown>, extra: Record<string, unknown>): void {
+  (raw.cables as Record<string, unknown>[]).push({
+    id: 'c1', number: 'К1', name: 'Линия', brand: 'ВВГ', purpose: '', fromId: 'e1', toId: 'e1',
+    segmentIds: [], reservePercent: 0, reserveFixed: 0, startReserve: 0, endReserve: 0, quantity: 1, note: '',
+    ...extra,
+  });
+}
+
+test('старый проект без полей лотка и сечения загружается: undefined, а не 0', () => {
+  const raw = rawProject();
+  pushRoute(raw, {});
+  pushCable(raw, {});
+  const migrated = migrateProject(raw);
+  assert.equal(migrated.schemaVersion, 2);
+  assert.equal(migrated.routes[0].trayWidthMm, undefined);
+  assert.equal(migrated.routes[0].trayHeightMm, undefined);
+  assert.equal(migrated.routes[0].trayAreaMm2, undefined);
+  assert.equal(migrated.cables[0].outerDiameterMm, undefined);
+  assert.equal(migrated.cables[0].crossSectionMm2, undefined);
+});
+
+test('мусорные новые поля не превращаются в 0 и не роняют загрузку', () => {
+  const raw = rawProject();
+  raw.schemaVersion = 2;
+  pushRoute(raw, { trayWidthMm: 'широкий', trayHeightMm: Number.NaN, trayAreaMm2: null });
+  pushCable(raw, { outerDiameterMm: 'abc', crossSectionMm2: Number.POSITIVE_INFINITY });
+  pushCable(raw, { id: 'c2', number: 'К2', outerDiameterMm: -5, crossSectionMm2: '6.5' });
+  // Пустая строка, boolean и массив не должны коэрситься в 0/1/50.
+  pushCable(raw, { id: 'c3', number: 'К3', outerDiameterMm: '', crossSectionMm2: '   ' });
+  pushCable(raw, { id: 'c4', number: 'К4', outerDiameterMm: true, crossSectionMm2: false });
+  pushCable(raw, { id: 'c5', number: 'К5', outerDiameterMm: [50], crossSectionMm2: {} });
+  (raw.routes as Record<string, unknown>[]).push({
+    id: 'r2', number: 'Т2', type: 'Лоток', note: '', segments: [],
+    trayWidthMm: true, trayHeightMm: '', trayAreaMm2: [],
+  });
+  const migrated = migrateProject(raw);
+  assert.equal(migrated.routes[0].trayWidthMm, undefined);
+  assert.equal(migrated.routes[0].trayHeightMm, undefined);
+  assert.equal(migrated.routes[0].trayAreaMm2, undefined);
+  assert.equal(migrated.routes[1].trayWidthMm, undefined);
+  assert.equal(migrated.routes[1].trayHeightMm, undefined);
+  assert.equal(migrated.routes[1].trayAreaMm2, undefined);
+  assert.equal(migrated.cables[0].outerDiameterMm, undefined);
+  assert.equal(migrated.cables[0].crossSectionMm2, undefined);
+  assert.equal(migrated.cables[1].outerDiameterMm, -5);
+  assert.equal(migrated.cables[1].crossSectionMm2, 6.5);
+  for (const index of [2, 3, 4]) {
+    assert.equal(migrated.cables[index].outerDiameterMm, undefined);
+    assert.equal(migrated.cables[index].crossSectionMm2, undefined);
+  }
+});
+
+test('корректные размеры лотка и сечения переживают JSON round-trip', () => {
+  const raw = rawProject();
+  pushRoute(raw, { trayWidthMm: 100, trayHeightMm: 50, trayAreaMm2: 5000 });
+  pushCable(raw, { outerDiameterMm: 6, crossSectionMm2: 28.27 });
+  const first = migrateProject(raw);
+  assert.equal(first.schemaVersion, 2);
+  assert.equal(first.routes[0].trayWidthMm, 100);
+  assert.equal(first.routes[0].trayHeightMm, 50);
+  assert.equal(first.routes[0].trayAreaMm2, 5000);
+  assert.equal(first.cables[0].outerDiameterMm, 6);
+  assert.equal(first.cables[0].crossSectionMm2, 28.27);
+  const second = migrateProject(JSON.parse(JSON.stringify(first)));
+  assert.equal(second.schemaVersion, 2);
+  assert.deepEqual(second.routes, first.routes);
+  assert.deepEqual(second.cables, first.cables);
+});

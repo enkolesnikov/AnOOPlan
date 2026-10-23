@@ -19,6 +19,12 @@ const array = (value: unknown, at: string): any[] => {
   if (!Array.isArray(value) || value.length > 100000) fail(`${at}: ожидается массив (до 100000 записей)`);
   return value as any[];
 };
+/** Необязательный размер (диаметр кабеля, лоток): отсутствие допустимо, но заданное значение должно быть > 0. */
+const positiveOrEmpty = (value: unknown, at: string): void => {
+  if (value === undefined || value === null) return;
+  number(value, at, false, 0);
+  if (value === 0) fail(`${at}: значение должно быть положительным`);
+};
 
 /** Structural/reference errors prevent writes; engineering incompleteness does not. */
 export function assertProject(input: unknown, pdfExists: (id: string) => boolean): asserts input is Project {
@@ -68,6 +74,8 @@ export function assertProject(input: unknown, pdfExists: (id: string) => boolean
   const vertices = new Map<string, string>();
   for (const r of routes) {
     claim(r.id, 'route.id'); text(r.type, 'route.type'); text(r.note, 'route.note');
+    // Размеры лотка необязательны: отсутствие означает «неизвестно», но заданное значение должно быть > 0.
+    for (const k of ['trayWidthMm', 'trayHeightMm', 'trayAreaMm2']) positiveOrEmpty(r[k], `route.${k}`);
     for (const s of array(r.segments, 'segments')) {
       object(s, 'segment'); claim(s.id, 'segment.id'); segmentIds.add(s.id);
       if (!['orthogonal', 'spatial'].includes(s.mode)) fail('Некорректный режим сегмента');
@@ -86,6 +94,8 @@ export function assertProject(input: unknown, pdfExists: (id: string) => boolean
     const chain = array(c.segmentIds, 'cable.segmentIds'); const used = new Set<string>();
     for (const id of chain) { text(id, 'segmentId', true); if (!segmentIds.has(id)) fail(`Сегмент не найден: ${id}`); if (used.has(id)) fail(`Повтор сегмента кабеля: ${id}`); used.add(id); }
     for (const k of ['reservePercent', 'reserveFixed', 'startReserve', 'endReserve']) number(c[k], `cable.${k}`, false, 0);
+    // Диаметр/сечение кабеля необязательны: отсутствие означает «неизвестно», но заданное значение должно быть > 0.
+    for (const k of ['outerDiameterMm', 'crossSectionMm2']) positiveOrEmpty(c[k], `cable.${k}`);
     number(c.quantity, 'cable.quantity', false, 1); if (!Number.isInteger(c.quantity)) fail('Количество кабелей должно быть целым');
   }
 }
