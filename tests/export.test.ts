@@ -128,6 +128,9 @@ test('PDF журнала собирается офлайн с кириллице
   assert.ok(text.includes(project.pins[0].number), 'нет номера замечания');
   assert.ok(text.includes('Итого, м'), 'нет колонки итога');
   assert.ok(text.includes('полный') || text.includes('неполный'), 'нет статуса расчёта');
+  // В учебном проекте цены заданы, поэтому итог PDF содержит стоимость, а не «цены заданы не для всех».
+  assert.ok(text.includes('стоимость:'), 'в итоге PDF нет стоимости');
+  assert.ok(!text.includes('цены заданы не для всех кабелей'), 'в демо цены заданы у всех кабелей');
   assert.ok(!text.includes('\uFFFD'), 'в тексте есть неизвестные глифы');
 
   // Новые колонки журнала и секция заполнения лотка.
@@ -155,7 +158,19 @@ test('смета считается по цене за метр и не подм
   assert.ok(calc.total !== null);
   assert.ok(Math.abs((calc.cost ?? 0) - calc.total! * cable.quantity * 50) < 1e-6);
 
+  // Учебный проект уже со стоимостью: у всех демо-кабелей цена 38 ₽/м,
+  // поэтому и цена, и стоимость попадают в журнал числом.
+  const demo = createDemoProject();
+  assert.ok(demo.cables.every(item => item.pricePerMeter === 38), 'в демо у всех кабелей цена 38 ₽/м');
+  assert.ok(demo.cables.every(item => calculateCable(demo, item).cost !== null), 'в демо стоимость считается');
+  const demoJournal = exportSheets(demo)[0];
+  for (const row of demoJournal.rows.slice(1)) {
+    assert.equal(row[16], 38, 'колонка «Цена, ₽/м» = 38');
+    assert.ok(typeof row[17] === 'number' && Number.isFinite(row[17]), 'колонка «Стоимость, ₽» — число');
+  }
+
   const noPrice = createDemoProject();
+  for (const item of noPrice.cables) delete item.pricePerMeter;
   assert.equal(calculateCable(noPrice, noPrice.cables[0]).cost, null, 'без цены стоимость неизвестна, а не ноль');
 
   const broken = createDemoProject();

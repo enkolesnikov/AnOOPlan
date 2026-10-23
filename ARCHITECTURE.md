@@ -12,7 +12,7 @@ CablePlan работает в двух режимах: локальном (React
 ```ts
 interface Point { x:number; y:number }
 interface Floor { id:string; name:string; elevation:number|null; metersPerUnit:number|null; pdfId?:string; page:number; width:number; height:number }
-interface Equipment { id:string; number:string; name:string; type:string; floorId:string; x:number; y:number; height:number|null; note:string; properties:Record<string,string> }
+interface Equipment { id:string; number:string; name:string; type:string; floorId:string; x:number; y:number; height:number|null; note:string; properties:Record<string,string>; color?:string|null }
 interface Vertex { id:string; floorId:string; x:number; y:number; height:number|null }
 interface Segment { id:string; a:Vertex; b:Vertex; mode:'orthogonal'|'spatial'; reservePercent:number; reserveFixed:number }
 interface Route { id:string; number:string; type:string; segments:Segment[]; note:string; trayWidthMm?:number|null; trayHeightMm?:number|null; trayAreaMm2?:number|null }
@@ -45,7 +45,13 @@ interface Project { schemaVersion:1|2; id:string; name:string; floors:Floor[]; e
 
 ## Учебный проект
 
-`demoPlanPdf()` в `src/demo.ts` генерирует синтетический векторный PDF-план (1000 × 700 единиц): наружные стены, коридор, комнаты, дверные проёмы и подписи стандартным шрифтом Helvetica. Файл собирается в браузере без внешних ресурсов и возвращается как data URL `data:application/pdf;base64,…`. `createDemoProject()` использует его как подложку этажей; проект помечен как учебный и не заменяет рабочую документацию.
+`demoPlanPdf()` в `src/demo.ts` генерирует синтетический векторный PDF-план (1000 × 700 единиц): наружные стены, коридор, комнаты, дверные проёмы и подписи стандартным шрифтом Helvetica. Файл собирается в браузере без внешних ресурсов и возвращается как data URL `data:application/pdf;base64,…`. `createDemoProject()` использует его как подложку этажей; проект помечен как учебный и не заменяет рабочую документацию. В учебном проекте у кабелей задана цена (38 ₽/м для КВК-П 2×0,75), поэтому смета и стоимость в журнале/PDF/XLSX считаются сразу, а на плане есть камера, шкаф и розетка с разными иконками.
+
+## Иконки оборудования
+
+Тип оборудования определяет иконку: `equipmentIcon(type)` в `src/equipment-icons.ts` ищет подстроки «камер», «шкаф», «розет», «коммутатор», «считыв» (регистр не важен) и иначе возвращает универсальный маркер. Геометрия всех иконок — `EQUIPMENT_ICON_GLYPHS` в системе 24×24, контуры заливаются цветом с `fill-rule="evenodd"` (объектив камеры, окно шкафа, гнёзда розетки и порты коммутатора — сквозные отверстия). Один и тот же набор используется на плане в `App.tsx`, в списке объектов и в `plan-svg.ts` для PDF-листа «План».
+
+Цвет иконки хранится в `Equipment.color` как `#rrggbb`; `equipmentColor()` возвращает валидный сохранённый цвет или цвет по умолчанию для типа (`EQUIPMENT_ICON_DEFAULT_COLORS`: камеры тёмные, шкафы фиолетовые, розетки оранжевые и т.д.). `normalizeEquipmentColor()` принимает `#rgb`/`#rrggbb` (приводит к нижнему регистру и полному виду), а мусор возвращает как `null`: при загрузке проекта такое значение отбрасывается в `undefined`, при сохранении через API — отклоняется с 422. Невалидный цвет не подменяется молча: при загрузке мусор отбрасывается в `undefined`, и рисуется цвет по умолчанию для типа; через API такое значение отклоняется. Пользователь выбирает цвет из палитры `EQUIPMENT_COLOR_PRESETS`, произвольным `input type=color` или сбрасывает кнопкой «По умолчанию» (`color: null`). Цвет входит в JSON-копию и снимки версий, как и остальные поля оборудования.
 
 ## API
 - GET /api/projects → {id,name,updatedAt}[]
@@ -73,6 +79,7 @@ interface Project { schemaVersion:1|2; id:string; name:string; floors:Floor[]; e
 ## Владение модулями
 `src/model.ts` — модель данных (общая для клиента и сервера); схема версионируется, менять осторожно.
 `src/engine.ts` — расчёты: длины, запасы, автопрокладка, заполнение лотка, спецификации, валидация.
+`src/equipment-icons.ts` — иконки и цвета оборудования (общий набор для плана, PDF и списка).
 `src/App.tsx`, `src/styles.css` — интерфейс; расчёты импортируются из движка и мемоизируются.
 `src/sheets.ts`, `src/export-xlsx.ts`, `src/export-pdf.ts`, `src/client-csv.ts` — выгрузки.
 `src/migrations.ts` — схема и нормализация; `src/idb.ts`, `src/local-projects.ts`, `src/storage-gc.ts` — хранение.

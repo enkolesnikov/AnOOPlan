@@ -157,6 +157,7 @@ textarea { resize: vertical; min-height: 54px; }
   width: 26px; height: 26px; flex-shrink: 0; border-radius: 6px; display: grid; place-items: center;
   background: var(--surface-2); color: var(--muted); font-size: 12px; font-weight: 600;
 }
+.object-icon svg { display: block; }
 .object-icon.equipment-icon { background: #e3f2f4; color: var(--accent-2); }
 .object-icon.route-icon { background: #fdf1e2; color: var(--warn); }
 .object-icon.cable-icon { background: #efe9f8; color: var(--violet); }
@@ -243,8 +244,8 @@ textarea { resize: vertical; min-height: 54px; }
 .route-segment.is-selected .visible-route { stroke: var(--accent-2); }
 .svg-label { font-family: inherit; font-weight: 600; }
 .equipment-symbol { cursor: pointer; }
-.equipment-symbol rect { fill: #fff; stroke: var(--accent-2); }
-.equipment-symbol.is-selected rect { fill: var(--accent-soft); stroke: var(--accent-2); }
+.equipment-symbol .equipment-badge { fill: #fff; }
+.equipment-symbol.is-selected .equipment-badge { fill: var(--accent-soft); }
 .equipment-symbol text { fill: var(--text); font-family: inherit; font-weight: 600; }
 .vertex-handle { cursor: move; }
 
@@ -537,6 +538,23 @@ input[inputmode="decimal"] { text-align: left; }
   border: 1px dashed var(--border); background: var(--surface-3);
   color: var(--muted); font-size: 13px;
 }
+
+/* ── Иконка оборудования и выбор цвета ───────────────────────────────── */
+.equipment-appearance {
+  display: flex; flex-direction: column; gap: 8px;
+  padding: 10px; border: 1px solid var(--border-soft); border-radius: 10px;
+  background: var(--surface-3);
+}
+.equipment-appearance .section-label { margin-top: 0; }
+.icon-preview { display: flex; align-items: center; gap: 10px; font-size: 13px; font-weight: 600; }
+.color-swatches { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.color-swatch {
+  width: 26px; height: 26px; min-height: 26px; padding: 0; border-radius: 50%;
+  border: 2px solid var(--surface); box-shadow: 0 0 0 1px var(--border);
+}
+.color-swatch.active { box-shadow: 0 0 0 2px var(--surface), 0 0 0 4px var(--text); }
+.color-custom { width: 34px; height: 32px; min-height: 32px; padding: 2px; border-radius: 8px; }
+.color-default { font-size: 12px; min-height: 32px; padding: 4px 9px; }
 
 /* ── Смета, шаблоны и история версий ─────────────────────────────────── */
 .sheet-fields { display: flex; gap: 8px; padding: 10px 0 4px; }

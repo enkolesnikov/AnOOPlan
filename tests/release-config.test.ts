@@ -42,6 +42,7 @@ test('release-workflow подписывает из секретов и публ�
   assert.match(workflow, /secrets\.ANDROID_KS_PASS/);
   assert.match(workflow, /secrets\.ANDROID_CERT_SHA256/);
   assert.match(workflow, /gh release create/);
+  assert.match(workflow, /--notes-from-tag/, 'описание релиза должно браться из аннотации тега');
   assert.match(workflow, /rm -rf keystore/);
   assert.doesNotMatch(workflow, /keytool -genkeypair/);
 });

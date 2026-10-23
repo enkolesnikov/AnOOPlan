@@ -117,7 +117,7 @@ jobs:
           if gh release view "$TAG" >/dev/null 2>&1; then
             gh release upload "$TAG" "$APK" --clobber
           else
-            gh release create "$TAG" "$APK" --title "AnOOPlan ${TAG#v}" --generate-notes
+            gh release create "$TAG" "$APK" --title "AnOOPlan ${TAG#v}" --notes-from-tag
           fi
 
       - name: Удалить keystore с раннера

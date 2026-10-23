@@ -1,4 +1,5 @@
 import type { Project } from './model';
+import { normalizeEquipmentColor } from './equipment-icons';
 
 /**
  * Текущая версия схемы проекта. Пока это 1; каркас миграций нужен, чтобы
@@ -75,6 +76,9 @@ function normalizeEquipment(value: unknown): Project['equipment'][number] {
       ? Object.fromEntries(Object.entries(value.properties).map(([key, item]) => [key, String(item ?? '')]))
       : {},
     photos,
+    // Цвет иконки необязателен: валидный #rgb/#rrggbb приводится к #rrggbb,
+    // мусор и не-строки не заменяются дефолтом молча, а считаются отсутствующими.
+    color: normalizeEquipmentColor(value.color) ?? undefined,
   };
 }
 

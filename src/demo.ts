@@ -15,10 +15,12 @@ const equipment = (
   floorId: string, x: number, y: number, height: number,
 ): Equipment => ({ id, number, name, type, floorId, x, y, height, note: '', properties: { model: name } });
 
+const DEMO_PRICE_PER_METER = 38; // КВК-П 2×0,75, ₽/м — в учебном проекте стоимость считается сразу
+
 const cable = (
   id: string, number: string, name: string, brand: string, purpose: string,
   fromId: string, toId: string, segmentIds: string[], quantity = 1,
-): Cable => ({ id, number, name, brand, purpose, fromId, toId, segmentIds, reservePercent: 10, reserveFixed: 0, startReserve: 0.5, endReserve: 0.5, quantity, note: '', outerDiameterMm: 6 });
+): Cable => ({ id, number, name, brand, purpose, fromId, toId, segmentIds, reservePercent: 10, reserveFixed: 0, startReserve: 0.5, endReserve: 0.5, quantity, note: '', outerDiameterMm: 6, pricePerMeter: DEMO_PRICE_PER_METER });
 
 /** Простейший схематичный план здания в виде PDF (вектор, стандартный шрифт, без внешних файлов). */
 export function demoPlanPdf(): string {
@@ -80,6 +82,7 @@ export function createDemoProject(): Project {
     equipment(uid(), 'К1', 'Камера входа', 'Камера', f1.id, 300, 350, 3),
     equipment(uid(), 'К2', 'Камера коридора', 'Камера', f1.id, 500, 350, 3),
     equipment(uid(), 'К3', 'Камера периметра', 'Камера', f1.id, 700, 200, 3),
+    equipment(uid(), 'Р1', 'Розетка у входа', 'Розетка', f1.id, 850, 350, 0.3),
     equipment(uid(), 'Ш2', 'Шкаф этажа 2', 'Шкаф', f2.id, 100, 350, 0),
     equipment(uid(), 'К4', 'Камера лестницы', 'Камера', f2.id, 300, 200, 3),
   ];

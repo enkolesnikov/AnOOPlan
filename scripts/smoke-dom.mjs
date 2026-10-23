@@ -581,6 +581,80 @@ if (traySection) {
 const infrastructureSection = Array.from(document.querySelectorAll('.spec-section')).find(section => (section.querySelector('h2')?.textContent || '').includes('Кабельная инфраструктура'));
 check(Boolean(infrastructureSection) && (infrastructureSection.textContent || '').includes('Макс. заполнение, %'), 'в инфраструктуре есть колонка «Макс. заполнение, %»');
 
+console.log('\n7k. Иконки оборудования и выбор цвета');
+const planViewTab = Array.from(document.querySelectorAll('.view-tabs button')).find(button => (button.textContent || '').trim() === 'План');
+if (planViewTab) planViewTab.click();
+await sleep(250);
+const floorsTabIcons = Array.from(document.querySelectorAll('.structure-tabs button')).find(button => (button.textContent || '').includes('Этажи'));
+if (floorsTabIcons) floorsTabIcons.click();
+await sleep(200);
+const floorRows = Array.from(document.querySelectorAll('.object-row'));
+const markersByFloor = [];
+for (const floorRow of floorRows) {
+  floorRow.click();
+  await sleep(200);
+  markersByFloor.push(Array.from(document.querySelectorAll('[data-object="equipment"]')).map(node => ({
+    icon: node.getAttribute('data-icon'),
+    color: node.getAttribute('data-color'),
+    text: node.textContent || '',
+  })));
+}
+const allMarkers = markersByFloor.flat();
+const markerIcons = allMarkers.map(marker => marker.icon);
+check(markerIcons.includes('camera'), `на плане есть маркер data-icon="camera": ${[...new Set(markerIcons)].join(', ')}`);
+check(markerIcons.includes('cabinet'), 'на плане есть маркер data-icon="cabinet"');
+check(markerIcons.includes('socket'), 'на плане есть маркер data-icon="socket"');
+const markerColors = allMarkers.map(marker => marker.color || '');
+check(markerColors.length > 0 && markerColors.every(value => /^#[0-9a-f]{6}$/i.test(value)), `у маркеров плана валидный data-color: ${[...new Set(markerColors)].slice(0, 4).join(', ')}`);
+check(document.querySelectorAll('[data-object="equipment"] .equipment-badge').length > 0, 'маркер рисуется бейджем с иконкой (SVG)');
+check(document.querySelectorAll('[data-object="equipment"] path').length > 0, 'внутри маркера есть SVG-глиф иконки');
+
+const equipmentTabIcons = Array.from(document.querySelectorAll('.structure-tabs button')).find(button => (button.textContent || '').includes('Оборуд'));
+if (equipmentTabIcons) equipmentTabIcons.click();
+await sleep(200);
+const equipmentRows = Array.from(document.querySelectorAll('.object-row[data-kind="equipment"]'));
+const rowsWithIcon = equipmentRows.filter(row => row.querySelector('.object-icon svg'));
+check(equipmentRows.length > 0, `в списке «Оборуд.» есть строки: ${equipmentRows.length}`);
+check(rowsWithIcon.length === equipmentRows.length, `у каждой строки списка SVG-иконка: ${rowsWithIcon.length}/${equipmentRows.length}`);
+
+const cameraRow = equipmentRows.find(row => (row.textContent || '').includes('Камера'));
+check(Boolean(cameraRow), 'в списке оборудования есть камера');
+if (cameraRow) {
+  const selectedId = cameraRow.getAttribute('data-id') || '';
+  const selectedNumber = (cameraRow.querySelector('strong')?.textContent || '').trim();
+  cameraRow.click();
+  await sleep(300);
+  const markerNode = () => document.querySelector(`[data-object="equipment"][data-id="${selectedId}"]`);
+  const defaultColor = (markerNode()?.getAttribute('data-color') || '').toLowerCase();
+  check(/^#[0-9a-f]{6}$/.test(defaultColor), `у выбранной камеры дефолтный data-color: ${defaultColor}`);
+  check((markerNode()?.textContent || '').includes(selectedNumber), `номер оборудования «${selectedNumber}» виден рядом с иконкой`);
+  const propertiesText = document.querySelector('.properties')?.textContent || '';
+  check(propertiesText.includes('Иконка'), 'в свойствах оборудования есть блок «Иконка»');
+  check(propertiesText.includes('Камера'), 'подпись иконки показывает тип: Камера');
+  check(propertiesText.includes('Цвет иконки'), 'в свойствах есть блок «Цвет иконки»');
+  check(propertiesText.includes('По умолчанию'), 'есть кнопка «По умолчанию»');
+  check(propertiesText.includes('По умолчанию цвет зависит от типа оборудования'), 'показано пояснение про хранение цвета в проекте');
+  const swatches = Array.from(document.querySelectorAll('.color-swatch'));
+  check(swatches.length >= 8, `кнопок-образцов цвета не меньше 8: ${swatches.length}`);
+  check(Boolean(document.querySelector('.color-swatch.active')), 'текущий цвет отмечен активным образцом');
+  const customColor = document.querySelector('input[aria-label="Свой цвет иконки"]');
+  check(Boolean(customColor) && (customColor.value || '').toLowerCase() === defaultColor, `поле «Свой цвет иконки» показывает текущий цвет: ${customColor?.value || '—'}`);
+  const alternative = swatches.find(button => (button.getAttribute('aria-label') || '').trim().toLowerCase() !== `цвет ${defaultColor}`);
+  check(Boolean(alternative), 'есть образец цвета, отличный от текущего');
+  if (alternative) {
+    const expected = (alternative.getAttribute('aria-label') || '').replace('Цвет', '').trim().toLowerCase();
+    alternative.click();
+    await sleep(250);
+    check((markerNode()?.getAttribute('data-color') || '').toLowerCase() === expected, `клик по образцу меняет data-color маркера: ${markerNode()?.getAttribute('data-color')} (ожидали ${expected})`);
+    const reset = document.querySelector('.color-default');
+    if (reset) {
+      reset.click();
+      await sleep(250);
+      check((markerNode()?.getAttribute('data-color') || '').toLowerCase() === defaultColor, `«По умолчанию» возвращает цвет типа: ${markerNode()?.getAttribute('data-color')}`);
+    }
+  }
+}
+
 console.log('\n8. Выход с сохранением (кнопка «Назад» в Android)');
 const saveAndExit = window.__anooplanSaveAndExit;
 check(typeof saveAndExit === 'function', 'оболочке доступна функция saveAndExit');

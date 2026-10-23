@@ -21,7 +21,7 @@ test('валидный проект v1 мигрирует в v2 без поте�
   assert.deepEqual(migrated.routes, source.routes);
   assert.deepEqual(migrated.cables, source.cables);
   assert.deepEqual(migrated.pins, []);
-  assert.deepEqual(migrated.equipment[0], { ...source.equipment[0], photos: [] });
+  assert.deepEqual(migrated.equipment[0], { ...source.equipment[0], photos: [], color: undefined });
   assert.equal(CURRENT_SCHEMA_VERSION, 2);
 });
 
@@ -141,4 +141,39 @@ test('корректные размеры лотка и сечения пере�
   assert.equal(second.schemaVersion, 2);
   assert.deepEqual(second.routes, first.routes);
   assert.deepEqual(second.cables, first.cables);
+});
+
+function withEquipmentColor(color: unknown, present = true): Record<string, unknown> {
+  const raw = rawProject();
+  const equipment = (raw.equipment as Record<string, unknown>[])[0];
+  if (present) equipment.color = color;
+  else delete equipment.color;
+  return raw;
+}
+
+test('цвет оборудования: #rgb/#RRGGBB нормализуется в #rrggbb', () => {
+  for (const [input, expected] of [['#ABC', '#aabbcc'], ['#AABBCC', '#aabbcc'], ['#aabbcc', '#aabbcc'], [' #ABC ', '#aabbcc']] as const) {
+    const migrated = migrateProject(withEquipmentColor(input));
+    assert.equal(migrated.equipment[0].color, expected, `цвет ${input}`);
+  }
+});
+
+test('цвет оборудования: мусор и отсутствие — undefined, а не чёрный/дефолт', () => {
+  for (const input of ['red', '#12', '', '   ', '#GGGGGG', 'aabbcc', 123, {}, [], true, null]) {
+    const migrated = migrateProject(withEquipmentColor(input));
+    assert.ok(Object.hasOwn(migrated.equipment[0], 'color'), 'поле color должно остаться в объекте');
+    assert.equal(migrated.equipment[0].color, undefined, `цвет ${JSON.stringify(input)} должен стать undefined`);
+  }
+  for (const raw of [withEquipmentColor(undefined), withEquipmentColor(null, false)]) {
+    const migrated = migrateProject(raw);
+    assert.equal(migrated.equipment[0].color, undefined, 'отсутствующий цвет — undefined');
+  }
+});
+
+test('корректный цвет оборудования переживает JSON round-trip', () => {
+  const first = migrateProject(withEquipmentColor('#AABBCC'));
+  assert.equal(first.equipment[0].color, '#aabbcc');
+  const second = migrateProject(JSON.parse(JSON.stringify(first)));
+  assert.equal(second.equipment[0].color, '#aabbcc');
+  assert.deepEqual(second.equipment, first.equipment);
 });

@@ -1,4 +1,5 @@
 import type { Project } from '../src/model.js';
+import { normalizeEquipmentColor } from '../src/equipment-icons.js';
 
 export class ApiError extends Error {
   constructor(public status: number, message: string) { super(message); }
@@ -69,6 +70,8 @@ export function assertProject(input: unknown, pdfExists: (id: string) => boolean
   }
   for (const e of equipment) {
     claim(e.id, 'equipment.id'); equipmentIds.add(e.id); text(e.name, 'equipment.name'); text(e.type, 'equipment.type'); text(e.note, 'equipment.note'); position(e, 'equipment');
+    // Цвет иконки необязателен: отсутствие допустимо, но заданный цвет обязан быть #rgb/#rrggbb.
+    if (e.color !== undefined && e.color !== null && normalizeEquipmentColor(e.color) === null) fail('equipment.color: ожидается цвет #rrggbb');
     const props = object(e.properties, 'equipment.properties'); for (const [k, v] of Object.entries(props)) { text(k, 'property key'); text(v, 'property value'); }
   }
   const vertices = new Map<string, string>();

@@ -109,6 +109,44 @@ test('необязательные размеры кабеля и лотка с�
   } finally { await h.close(); }
 });
 
+test('цвет оборудования сохраняется, а неверный цвет отклоняется с 422', async () => {
+  const h = await harness();
+  try {
+    const p = fixture();
+    p.equipment[0].color = '#AABBCC';
+    assert.equal((await h.request('/api/projects', 'POST', p)).status, 201);
+    const stored = await (await h.request('/api/projects/project-1')).json() as Project;
+    assert.ok(stored.equipment[0].color, 'цвет оборудования должен сохраниться');
+    assert.equal(String(stored.equipment[0].color).toLowerCase(), '#aabbcc');
+    assert.equal(stored.equipment[1].color, undefined, 'оборудование без цвета не получает дефолт');
+
+    // Валидный короткий цвет принимается.
+    const short = fixture();
+    short.id = 'project-2';
+    short.equipment[1].color = '#ABC';
+    assert.equal((await h.request('/api/projects', 'POST', short)).status, 201);
+
+    const invalid: Array<(project: Project) => void> = [
+      project => { project.equipment[0].color = 'red'; },
+      project => { project.equipment[0].color = '#12'; },
+      project => { project.equipment[1].color = ''; },
+    ];
+    for (const mutate of invalid) {
+      const bad = fixture(); mutate(bad);
+      assert.equal((await h.request('/api/projects/project-1', 'PUT', bad)).status, 422);
+    }
+
+    const badPost = fixture(); badPost.id = 'project-3'; badPost.equipment[0].color = 'red';
+    const rejected = await h.request('/api/projects', 'POST', badPost);
+    assert.equal(rejected.status, 422);
+    assert.match((await rejected.json()).error, /equipment\.color/);
+
+    // Отклонённые PUT не испортили сохранённый цвет.
+    const after = await (await h.request('/api/projects/project-1')).json() as Project;
+    assert.equal(String(after.equipment[0].color).toLowerCase(), '#aabbcc');
+  } finally { await h.close(); }
+});
+
 test('PDF multipart and portable backup restore preserve original bytes; restore is atomic', async () => {
   const a = await harness(); const b = await harness();
   try {

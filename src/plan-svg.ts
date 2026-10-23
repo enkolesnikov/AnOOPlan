@@ -1,6 +1,7 @@
 // SVG-снимок плана этажа: это прозрачный оверлей. Подложка (белый лист + PDF) рисуется
 // отдельно растром, а трассы и оборудование — векторами; снимок попадает в PDF «на подпись».
 import type { Floor, Project } from './model';
+import { EQUIPMENT_ICON_GLYPHS, equipmentColor, equipmentIcon } from './equipment-icons';
 
 const escapeXml = (value: string): string => value.replace(/[<>&"']/g, character => {
   switch (character) {
@@ -43,14 +44,24 @@ export function buildPlanSvg(project: Project, floor: Floor): string {
     }
   }
 
+  // Оборудование — те же иконки, что и на экране: белый бейдж с обводкой цвета типа
+  // и глиф заливкой; бейдж маленький, чтобы оверлей оставался прозрачным.
+  const iconSize = Math.max(12, width / 70) * 1.4;
   const equipment = project.equipment
     .filter(item => item.floorId === floor.id)
     .map(item => {
-      const half = symbol / 2;
-      return `<g>` +
-        `<rect x="${round(item.x - half)}" y="${round(item.y - half)}" width="${round(symbol)}" height="${round(symbol)}" rx="${round(symbol / 6)}" fill="#122936" />` +
-        `<text x="${round(item.x + half + 4)}" y="${round(item.y + symbol / 3)}" font-size="${round(symbol * 0.72)}" fill="#122936" font-family="sans-serif">${escapeXml(item.number)}</text>` +
-        `</g>`;
+      const icon = equipmentIcon(item.type);
+      const color = equipmentColor(item);
+      const half = iconSize / 2;
+      const scale = Math.round((iconSize / 24) * 1000) / 1000;
+      const paths = EQUIPMENT_ICON_GLYPHS[icon].paths
+        .map(path => `<path d="${path}" fill="${color}" fill-rule="evenodd" />`)
+        .join('');
+      return `<g data-icon="${icon}" transform="translate(${round(item.x - half)}, ${round(item.y - half)}) scale(${scale})">` +
+        `<rect x="1" y="1" width="22" height="22" rx="5" fill="#fff" stroke="${color}" stroke-width="2" />` +
+        paths +
+        `</g>` +
+        `<text x="${round(item.x + half + 4)}" y="${round(item.y + iconSize / 3)}" font-size="${round(symbol * 0.72)}" fill="#122936" font-family="sans-serif">${escapeXml(item.number)}</text>`;
     });
 
   const captionHeight = Math.max(24, height / 24);
