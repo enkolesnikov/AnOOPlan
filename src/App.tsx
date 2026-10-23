@@ -13,6 +13,8 @@ import { AboutSheet, APP_VERSION } from './About';
 import { clearDiagnostics, diagnosticsText, logDiagnostic, readDiagnostics, type DiagnosticEntry } from './diagnostics';
 import { unusedStorageKeys } from './storage-gc';
 import { migrateProject } from './migrations';
+import { idbDelete, idbGet, idbPut, idbStoreDelete, idbStoreGet, idbStoreGetAll, idbStoreKeys, idbStorePut } from './idb';
+import { deleteLocalProject, readLocalProjects, saveLocalProject } from './local-projects';
 import { createUuid as uid, cloneValue as clone, decodeImage, loadBitmap } from './compat';
 
 type PdfjsModule = typeof import('pdfjs-dist/legacy/build/pdf.mjs');
@@ -43,96 +45,8 @@ async function api<T>(url: string, options?: RequestInit): Promise<T> {
   return response.json() as Promise<T>;
 }
 const jsonOptions = (method: string, body: unknown): RequestInit => ({ method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
-const LS_PROJECTS = 'cableplan:projects';
-function lsProjects(): Project[] { try { const raw = localStorage.getItem(LS_PROJECTS); const list = JSON.parse(raw || '[]'); return Array.isArray(list) ? list : []; } catch { return []; } }
-function lsSave(project: Project) { const list = lsProjects(); const i = list.findIndex(p => p.id === project.id); if (i >= 0) list[i] = project; else list.push(project); localStorage.setItem(LS_PROJECTS, JSON.stringify(list)); }
-function lsDelete(id: string) { localStorage.setItem(LS_PROJECTS, JSON.stringify(lsProjects().filter(p => p.id !== id))); }
-function idbOpen(): Promise<IDBDatabase> {
-  return new Promise((resolve, reject) => {
-    const req = indexedDB.open('cableplan', 2);
-    req.onupgradeneeded = () => {
-      if (!req.result.objectStoreNames.contains('pdfs')) req.result.createObjectStore('pdfs');
-      if (!req.result.objectStoreNames.contains('snapshots')) req.result.createObjectStore('snapshots');
-    };
-    req.onsuccess = () => resolve(req.result);
-    req.onerror = () => reject(req.error);
-  });
-}
-async function idbPut(key: string, value: Blob): Promise<void> {
-  const db = await idbOpen();
-  await new Promise<void>((resolve, reject) => {
-    const tx = db.transaction('pdfs', 'readwrite');
-    tx.objectStore('pdfs').put(value, key);
-    tx.oncomplete = () => resolve();
-    tx.onerror = () => reject(tx.error);
-  });
-}
-async function idbGet(key: string): Promise<Blob | undefined> {
-  const db = await idbOpen();
-  return new Promise((resolve, reject) => {
-    const tx = db.transaction('pdfs', 'readonly');
-    const req = tx.objectStore('pdfs').get(key);
-    req.onsuccess = () => resolve(req.result as Blob | undefined);
-    req.onerror = () => reject(req.error);
-  });
-}
 function blobToBase64(blob: Blob): Promise<string> {
   return new Promise((resolve, reject) => { const reader = new FileReader(); reader.onload = () => resolve(String(reader.result).split(',')[1] ?? ''); reader.onerror = () => reject(reader.error); reader.readAsDataURL(blob); });
-}
-async function idbStorePut(store: string, key: string, value: unknown): Promise<void> {
-  const db = await idbOpen();
-  await new Promise<void>((resolve, reject) => {
-    const tx = db.transaction(store, 'readwrite');
-    tx.objectStore(store).put(value, key);
-    tx.oncomplete = () => resolve();
-    tx.onerror = () => reject(tx.error);
-  });
-}
-async function idbStoreGet<T>(store: string, key: string): Promise<T | undefined> {
-  const db = await idbOpen();
-  return new Promise((resolve, reject) => {
-    const tx = db.transaction(store, 'readonly');
-    const req = tx.objectStore(store).get(key);
-    req.onsuccess = () => resolve(req.result as T | undefined);
-    req.onerror = () => reject(req.error);
-  });
-}
-async function idbStoreDelete(store: string, key: string): Promise<void> {
-  const db = await idbOpen();
-  await new Promise<void>((resolve, reject) => {
-    const tx = db.transaction(store, 'readwrite');
-    tx.objectStore(store).delete(key);
-    tx.oncomplete = () => resolve();
-    tx.onerror = () => reject(tx.error);
-  });
-}
-async function idbStoreKeys(store: string): Promise<string[]> {
-  const db = await idbOpen();
-  return new Promise((resolve, reject) => {
-    const tx = db.transaction(store, 'readonly');
-    const req = tx.objectStore(store).getAllKeys();
-    req.onsuccess = () => resolve((req.result as IDBValidKey[]).map(String));
-    req.onerror = () => reject(req.error);
-  });
-}
-
-async function idbStoreGetAll<T>(store: string): Promise<T[]> {
-  const db = await idbOpen();
-  return new Promise((resolve, reject) => {
-    const tx = db.transaction(store, 'readonly');
-    const req = tx.objectStore(store).getAll();
-    req.onsuccess = () => resolve(req.result as T[]);
-    req.onerror = () => reject(req.error);
-  });
-}
-async function idbDelete(key: string): Promise<void> {
-  const db = await idbOpen();
-  await new Promise<void>((resolve, reject) => {
-    const tx = db.transaction('pdfs', 'readwrite');
-    tx.objectStore('pdfs').delete(key);
-    tx.oncomplete = () => resolve();
-    tx.onerror = () => reject(tx.error);
-  });
 }
 // Нативная оболочка Android (AnOOPlan) подключает мост AnOOPlanNative:
 // через него экспортированные файлы попадают в «Загрузки/AnOOPlan».
@@ -310,7 +224,7 @@ export default function App() {
   async function saveProject(silent = false): Promise<Project> {
     const snapshot = clone(projectRef.current);
     if (staticMode) {
-      lsSave(snapshot); setPersisted(true); setSaved(JSON.stringify(snapshot));
+      saveLocalProject(snapshot); setPersisted(true); setSaved(JSON.stringify(snapshot));
       if (!silent) {
         setMessage(`Проект «${snapshot.name}» сохранён в браузере`);
         void takeSnapshot('ручное сохранение').catch(() => { /* история недоступна */ });
@@ -331,10 +245,10 @@ export default function App() {
         const snapshotKeys = (await idbStoreKeys('snapshots')).filter(key => key.startsWith(id + ':'));
         for (const key of snapshotKeys) { try { await idbStoreDelete('snapshots', key); } catch { /* хранилище недоступно */ } }
       } catch { /* хранилище недоступно — проект всё равно удаляем */ }
-      const target = lsProjects().find(p => p.id === id);
+      const target = readLocalProjects().find(p => p.id === id);
       if (target) for (const f of target.floors) if (f.pdfId?.startsWith('idb:')) { try { await idbDelete(f.pdfId.slice(4)); } catch { /* хранилище недоступно */ } }
       if (target) for (const item of target.equipment) for (const key of item.photos || []) { try { await idbDelete('photo:' + key); } catch { /* хранилище недоступно */ } }
-      lsDelete(id);
+      deleteLocalProject(id);
     } else await api('/api/projects/' + id, { method: 'DELETE' });
     setProjects(list => list ? list.filter(p => p.id !== id) : null);
     setMessage(`Проект «${name}» удалён.`);
@@ -960,7 +874,7 @@ export default function App() {
   async function collectStorageGarbage(states: Project[]): Promise<void> {
     if (!staticMode) return;
     try {
-      const saved = lsProjects();
+      const saved = readLocalProjects();
       const projectIds = new Set([...states, ...saved].map(item => item.id));
       const snapshotProjects: Project[] = [];
       for (const entry of await idbStoreGetAll<SnapshotEntry>('snapshots')) {
@@ -1224,18 +1138,18 @@ export default function App() {
   const toolHints: Record<Tool, string> = { select: 'Выберите объект • тяните оборудование и узлы трассы', pan: 'Перетаскивайте план • колесо — масштаб', equipment: 'Клик на плане — добавить оборудование', route: 'Клики — вершины • Enter — завершить • Esc — отменить', calibrate: 'Укажите две точки известного размера на PDF', cable: 'Выбирайте сегменты по порядку от начала к концу', measure: 'Рулетка: две точки на плане → расстояние в метрах' };
 
   return <div className="app-shell">
-    <header className="topbar"><button className="menu-toggle" aria-label="Меню" onClick={() => setMenuOpen(v => !v)}>☰</button><div className="brand"><span className="brand-mark">A</span><div>AnOOPlan<small>кабельный план</small></div></div><div className="project-heading"><input aria-label="Название проекта" value={project.name} onChange={e => mutate(p => { p.name = e.target.value; })} /><span className={dirty ? 'save-indicator dirty' : 'save-indicator'}>{dirty ? '● Не сохранён' : '● Сохранён'}</span></div><div className="top-actions"><button className="desk-only" onClick={() => { if (mayLeave()) load(freshProject(), false); }}>Новый</button><button className="desk-only" disabled={busy} onClick={() => void run(async () => { setProjects(staticMode ? lsProjects().map(p => ({ id: p.id, name: p.name, updatedAt: p.updatedAt })) : await api('/api/projects')); })}>Открыть</button><button disabled={busy} title="Загрузить ранее экспортированный JSON-проект" onClick={() => restoreInput.current?.click()}>Загрузить</button><button className="primary" disabled={busy || (persisted && !dirty)} onClick={() => void run(async () => { await saveProject(); })}>{busy ? 'Подождите…' : persisted && !dirty ? 'Сохранено ✓' : 'Сохранить'}</button></div></header>
+    <header className="topbar"><button className="menu-toggle" aria-label="Меню" onClick={() => setMenuOpen(v => !v)}>☰</button><div className="brand"><span className="brand-mark">A</span><div>AnOOPlan<small>кабельный план</small></div></div><div className="project-heading"><input aria-label="Название проекта" value={project.name} onChange={e => mutate(p => { p.name = e.target.value; })} /><span className={dirty ? 'save-indicator dirty' : 'save-indicator'}>{dirty ? '● Не сохранён' : '● Сохранён'}</span></div><div className="top-actions"><button className="desk-only" onClick={() => { if (mayLeave()) load(freshProject(), false); }}>Новый</button><button className="desk-only" disabled={busy} onClick={() => void run(async () => { setProjects(staticMode ? readLocalProjects().map(p => ({ id: p.id, name: p.name, updatedAt: p.updatedAt })) : await api('/api/projects')); })}>Открыть</button><button disabled={busy} title="Загрузить ранее экспортированный JSON-проект" onClick={() => restoreInput.current?.click()}>Загрузить</button><button className="primary" disabled={busy || (persisted && !dirty)} onClick={() => void run(async () => { await saveProject(); })}>{busy ? 'Подождите…' : persisted && !dirty ? 'Сохранено ✓' : 'Сохранить'}</button></div></header>
     <div className="commandbar"><div className="view-tabs">{([['plan', 'План'], ['journal', 'Журнал'], ['specs', 'Ведомости']] as const).map(([id, label]) => <button key={id} className={view === id ? 'active' : ''} onClick={() => setView(id)}>{label}</button>)}</div><div className="command-actions"><button className="desk-only" onClick={() => { if (mayLeave()) { load(createDemoProject(), false); setMessage('Учебный проект: синтетические данные, не рабочая документация.'); } }}>Учебный проект</button><button className="export-trigger" onClick={() => setExportOpen(true)}>Экспорт / копия ↓</button></div></div>
     {error && <div className="banner error" role="alert"><strong>Не удалось выполнить действие.</strong> {error}<button onClick={() => setError('')}>×</button></div>}
     <div className="workspace"><aside className={`sidebar ${menuOpen ? 'open' : ''}`}><div className="sidebar-title">Структура проекта <span>{project.floors.length} эт.</span></div><div className="structure-tabs">{([['floors', 'Этажи'], ['equipment', 'Оборуд.'], ['routes', 'Трассы'], ['cables', 'Кабели']] as const).map(([id, name]) => <button className={tab === id ? 'active' : ''} key={id} onClick={() => setTab(id)}>{name}<span>{project[id].length}</span></button>)}</div>
       <div className="object-list" onPointerDown={listPressDown} onPointerMove={moveLongPress} onPointerUp={cancelLongPress} onPointerCancel={cancelLongPress} onPointerLeave={cancelLongPress}>{tab === 'floors' ? project.floors.map((f, i) => <button key={f.id} className={`object-row ${floor?.id === f.id ? 'selected' : ''}`} onClick={() => { setFloorId(f.id); setSelection(null); setMenuOpen(false); }}><span className="object-icon">{String(i + 1).padStart(2, '0')}</span><span><strong>{f.name}</strong><small>{f.pdfId ? `PDF · страница ${f.page}` : 'Без подложки'} · {f.elevation === null ? 'отметка не задана' : `${number(f.elevation)} м`}</small></span><i className={f.metersPerUnit ? 'dot calibrated' : 'dot'} /></button>) : tab === 'equipment' ? project.equipment.map(eq => <button key={eq.id} data-kind="equipment" data-id={eq.id} className={`object-row ${selection?.id === eq.id ? 'selected' : ''}`} onClick={() => { setSelection({ kind: 'equipment', id: eq.id }); setFloorId(eq.floorId); setView('plan'); setMenuOpen(false); }}><span className="object-icon equipment-icon">▣</span><span><strong>{eq.number}</strong><small>{eq.name}</small></span></button>) : tab === 'routes' ? project.routes.map(r => <button key={r.id} data-kind="route" data-id={r.id} className={`object-row ${selection?.id === r.id ? 'selected' : ''}`} onClick={() => { setSelection({ kind: 'route', id: r.id }); if (r.segments[0]) setFloorId(r.segments[0].a.floorId); setView('plan'); setMenuOpen(false); }}><span className="object-icon route-icon">⌁</span><span><strong>{r.number} · {r.type}</strong><small>{r.segments.length} сегм.</small></span></button>) : project.cables.map(c => { const calc = cableCalcs.get(c.id)!; return <button key={c.id} data-kind="cable" data-id={c.id} className={`object-row ${selection?.id === c.id ? 'selected' : ''}`} onClick={() => { setSelection({ kind: 'cable', id: c.id }); setMenuOpen(false); }}><span className="object-icon cable-icon">↝</span><span><strong>{c.number} · {c.brand || c.name}</strong><small>{calc.complete ? `${number(calc.total)} м` : 'Неполный расчёт'}</small></span><i className={calc.complete ? 'dot calibrated' : 'dot warning'} /></button>; })}
       {project[tab].length === 0 && <div className="empty-list">Объектов пока нет.<br />Добавьте их на плане.</div>}</div>
       <div className="sidebar-actions">{tab === 'floors' ? <><button onClick={() => { const f = freshFloor(`Этаж ${project.floors.length + 1}`); mutate(p => p.floors.push(f)); setFloorId(f.id); setSelection(null); }}>＋ Добавить этаж</button><button onClick={() => upload.current?.click()} disabled={!floor || busy}>↑ Загрузить PDF</button></> : <button onClick={() => { setView('plan'); setTool(tab === 'equipment' ? 'equipment' : tab === 'routes' ? 'route' : 'cable'); }}>＋ {tab === 'equipment' ? 'Оборудование на плане' : tab === 'routes' ? 'Начертить трассу' : 'Создать кабель'}</button>}</div>
-      <div className="sidebar-project"><button onClick={() => { setMenuOpen(false); if (mayLeave()) load(freshProject(), false); }}>＋ Новый проект</button><button disabled={busy} onClick={() => { setMenuOpen(false); void run(async () => { setProjects(staticMode ? lsProjects().map(p => ({ id: p.id, name: p.name, updatedAt: p.updatedAt })) : await api('/api/projects')); }); }}>📂 Открыть проект</button><button disabled={busy} onClick={() => { setMenuOpen(false); restoreInput.current?.click(); }}>⬆ Загрузить JSON</button><button onClick={() => { setMenuOpen(false); if (mayLeave()) { load(createDemoProject(), false); setMessage('Учебный проект: синтетические данные, не рабочая документация.'); } }}>📘 Учебный проект</button></div>
+      <div className="sidebar-project"><button onClick={() => { setMenuOpen(false); if (mayLeave()) load(freshProject(), false); }}>＋ Новый проект</button><button disabled={busy} onClick={() => { setMenuOpen(false); void run(async () => { setProjects(staticMode ? readLocalProjects().map(p => ({ id: p.id, name: p.name, updatedAt: p.updatedAt })) : await api('/api/projects')); }); }}>📂 Открыть проект</button><button disabled={busy} onClick={() => { setMenuOpen(false); restoreInput.current?.click(); }}>⬆ Загрузить JSON</button><button onClick={() => { setMenuOpen(false); if (mayLeave()) { load(createDemoProject(), false); setMessage('Учебный проект: синтетические данные, не рабочая документация.'); } }}>📘 Учебный проект</button></div>
       <div className="project-health"><span className="eyebrow">КОНТРОЛЬ ДАННЫХ</span><strong>{issueCount ? `${issueCount} замечаний` : 'Проверка проекта'}</strong><small>Неизвестные отметки, масштаб и разрывы исключают итоговый метраж.</small><button onClick={() => setView('specs')}>Показать проверку →</button></div>
       <div className="sidebar-about"><button onClick={() => { setMenuOpen(false); setDiagnostics(readDiagnostics()); setAboutOpen(true); }}>ℹ О программе / Лицензии</button></div></aside>
-      <main className="main-area">{view === 'plan' ? <div className="plan-view"><div className="drawing-toolbar"><div className="tool-group">{([['select', '↖', 'Выбор'], ['pan', '✥', 'Панорама'], ['equipment', '▣', 'Оборудование'], ['route', '⌁', 'Трасса'], ['cable', '↝', 'Кабель'], ['calibrate', '↔', 'Масштаб'], ['measure', '📏', 'Рулетка']] as const).map(([id, icon, label]) => <button key={id} title={label} className={tool === id ? 'active' : ''} onClick={() => { setTool(id); setDraft([]); setCalibration([]); setMeasure([]); }}><b>{icon}</b><span>{label}</span></button>)}</div><div className="tool-group history"><button title="Отменить Ctrl+Z" disabled={!undo.length} onClick={() => history(true)}>↶</button><button title="Повторить Ctrl+Shift+Z" disabled={!redo.length} onClick={() => history(false)}>↷</button></div></div>
-      <div className="drawing-options"><label><input type="checkbox" checked={grid} onChange={e => setGrid(e.target.checked)} />Сетка</label><label><input type="checkbox" checked={snap} onChange={e => setSnap(e.target.checked)} />Привязка</label><label><input type="checkbox" checked={ortho} onChange={e => setOrtho(e.target.checked)} />Ортогонально</label><label>Шаг<input className="mini-input" type="number" min="1" value={gridSize} onChange={e => setGridSize(Math.max(1, Number(e.target.value) || 1))} /></label><span className="grow" />{floor?.pdfId && <label>Страница <input className="mini-input" type="number" min="1" max={pdfPages || 9999} value={floor.page} onChange={e => { const page = Math.max(1, Math.min(pdfPages || 9999, Number(e.target.value) || 1)); if (page !== floor.page && window.confirm('Смена страницы сохраняет объекты и сбрасывает масштаб. Продолжить?')) mutate(p => { const f = p.floors.find(f => f.id === floor.id)!; f.page = page; f.metersPerUnit = null; }); }} /> / {pdfPages || '…'}</label>}<button onClick={fit}>Вписать</button><button onClick={() => changeZoom(zoom / 1.2)}>−</button><span>{Math.round(zoom * 100)}%</span><button onClick={() => changeZoom(zoom * 1.2)}>＋</button></div>
+      <main className="main-area">{view === 'plan' ? <div className="plan-view"><div className="drawing-toolbar"><div className="tool-group">{([['select', '↖', 'Выбор'], ['pan', '✥', 'Панорама'], ['equipment', '▣', 'Оборудование'], ['route', '⌁', 'Трасса'], ['cable', '↝', 'Кабель'], ['calibrate', '↔', 'Масштаб'], ['measure', '📏', 'Рулетка']] as const).map(([id, icon, label]) => <button key={id} title={label} className={tool === id ? 'active' : ''} onClick={() => { setTool(id); setDraft([]); setCalibration([]); setMeasure([]); }}><b>{icon}</b><span>{label}</span></button>)}</div><div className="tool-group history"><button title="Отменить Ctrl+Z" aria-label="Отменить" disabled={!undo.length} onClick={() => history(true)}>↶</button><button title="Повторить Ctrl+Shift+Z" aria-label="Повторить" disabled={!redo.length} onClick={() => history(false)}>↷</button></div></div>
+      <div className="drawing-options"><label><input type="checkbox" checked={grid} onChange={e => setGrid(e.target.checked)} />Сетка</label><label><input type="checkbox" checked={snap} onChange={e => setSnap(e.target.checked)} />Привязка</label><label><input type="checkbox" checked={ortho} onChange={e => setOrtho(e.target.checked)} />Ортогонально</label><label>Шаг<input className="mini-input" type="number" min="1" value={gridSize} onChange={e => setGridSize(Math.max(1, Number(e.target.value) || 1))} /></label><span className="grow" />{floor?.pdfId && <label>Страница <input className="mini-input" type="number" min="1" max={pdfPages || 9999} value={floor.page} onChange={e => { const page = Math.max(1, Math.min(pdfPages || 9999, Number(e.target.value) || 1)); if (page !== floor.page && window.confirm('Смена страницы сохраняет объекты и сбрасывает масштаб. Продолжить?')) mutate(p => { const f = p.floors.find(f => f.id === floor.id)!; f.page = page; f.metersPerUnit = null; }); }} /> / {pdfPages || '…'}</label>}<button onClick={fit} aria-label="Вписать план">Вписать</button><button onClick={() => changeZoom(zoom / 1.2)} aria-label="Уменьшить масштаб">−</button><span>{Math.round(zoom * 100)}%</span><button onClick={() => changeZoom(zoom * 1.2)} aria-label="Увеличить масштаб">＋</button></div>
       {tool === 'route' && <div className="contextbar"><span>Трасса: {draft.length} вершин</span><label>Высота, м <input type="text" inputMode="decimal" value={routeHeight} onChange={e => setRouteHeight(e.target.value.replace(',', '.'))} /></label><button className="primary" disabled={draft.length < 2} onClick={finishRoute}>Завершить · Enter</button><button onClick={() => setDraft([])}>Сбросить</button></div>}
       {tool === 'measure' && <div className="contextbar"><span>{measureMode === 'length' ? `Рулетка: точек ${Math.min(measure.length, 2)} из 2` : `Площадь: вершин ${measure.length}`}</span><button className={measureMode === 'length' ? 'primary' : ''} onClick={() => { setMeasureMode('length'); setMeasure([]); setMessage('Рулетка: укажите две точки на плане.'); }}>Длина</button><button className={measureMode === 'area' ? 'primary' : ''} onClick={() => { setMeasureMode('area'); setMeasure([]); setMessage('Площадь: обведите контур по вершинам, минимум три.'); }}>Площадь</button><button onClick={() => setMeasure([])}>Сброс</button><small>{floor?.metersPerUnit ? 'Метры по масштабу листа.' : 'Масштаб не задан — результат в единицах PDF.'}</small></div>}
       {tool === 'cable' && <div className="contextbar cable-builder"><label>От {equipmentSelect(cableFrom, setCableFrom)}</label><span>→</span><label>До {equipmentSelect(cableTo, setCableTo)}</label><button onClick={() => { if (!cableFrom || !cableTo) { setError('Сначала выберите «От» и «До».'); return; } const res = findRoute(project, cableFrom, cableTo); if (res.error) setError(res.error); else { setCableSegments(res.segmentIds); setMessage(`Маршрут построен: ${res.segmentIds.length} сегм.`); } }}>Автомаршрут</button><span>{cableSegments.length} сегм.</span><button className="primary" onClick={finishCable}>Создать</button><button onClick={() => setCableSegments([])}>Сброс</button><small>Выберите «От» и «До» — маршрут строится сам. Можно скорректировать сегменты кликами.</small></div>}
@@ -1246,7 +1160,7 @@ export default function App() {
         onWheel={e => { e.preventDefault(); changeZoom(zoom * (e.deltaY < 0 ? 1.1 : 1 / 1.1)); }}
         onDoubleClick={e => { if ((e.target as Element).closest('[data-object]')) return; e.preventDefault(); if (zoom < 1.5) zoomAt(e.clientX, e.clientY, zoom * 2.4); else fit(); }}>
         {floor && <div className="drawing-sheet" style={{ width: floor.width, height: floor.height, transform: `translate(${pan.x}px,${pan.y}px) scale(${zoom})` }}>
-          {floor.pdfId ? <canvas ref={canvas} style={renderPlan ? { position: 'absolute', left: renderPlan.clipX, top: renderPlan.clipY, width: renderPlan.clipWidth, height: renderPlan.clipHeight } : { width: '100%', height: '100%' }} /> : <div className="no-pdf"><span>AnOOPlan / {floor.name.toUpperCase()}</span><p>Рабочее поле без PDF</p><small>{project.name.includes('Учеб') ? 'Синтетическая схема для проверки расчёта' : 'Загрузите план PDF и задайте масштаб по двум точкам'}</small></div>}
+          {floor.pdfId ? <canvas ref={canvas} aria-label={`План: ${floor?.name ?? 'этаж'}`} style={renderPlan ? { position: 'absolute', left: renderPlan.clipX, top: renderPlan.clipY, width: renderPlan.clipWidth, height: renderPlan.clipHeight } : { width: '100%', height: '100%' }} /> : <div className="no-pdf"><span>AnOOPlan / {floor.name.toUpperCase()}</span><p>Рабочее поле без PDF</p><small>{project.name.includes('Учеб') ? 'Синтетическая схема для проверки расчёта' : 'Загрузите план PDF и задайте масштаб по двум точкам'}</small></div>}
           <svg className="plan-overlay" width={floor.width} height={floor.height} viewBox={`0 0 ${floor.width} ${floor.height}`}>
             <defs><pattern id="drawing-grid" width={gridSize} height={gridSize} patternUnits="userSpaceOnUse"><path d={`M ${gridSize} 0 L 0 0 0 ${gridSize}`} fill="none" stroke="#63828e" strokeOpacity=".19" strokeWidth={.5 / zoom} /></pattern></defs>
             {grid && <rect width="100%" height="100%" fill="url(#drawing-grid)" pointerEvents="none" />}
@@ -1286,7 +1200,7 @@ export default function App() {
       {route && <><div className="section-label">Сегменты <span>{route.segments.length}</span></div><p className="help">Вершины тянутся на плане. Координаты и высоты можно задать точно ниже. При ручном изменении согласуйте соседние вершины.</p>{route.segments.map((s, index) => <details className="segment-editor" key={s.id}><summary>Сегмент {route.number}.{index + 1} {s.a.floorId !== s.b.floorId ? ' · стояк ↕' : ''}</summary><label className="field">Геометрия<select value={s.mode} onChange={e => mutate(p => { p.routes.find(r => r.id === route.id)!.segments.find(segment => segment.id === s.id)!.mode = e.target.value as Segment['mode']; })}><option value="orthogonal">Ортогональная</option><option value="spatial">Пространственная</option></select></label>{(['a', 'b'] as const).map(end => <div className="endpoint" key={end}><strong>{end === 'a' ? 'Начало' : 'Конец'}</strong><label className="field">Этаж{floorSelect(s[end].floorId, value => segmentField(s, end, 'floorId', value))}</label><div className="field-pair">{field('X', s[end].x, v => segmentField(s, end, 'x', Number(v)), true)}{field('Y', s[end].y, v => segmentField(s, end, 'y', Number(v)), true)}</div>{field('Высота, м', s[end].height, v => segmentField(s, end, 'height', v === '' ? null : Number(v)), true)}</div>)}<div className="field-pair">{field('Запас, %', s.reservePercent, v => mutate(p => { p.routes.find(r => r.id === route.id)!.segments.find(seg => seg.id === s.id)!.reservePercent = Number(v); }), true)}{field('Запас, м', s.reserveFixed, v => mutate(p => { p.routes.find(r => r.id === route.id)!.segments.find(seg => seg.id === s.id)!.reserveFixed = Number(v); }), true)}</div><button className="danger" onClick={() => { const linked = project.cables.filter(c => c.segmentIds.includes(s.id)); if (window.confirm(`Удалить сегмент? ${linked.length ? `Связанных кабелей: ${linked.length}. Они будут удалены.` : ''}`)) mutate(p => { p.routes.find(r => r.id === route.id)!.segments = p.routes.find(r => r.id === route.id)!.segments.filter(seg => seg.id !== s.id); p.cables = p.cables.filter(c => !c.segmentIds.includes(s.id)); }); }}>Удалить сегмент</button></details>)}<button className="wide" onClick={addRiser}>＋ Межэтажный стояк</button></>}
       {cable && <>{itemField('Марка', 'brand')}{itemField('Назначение', 'purpose')}<label className="field">От{equipmentSelect(cable.fromId, value => setItem('fromId', value))}</label><label className="field">До{equipmentSelect(cable.toId, value => setItem('toId', value))}</label><div className="field-pair">{itemField('Запас, %', 'reservePercent', true)}{itemField('Запас, м', 'reserveFixed', true)}</div><div className="field-pair">{itemField('На начале, м', 'startReserve', true)}{itemField('На конце, м', 'endReserve', true)}</div>{itemField('Количество', 'quantity', true)}{itemField('Цена за метр, ₽', 'pricePerMeter', true)}<div className="section-label">Порядок обхода</div><ol className="segment-order">{cable.segmentIds.map((id, i) => <li key={id}><span>{segmentName(id)}</span><button disabled={!i} title="Выше" onClick={() => { const next = [...cable.segmentIds]; [next[i - 1], next[i]] = [next[i], next[i - 1]]; setItem('segmentIds', next); }}>↑</button><button disabled={i === cable.segmentIds.length - 1} title="Ниже" onClick={() => { const next = [...cable.segmentIds]; [next[i + 1], next[i]] = [next[i], next[i + 1]]; setItem('segmentIds', next); }}>↓</button><button title="Удалить из цепочки" onClick={() => setItem('segmentIds', cable.segmentIds.filter(s => s !== id))}>×</button></li>)}</ol><button className="wide" onClick={() => { setCableSegments([...cable.segmentIds]); setCableFrom(cable.fromId); setCableTo(cable.toId); setTool('cable'); setView('plan'); setMessage('Измените цепочку кликами. Кнопка «Применить» в свойствах сохранит выбор.'); }}>Выбрать сегменты на плане</button>{tool === 'cable' && <button className="primary wide" onClick={() => { setItem('segmentIds', [...cableSegments]); setItem('fromId', cableFrom); setItem('toId', cableTo); setTool('select'); setCableSegments([]); }}>Применить цепочку к {cable.number}</button>}{calculation && <div className={`calculation-card ${calculation.complete ? '' : 'incomplete'}`}><span>ИТОГ / 1 КАБЕЛЬ</span><strong>{number(calculation.total)} <small>м</small></strong><dl><dt>Геометрия</dt><dd>{number(calculation.geometry)} м</dd><dt>Запас трассы</dt><dd>{number(calculation.routeReserve)} м</dd><dt>Запас кабеля</dt><dd>{number(calculation.cableReserve)} м</dd><dt>Запас концов</dt><dd>{number(calculation.endReserve)} м</dd></dl>{calculation.errors.map((e, i) => <p key={i}>{e}</p>)}</div>}</>}
       <label className="field">Примечание<textarea value={(equipment || route || cable)?.note || ''} onChange={e => setItem('note', e.target.value)} /></label><div className="property-actions"><button onClick={copySelection}>Копировать</button><button className="danger" onClick={removeSelection}>Удалить</button></div></> : floor ? <><div className="object-heading"><span className="eyebrow">ТЕКУЩИЙ ЭТАЖ</span><h2>{floor.name}</h2></div>{field('Название', floor.name, v => mutate(p => { p.floors.find(f => f.id === floor.id)!.name = v; }))}{field('Отметка пола, м', floor.elevation, v => mutate(p => { p.floors.find(f => f.id === floor.id)!.elevation = v === '' ? null : Number(v); }), true, 'Абсолютная отметка для расчёта межэтажных стояков.')}<div className="scale-card"><span className="eyebrow">МАСШТАБ ПОДЛОЖКИ</span><strong>{floor.metersPerUnit ? `${number(floor.metersPerUnit)} м/ед.` : 'Не откалиброван'}</strong><button onClick={() => { setTool('calibrate'); setView('plan'); setCalibration([]); }}>↔ Калибровка по 2 точкам</button></div><details className="scale-presets"><summary>Масштаб по формату листа</summary><div className="field-pair"><label className="field">Формат<select value={sheetFormat} onChange={e => setSheetFormat(e.target.value)}>{Object.keys(SHEET_SIZES).map(size => <option key={size} value={size}>{size}</option>)}</select></label><label className="field">Масштаб<select value={sheetScale} onChange={e => setSheetScale(e.target.value)}>{['50', '100', '200', '500'].map(value => <option key={value} value={value}>1:{value}</option>)}</select></label></div><button className="wide" onClick={applySheetScale}>Применить масштаб листа</button><p className="help">Если план — стандартный лист {sheetFormat} в масштабе 1:{sheetScale}, калибровка двумя точками не нужна.</p></details>{field('Метров в единице PDF', floor.metersPerUnit, v => mutate(p => { p.floors.find(f => f.id === floor.id)!.metersPerUnit = v === '' ? null : Number(v); }), true)}<div className="section-label">Подложка</div><p className="help">{floor.pdfId ? `Исходный PDF подключён. Страница ${floor.page}; ${number(floor.width)} × ${number(floor.height)} ед.` : 'PDF не загружен. Можно чертить на чистом листе; для метража необходим масштаб.'}</p>{floor.pdfId && pdfPages > 0 && <label className="field mobile-only">Страница PDF<input type="number" min="1" max={pdfPages} value={floor.page} onChange={e => { const page = Math.max(1, Math.min(pdfPages, Number(e.target.value) || 1)); if (page !== floor.page) mutate(p => { const f = p.floors.find(f => f.id === floor.id)!; f.page = page; f.metersPerUnit = null; }); }} /></label>}<button className="wide" disabled={busy} onClick={() => upload.current?.click()}>↑ {floor.pdfId ? 'Заменить PDF…' : 'Загрузить PDF…'}</button><p className="help">При замене PDF или страницы объекты остаются на прежних координатах. Проверьте положение и повторите калибровку.</p><div className="section-label">Система координат</div><p className="help">X/Y хранятся в единицах PDF. Зум не влияет на длины. Для стояка совпадающие X/Y на разных этажах должны соответствовать одной физической оси.</p><button className="danger wide" disabled={project.floors.length < 2} onClick={() => { const eqIds = project.equipment.filter(eq => eq.floorId === floor.id).map(eq => eq.id); const segmentIds = project.routes.flatMap(r => r.segments).filter(s => s.a.floorId === floor.id || s.b.floorId === floor.id).map(s => s.id); if (window.confirm('Удалить этаж, его оборудование, связанные сегменты и кабели?')) { const photoKeys = orphanPhotoKeys(project, eqIds); mutate(p => { p.floors = p.floors.filter(f => f.id !== floor.id); p.equipment = p.equipment.filter(eq => eq.floorId !== floor.id); p.routes.forEach(r => { r.segments = r.segments.filter(s => !segmentIds.includes(s.id)); }); p.routes = p.routes.filter(r => r.segments.length); p.cables = p.cables.filter(c => !eqIds.includes(c.fromId) && !eqIds.includes(c.toId) && !c.segmentIds.some(id => segmentIds.includes(id))); }); void purgePhotoBlobs(photoKeys, idbDelete); setFloorId(''); } }}>Удалить этаж</button></> : <p className="help">Добавьте этаж для начала работы.</p>}</div></aside>
-    </div><footer className="statusbar"><span><i className="dot calibrated" />{message}</span><span>{project.equipment.length} оборуд. · {project.routes.length} трасс · {project.cables.length} кабелей <b>{staticMode ? 'БРАУЗЕР' : 'СЕРВЕР'}</b></span></footer>
+    </div><footer className="statusbar"><span role="status" aria-live="polite"><i className="dot calibrated" />{message}</span><span>{project.equipment.length} оборуд. · {project.routes.length} трасс · {project.cables.length} кабелей <b>{staticMode ? 'БРАУЗЕР' : 'СЕРВЕР'}</b></span></footer>
     {aboutOpen && <AboutSheet
       onClose={() => setAboutOpen(false)}
       diagnostics={diagnostics}
@@ -1306,7 +1220,7 @@ export default function App() {
     <input hidden ref={cameraInput} type="file" accept="image/*" capture="environment" onChange={e => { const file = e.target.files?.[0]; if (file) void run(() => addPhoto(file)); e.target.value = ''; }} />
     <input hidden ref={upload} type="file" accept="application/pdf,.pdf" onChange={e => { const file = e.target.files?.[0]; if (file) void run(() => uploadPdf(file)); e.target.value = ''; }} />
     <input hidden ref={restoreInput} type="file" accept="application/json,.json" onChange={e => { const file = e.target.files?.[0]; if (file && mayLeave()) void run(() => restoreProjectFile(file)); e.target.value = ''; }} />
-    {projects && <div className="modal-backdrop"><section className="modal"><div className="modal-heading"><h2>Открыть проект</h2><button onClick={() => setProjects(null)}>×</button></div>{projects.length ? projects.map(p => <div className="project-row" key={p.id}><button className="project-option" disabled={busy} onClick={() => { if (mayLeave()) void run(async () => { const result = staticMode ? lsProjects().find(x => x.id === p.id)! : await api<Project>(`/api/projects/${p.id}`); load(result, true); setProjects(null); setMessage(`Проект «${result.name}» открыт.`); }); }}><strong>{p.name}</strong><small>{new Date(p.updatedAt).toLocaleString('ru-RU')}</small><span>→</span></button><button className="project-delete" disabled={busy} title="Удалить проект" onClick={() => void run(() => deleteProject(p.id, p.name))}>🗑</button></div>) : <p className="help">Сохранённых проектов пока нет.</p>}</section></div>}
+    {projects && <div className="modal-backdrop"><section className="modal"><div className="modal-heading"><h2>Открыть проект</h2><button onClick={() => setProjects(null)}>×</button></div>{projects.length ? projects.map(p => <div className="project-row" key={p.id}><button className="project-option" disabled={busy} onClick={() => { if (mayLeave()) void run(async () => { const result = staticMode ? readLocalProjects().find(x => x.id === p.id)! : await api<Project>(`/api/projects/${p.id}`); load(result, true); setProjects(null); setMessage(`Проект «${result.name}» открыт.`); }); }}><strong>{p.name}</strong><small>{new Date(p.updatedAt).toLocaleString('ru-RU')}</small><span>→</span></button><button className="project-delete" disabled={busy} title="Удалить проект" onClick={() => void run(() => deleteProject(p.id, p.name))}>🗑</button></div>) : <p className="help">Сохранённых проектов пока нет.</p>}</section></div>}
   </div>;
 }
 

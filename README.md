@@ -12,7 +12,7 @@
 
 [![Скачать APK](https://img.shields.io/badge/%D1%81%D0%BA%D0%B0%D1%87%D0%B0%D1%82%D1%8C-APK-2ea043?logo=android&logoColor=white)](https://github.com/enkolesnikov/AnOOPlan/releases/latest)
 
-- **APK:** [последний релиз](https://github.com/enkolesnikov/AnOOPlan/releases/latest) (`AnOOPlan-1.10.0.apk`) — 1,8 МБ со встроенными шрифтами, Android 7.0+ (minSdk 24, WebView 98+, targetSdk 35), без интернета;
+- **APK:** [последний релиз](https://github.com/enkolesnikov/AnOOPlan/releases/latest) (`AnOOPlan-1.11.0.apk`) — 1,8 МБ со встроенными шрифтами, Android 7.0+ (minSdk 24, WebView 98+, targetSdk 35), без интернета;
 - **Веб-версия:** [enkolesnikov.github.io/AnOOPlan](https://enkolesnikov.github.io/AnOOPlan/);
 - **Исходный проект:** [enkolesnikov/ooplan](https://github.com/enkolesnikov/ooplan).
 
@@ -85,12 +85,18 @@ npm run dev
 
 APK — это нативная оболочка (WebView) вокруг той же статической сборки, без Gradle и без сервера:
 
-- `com.anooplan.app`, minSdk 24, targetSdk 35, версия 1.10.0;
+- `com.anooplan.app`, minSdk 24, targetSdk 35, версия 1.11.0;
 - ассеты (`dist/`) упакованы в APK и отдаются WebView по origin `https://appassets.local/`, поэтому работают `localStorage`, `IndexedDB` (PDF-планы) и `crypto.randomUUID()`;
 - режим хранения — «Браузер»: проекты автосохраняются на устройстве, PDF читаются из памяти телефона через системный выбор файлов;
 - экспорт CSV и JSON-копии сохраняется в общую папку **Загрузки/AnOOPlan** без запроса опасных разрешений (MediaStore);
 - XLSX и PDF журнала собираются **на самом телефоне**: сервер для выгрузки не нужен;
 - разрешение `INTERNET` не запрашивается: приложение работает полностью офлайн.
+
+### Что нового в 1.11.0
+
+- **Доступность**: добавлены `aria-label` для отмены/повтора и масштаба, `aria-live` для статуса, видимый фокус с клавиатуры и отключение анимаций при `prefers-reduced-motion`.
+- **Первый шаг разбиения `App.tsx`**: IndexedDB и локальный список проектов вынесены в `src/idb.ts` и `src/local-projects.ts` с тестами.
+- 89 юнит-тестов, смоук, E2E и подписанный APK.
 
 ### Что нового в 1.10.0
 
