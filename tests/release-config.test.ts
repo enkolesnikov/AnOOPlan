@@ -42,7 +42,9 @@ test('release-workflow подписывает из секретов и публ�
   assert.match(workflow, /secrets\.ANDROID_KS_PASS/);
   assert.match(workflow, /secrets\.ANDROID_CERT_SHA256/);
   assert.match(workflow, /gh release create/);
-  assert.match(workflow, /git tag -l --format='%\(contents\)'/, 'описание релиза должно браться из аннотации тега');
+  assert.match(workflow, /git ls-remote --tags origin/, 'описание релиза ищется в объекте тега');
+  assert.match(workflow, /gh api "repos\/\$\{GITHUB_REPOSITORY\}\/git\/tags\//, 'описание берётся из API тега');
+  assert.match(workflow, /git tag -l --format='%\(contents\)'/, 'есть fallback на локальную аннотацию тега');
   assert.match(workflow, /--notes "\$NOTES"/, 'описание релиза передаётся в gh release');
   assert.match(workflow, /rm -rf keystore/);
   assert.doesNotMatch(workflow, /keytool -genkeypair/);

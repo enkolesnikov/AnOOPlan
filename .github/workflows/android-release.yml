@@ -114,8 +114,15 @@ jobs:
           set -euo pipefail
           TAG="${GITHUB_REF_NAME}"
           APK="$(ls build/AnOOPlan-*.apk | grep -v unsigned | head -1)"
-          # Описание релиза — сообщение аннотированного тега (у облегчённого тега — сообщение коммита).
-          NOTES="$(git tag -l --format='%(contents)' "$TAG")"
+          # Описание релиза — аннотация тега. actions/checkout для тега может оставить локальный
+          # тег облегчённым, поэтому сначала спрашиваем объект тега через GitHub API, затем
+          # локальную аннотацию и только в крайнем случае — сообщение коммита.
+          NOTES=""
+          TAG_OBJECT="$(git ls-remote --tags origin "refs/tags/${TAG}" | awk '{print $1}')"
+          if [ -n "$TAG_OBJECT" ]; then
+            NOTES="$(gh api "repos/${GITHUB_REPOSITORY}/git/tags/${TAG_OBJECT}" --jq '.message' 2>/dev/null || true)"
+          fi
+          [ -n "$NOTES" ] || NOTES="$(git tag -l --format='%(contents)' "$TAG")"
           [ -n "$NOTES" ] || NOTES="$(git log -1 --pretty=%B)"
           if gh release view "$TAG" >/dev/null 2>&1; then
             gh release edit "$TAG" --notes "$NOTES"

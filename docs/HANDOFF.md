@@ -128,8 +128,9 @@ Android-инструменты; JDK на VPS уже установлен. Есл
   **неподписанный** APK (`AnOOPlan-apk-unsigned`). Ключ в раннере не создаётся.
 - `.github/workflows/deploy.yml` — GitHub Pages.
 - `.github/workflows/android-release.yml` — по тегу `v*`: тесты, смоук, E2E, подписанный APK
-  из GitHub Secrets, проверка SHA-256 сертификата, GitHub Release (описание берётся из сообщения
-  аннотированного тега), удаление keystore с раннера.
+  из GitHub Secrets, проверка SHA-256 сертификата, GitHub Release (описание берётся из аннотированного
+  тега через GitHub API — checkout делает локальный тег облегчённым; есть fallback на локальную
+  аннотацию и сообщение коммита), удаление keystore с раннера.
 
 Порядок релиза:
 
