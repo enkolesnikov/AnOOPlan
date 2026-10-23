@@ -22,8 +22,8 @@ KS_PASS="${KS_PASS:-anooplan-build-pass}"
 KS_ALIAS="${KS_ALIAS:-anooplan}"
 
 PACKAGE="com.anooplan.app"
-VERSION_NAME="${VERSION_NAME:-1.1.0}"
-VERSION_CODE="${VERSION_CODE:-2}"
+VERSION_NAME="${VERSION_NAME:-1.2.0}"
+VERSION_CODE="${VERSION_CODE:-3}"
 OUT_APK="$BUILD_DIR/AnOOPlan-${VERSION_NAME}.apk"
 
 say() { printf '\n\033[1;36m==> %s\033[0m\n' "$1"; }

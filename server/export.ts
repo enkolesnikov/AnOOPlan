@@ -2,28 +2,13 @@ import { existsSync } from 'node:fs';
 import PDFDocument from 'pdfkit';
 import * as XLSX from 'xlsx';
 import type { Project } from '../src/model.js';
-import { calculateCable, specifications, validateProject } from '../src/engine.js';
+import { exportSheets } from '../src/sheets.js';
+import type { Cell, ExportSheet } from '../src/sheets.js';
 import { ApiError } from './validation.js';
 
-type Cell = string | number | boolean | null;
-export interface ExportSheet { name: string; rows: Cell[][] }
-export function exportSheets(project: Project): ExportSheet[] {
-  const specs = specifications(project);
-  const journal: Cell[][] = [['Номер', 'Наименование', 'Марка', 'Назначение', 'От', 'До', 'Трасса (ID)', 'Количество', 'Геометрия, м', 'Запас трассы, м', 'Запас кабеля, м', 'Запас концов, м', 'Итог одного, м', 'Итог с количеством, м', 'Расчёт полный', 'Предупреждения', 'Примечание']];
-  for (const cable of project.cables) {
-    const result = calculateCable(project, cable);
-    const name = (id: string) => project.equipment.find(e => e.id === id)?.number || id;
-    journal.push([cable.number, cable.name, cable.brand, cable.purpose, name(cable.fromId), name(cable.toId), cable.segmentIds.join(' → '), cable.quantity, result.geometry, result.routeReserve, result.cableReserve, result.endReserve, result.total, result.total === null ? null : result.total * cable.quantity, result.complete, result.errors.join('; '), cable.note]);
-  }
-  const sheets: ExportSheet[] = [
-    { name: 'Кабельный журнал', rows: journal },
-    { name: 'Оборудование', rows: [['Тип', 'Модель', 'Этаж', 'Количество'], ...specs.equipment.map(r => [r.type, r.model, r.floor, r.quantity])] },
-    { name: 'Кабели', rows: [['Марка', 'Количество линий', 'Геометрия, м', 'Итого, м'], ...specs.cables.map(r => [r.brand, r.lines, r.geometry, r.total])] },
-    { name: 'Инфраструктура', rows: [['Тип', 'Длина, м', 'Сегментов', 'Кабелей'], ...specs.infrastructure.map(r => [r.type, r.length, r.segments, r.cables])] },
-    { name: 'Предупреждения', rows: [['Предупреждение'], ...[...new Set([...validateProject(project), ...specs.errors])].map(e => [e])] },
-  ];
-  return sheets;
-}
+export { exportSheets } from '../src/sheets.js';
+export type { Cell, ExportSheet } from '../src/sheets.js';
+
 function csvCell(cell: Cell): string {
   let value = cell === null ? '' : String(cell);
   // Spreadsheet formula injection is prevented for user-entered text.

@@ -5,7 +5,9 @@
 import { build } from 'esbuild';
 import { Window } from 'happy-dom';
 import { mkdir } from 'node:fs/promises';
+import { readFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
+import * as XLSX from 'xlsx';
 
 const ROOT = resolve(import.meta.dirname, '..');
 const OUT = join(ROOT, 'build');
@@ -64,11 +66,19 @@ window.AnOOPlanNative = {
   vibrate: () => { vibrations += 1; },
 };
 
+// Шрифты для PDF приложение тянет из собственных ассетов — отдаём их как статический сервер.
+const FONT_DIR = join(ROOT, 'src', 'assets', 'fonts');
+const FONT_FILES = ['PT_Sans-Web-Regular.ttf', 'PT_Sans-Web-Bold.ttf'];
 const fetchStub = async url => {
-  if (String(url).includes('/api/')) {
+  const value = String(url);
+  if (value.includes('/api/')) {
     const error = new Error('offline');
     error.name = 'TypeError';
     throw error;
+  }
+  const name = value.split('/').pop() || '';
+  if (FONT_FILES.includes(name)) {
+    return new Response(readFileSync(join(FONT_DIR, name)), { status: 200, headers: { 'content-type': 'font/ttf' } });
   }
   return new Response('', { status: 404 });
 };
@@ -176,6 +186,50 @@ if (saved.length) {
   check(text.includes('Кабельный журнал'), 'CSV содержит кабельный журнал');
   check(/Download\/AnOOPlan/.test(bodyText()), 'пользователю показан путь сохранения');
 }
+
+console.log('\n6b. Офлайн-экспорт XLSX и PDF журнала');
+const byExtension = extension => saved.filter(entry => entry.name.endsWith(extension)).pop();
+async function exportFormat(label, wait) {
+  const trigger = buttons().find(button => (button.textContent || '').includes('Экспорт / копия'));
+  if (!trigger) return false;
+  trigger.click();
+  await sleep(150);
+  const target = buttons().find(button => (button.textContent || '').trim() === label);
+  if (!target) return false;
+  target.click();
+  await sleep(wait);
+  return true;
+}
+check(await exportFormat('XLSX', 1500), 'кнопка XLSX сработала');
+const xlsxEntry = byExtension('.xlsx');
+check(Boolean(xlsxEntry), 'мост получил файл .xlsx');
+if (xlsxEntry) {
+  const bytes = Buffer.from(xlsxEntry.base64, 'base64');
+  check(bytes.length > 5000, `размер XLSX: ${bytes.length} байт`);
+  const workbook = XLSX.read(bytes, { type: 'buffer' });
+  check(workbook.SheetNames.includes('Кабельный журнал'), 'в книге есть лист «Кабельный журнал»');
+  const rows = XLSX.utils.sheet_to_json(workbook.Sheets['Кабельный журнал'], { defval: '' });
+  check(rows.length > 0 && 'Итог одного, м' in rows[0], 'в журнале есть итоговые метры');
+}
+check(await exportFormat('PDF', 3000), 'кнопка PDF сработала');
+const pdfEntry = byExtension('.pdf');
+check(Boolean(pdfEntry), 'мост получил файл .pdf');
+if (pdfEntry) {
+  const bytes = Buffer.from(pdfEntry.base64, 'base64');
+  check(bytes.subarray(0, 5).toString() === '%PDF-', 'файл начинается с %PDF-');
+  const pdfjs = await import('pdfjs-dist/legacy/build/pdf.mjs');
+  const document = await pdfjs.getDocument({ data: new Uint8Array(bytes), useSystemFonts: false }).promise;
+  let text = '';
+  for (let index = 1; index <= document.numPages; index += 1) {
+    const page = await document.getPage(index);
+    const content = await page.getTextContent();
+    text += content.items.map(item => ('str' in item ? item.str : '')).join(' ') + '\n';
+  }
+  await document.destroy();
+  check(text.includes('Кабельный журнал') && text.includes('Итого, м'), 'в тексте PDF есть журнал и колонка итога');
+  check(document.numPages >= 1, `страниц в PDF: ${document.numPages}`);
+}
+check(/Download\/AnOOPlan/.test(bodyText()), 'путь сохранения показан в интерфейсе');
 
 console.log('\n7. Долгое нажатие и панель действий');
 const equipmentTab = Array.from(document.querySelectorAll('.structure-tabs button')).find(button => (button.textContent || '').includes('Оборуд'));

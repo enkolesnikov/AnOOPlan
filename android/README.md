@@ -24,7 +24,9 @@ android/
    (хранение PDF-планов) и `crypto.randomUUID()`; `https://` даёт полноценный secure context.
 4. `onShowFileChooser` открывает системный `ACTION_OPEN_DOCUMENT`, поэтому «Загрузить PDF»
    и «Загрузить JSON» работают без разрешений на хранилище.
-5. `NativeBridge.saveFile(name, base64, mime)` пишет экспорт в `Download/AnOOPlan` через
+5. `src/export-xlsx.ts`, `src/export-pdf.ts` и `src/export-fonts.ts` собирают Excel и PDF прямо
+   в WebView (pdf-lib + PT Sans из `src/assets/fonts`), поэтому сервер для экспорта не нужен;
+   `NativeBridge.saveFile(name, base64, mime)` пишет готовый файл в `Download/AnOOPlan` через
    `MediaStore` (Android 10+); на более старых версиях — во внешний каталог приложения.
 6. Оболочка знает состояние документа: `AnOOPlanNative.setDirty(dirty)` приходит из веб-части,
    поэтому «Назад» показывает диалог «Сохранить / Выйти / Отмена», а после

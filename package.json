@@ -15,8 +15,10 @@
     "smoke:browser": "node scripts/smoke-web.mjs"
   },
   "dependencies": {
+    "@pdf-lib/fontkit": "^1.1.1",
     "express": "^5.1.0",
     "multer": "^2.0.2",
+    "pdf-lib": "^1.17.1",
     "pdfjs-dist": "^5.4.624",
     "pdfkit": "^0.17.2",
     "react": "^19.2.0",
