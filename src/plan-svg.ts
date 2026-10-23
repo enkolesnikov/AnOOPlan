@@ -1,5 +1,5 @@
-// SVG-снимок плана этажа: подложка накладывается отдельно растром, а трассы и оборудование
-// рисуются векторами — этот снимок попадает в PDF «на подпись».
+// SVG-снимок плана этажа: это прозрачный оверлей. Подложка (белый лист + PDF) рисуется
+// отдельно растром, а трассы и оборудование — векторами; снимок попадает в PDF «на подпись».
 import type { Floor, Project } from './model';
 
 const escapeXml = (value: string): string => value.replace(/[<>&"']/g, character => {
@@ -58,7 +58,6 @@ export function buildPlanSvg(project: Project, floor: Floor): string {
     `text-anchor="middle" fill="#64767f" font-family="sans-serif">${escapeXml(`AnOOPlan · ${floor.name}`)}</text>`;
 
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${round(width)}" height="${round(height)}" viewBox="0 0 ${round(width)} ${round(height)}">` +
-    `<rect width="100%" height="100%" fill="#ffffff" />` +
     segments.join('') +
     risers.join('') +
     equipment.join('') +

@@ -12,7 +12,7 @@
 - Репозиторий: <https://github.com/enkolesnikov/AnOOPlan>
 - Релизы с APK: <https://github.com/enkolesnikov/AnOOPlan/releases>
 - Веб-версия (GitHub Pages): <https://enkolesnikov.github.io/AnOOPlan/>
-- Текущая версия: **1.8.2**, versionCode 13, APK ~1,8 МБ, `com.anooplan.app`, minSdk 24, targetSdk 35
+- Текущая версия: **1.8.3**, versionCode 14, APK ~1,8 МБ, `com.anooplan.app`, minSdk 24, targetSdk 35
 
 ## Стек и устройство
 
@@ -26,11 +26,11 @@
 | Рендер больших листов | `src/render-plan.ts` | бюджет 12 Мпикс, рендер видимой области для A1/A0 |
 | Оболочка Android | `android/java/com/anooplan/app/` | `MainActivity`, `AssetServer`, `NativeBridge`, `PdfPrinter` |
 | Сборка APK | `scripts/build-apk.sh` + `scripts/fetch-tools.sh` | aapt + javac + d8 + zipalign + apksigner, **без Gradle** |
-| Тесты | `tests/*.test.ts`, `scripts/smoke-dom.mjs` | 69 юнит-тестов + смоук интерфейса в happy-dom |
+| Тесты | `tests/*.test.ts`, `scripts/smoke-dom.mjs` | 70 юнит-тестов + смоук интерфейса в happy-dom |
 
 ### Ключевые решения (не пересматривать без причины)
 
-1. **WebView вместо Kotlin-переписывания.** Одна кодовая база для сайта и APK, 69 тестов, быстрые итерации.
+1. **WebView вместо Kotlin-переписывания.** Одна кодовая база для сайта и APK, 70 тестов, быстрые итерации.
    Kotlin оправдан только при ежедневном рисовании пером и листах A1+ — тогда начинать с порта `engine.ts` в KMP.
 2. **Статика отдаётся по origin `https://appassets.local/`** через `AssetServer.shouldInterceptRequest`.
    На `file://` не работают IndexedDB и `crypto.randomUUID()`. Запросы `/api/*` получают 404 → приложение
@@ -47,7 +47,7 @@
 
 ```bash
 npm ci                     # зависимости (Node 22.5+, проверено на 24)
-npm test                   # 69 тестов
+npm test                   # 70 тестов
 npm run smoke              # смоук интерфейса (happy-dom)
 npm run build              # tsc --noEmit + vite build
 npm run build:apk          # tools/android.jar + build-tools/35.0.0 + r8.jar → build/AnOOPlan-<версия>.apk
@@ -83,6 +83,8 @@ bash scripts/fetch-tools.sh # скачать platform-35, build-tools 35.0.0 и 
   `getDocument({url})` и `loadingTask.destroy()`.
 - **1.8.2** — исправлен edge-to-edge на Android 15: insets применяются к `FrameLayout`-контейнеру,
   потому что WebView игнорирует собственный padding. Проверено на эмуляторе Android 15.
+- **1.8.3** — в листе «План» PDF-журнала снова видна загруженная PDF-подложка: из SVG убрана
+  белая заливка, перекрывавшая растр; добавлена поддержка `data:`-PDF.
 
 ## Известные проблемы и техдолг (P0 → P2)
 

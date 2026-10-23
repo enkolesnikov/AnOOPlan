@@ -4,13 +4,13 @@ import { buildPlanSvg } from '../src/plan-svg';
 import { createDemoProject } from '../src/demo';
 import { domainWarnings } from '../src/engine';
 
-test('SVG плана содержит подложку, трассы и обозначения оборудования', () => {
+test('SVG плана содержит трассы и обозначения оборудования', () => {
   const project = createDemoProject();
   const floor = project.floors[0];
   const svg = buildPlanSvg(project, floor);
   assert.ok(svg.startsWith('<svg'));
   assert.ok(svg.includes(`viewBox="0 0 ${Math.round(floor.width * 10) / 10} ${Math.round(floor.height * 10) / 10}"`));
-  assert.ok(svg.includes('<rect width="100%" height="100%" fill="#ffffff"'));
+  assert.ok(!svg.includes('#ffffff'), 'SVG не должен перекрывать PDF белой заливкой');
   const onFloor = project.equipment.filter(item => item.floorId === floor.id);
   assert.ok(onFloor.length > 0, 'в демо есть оборудование на этаже');
   for (const item of onFloor) assert.ok(svg.includes(`>${item.number}</text>`), `нет подписи ${item.number}`);
@@ -42,4 +42,11 @@ test('доменные предупреждения: длина витой па�
 
   project.routes[0].segments = [];
   assert.ok(domainWarnings(project).some(w => w.includes('нет сегментов')));
+});
+
+test('SVG плана — прозрачный оверлей для подложки PDF', () => {
+  const project = createDemoProject();
+  const svg = buildPlanSvg(project, project.floors[0]);
+  assert.ok(!svg.includes('fill="#ffffff"'), 'нет белой заливки');
+  assert.ok(!svg.includes('<rect width="100%" height="100%"'), 'нет полноразмерного прямоугольника');
 });

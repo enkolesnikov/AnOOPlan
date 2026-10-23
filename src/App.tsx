@@ -1002,7 +1002,9 @@ export default function App() {
           const stored = floorItem.pdfId.startsWith('idb:') ? await idbGet(floorItem.pdfId.slice(4)) : null;
           const loading = stored
             ? pdfjs.getDocument({ data: await stored.arrayBuffer() })
-            : pdfjs.getDocument({ url: `/api/pdfs/${floorItem.pdfId}` });
+            : floorItem.pdfId.startsWith('data:')
+              ? pdfjs.getDocument({ data: Uint8Array.from(atob(floorItem.pdfId.slice(floorItem.pdfId.indexOf(',') + 1)), c => c.charCodeAt(0)) })
+              : pdfjs.getDocument({ url: `/api/pdfs/${floorItem.pdfId}` });
           const pdfDocument = await loading.promise;
           const page = await pdfDocument.getPage(Math.min(Math.max(1, floorItem.page), pdfDocument.numPages));
           const viewport = page.getViewport({ scale: width / page.getViewport({ scale: 1 }).width });
