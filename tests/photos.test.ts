@@ -1,0 +1,49 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import type { Equipment, Project } from '../src/model';
+import { orphanPhotoKeys, purgePhotoBlobs } from '../src/photos';
+
+const device = (id: string, photos: string[]): Equipment => ({
+  id, number: id, name: `Устройство ${id}`, type: 'Камера', floorId: 'f1',
+  x: 0, y: 0, height: null, note: '', properties: {}, photos,
+});
+
+function fixture(): Project {
+  return {
+    schemaVersion: 1, id: 'p', name: 'Фото', updatedAt: '2026-01-01T00:00:00Z',
+    floors: [{ id: 'f1', name: 'Этаж 1', elevation: 0, metersPerUnit: 0.1, page: 1, width: 1000, height: 700 }],
+    equipment: [device('e1', ['a', 'b']), device('e2', ['c']), device('e3', ['b', 'd'])],
+    routes: [], cables: [],
+  };
+}
+
+test('удаление оборудования возвращает только его фото-ключи', () => {
+  const p = fixture();
+  assert.deepEqual(orphanPhotoKeys(p, ['e2']), ['c']);
+  assert.deepEqual(orphanPhotoKeys(p, ['e1']), ['a']);
+});
+
+test('фото-ключ, общий с другим оборудованием, не считается сиротой', () => {
+  const p = fixture();
+  // Ключ b есть и у e1, и у e3: после удаления e1 он должен остаться.
+  assert.deepEqual(orphanPhotoKeys(p, ['e1', 'e3']).sort(), ['a', 'b', 'd']);
+  p.equipment = p.equipment.filter(item => item.id !== 'e3');
+  assert.deepEqual(orphanPhotoKeys(p, ['e1']).sort(), ['a', 'b']);
+});
+
+test('удаление этажа собирает фото всех его устройств', () => {
+  const p = fixture();
+  const floorEquipment = p.equipment.filter(item => item.floorId === 'f1').map(item => item.id);
+  assert.deepEqual(orphanPhotoKeys(p, floorEquipment).sort(), ['a', 'b', 'c', 'd']);
+  assert.deepEqual(orphanPhotoKeys(p, []), []);
+});
+
+test('очистка удаляет блобы с префиксом photo: и переживает ошибку одного ключа', async () => {
+  const deleted: string[] = [];
+  const removed = await purgePhotoBlobs(['a', 'bad', 'b'], async key => {
+    deleted.push(key);
+    if (key === 'photo:bad') throw new Error('нет доступа');
+  });
+  assert.deepEqual(deleted, ['photo:a', 'photo:bad', 'photo:b']);
+  assert.equal(removed, 2);
+});
