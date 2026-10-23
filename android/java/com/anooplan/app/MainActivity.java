@@ -8,6 +8,7 @@ import android.content.ContentValues;
 import android.content.DialogInterface;
 import android.content.Intent;
 import android.graphics.Color;
+import android.graphics.Insets;
 import android.print.PrintAttributes;
 import android.print.PrintManager;
 import android.net.Uri;
@@ -16,7 +17,9 @@ import android.os.Build;
 import android.os.Bundle;
 import android.os.Environment;
 import android.text.InputType;
+import android.view.View;
 import android.view.Window;
+import android.view.WindowInsets;
 import android.view.WindowManager;
 import android.view.inputmethod.InputMethodManager;
 import android.webkit.DownloadListener;
@@ -55,6 +58,11 @@ public class MainActivity extends Activity implements NativeBridge.Host {
         super.onCreate(savedInstanceState);
 
         Window window = getWindow();
+        // Android 15 (targetSdk 35) принудительно рисует приложение под системными панелями.
+        // Отключаем «вписывание» и сами добавляем отступы WebView по insets.
+        if (Build.VERSION.SDK_INT >= 35) {
+            window.setDecorFitsSystemWindows(false);
+        }
         window.setStatusBarColor(Color.parseColor("#122936"));
         window.setNavigationBarColor(Color.parseColor("#0C1D27"));
         // Черчение трасс на объекте: экран не должен гаснуть, пока приложение на переднем плане.
@@ -62,6 +70,17 @@ public class MainActivity extends Activity implements NativeBridge.Host {
 
         webView = new WebView(this);
         webView.setBackgroundColor(Color.parseColor("#122936"));
+        webView.setOnApplyWindowInsetsListener(new View.OnApplyWindowInsetsListener() {
+            @Override
+            public WindowInsets onApplyWindowInsets(View view, WindowInsets insets) {
+                if (Build.VERSION.SDK_INT >= 35) {
+                    Insets bars = insets.getInsets(WindowInsets.Type.systemBars() | WindowInsets.Type.displayCutout());
+                    int bottom = Math.max(bars.bottom, insets.getInsets(WindowInsets.Type.ime()).bottom);
+                    view.setPadding(bars.left, bars.top, bars.right, bottom);
+                }
+                return insets;
+            }
+        });
 
         WebSettings settings = webView.getSettings();
         settings.setJavaScriptEnabled(true);
@@ -104,6 +123,7 @@ public class MainActivity extends Activity implements NativeBridge.Host {
         });
 
         setContentView(webView);
+        webView.requestApplyInsets();
         webView.loadUrl(AssetServer.START_URL);
     }
 

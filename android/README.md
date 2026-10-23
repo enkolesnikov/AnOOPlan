@@ -5,7 +5,7 @@
 
 ```
 android/
-├── AndroidManifest.xml              пакет com.anooplan.app, minSdk 24, targetSdk 34
+├── AndroidManifest.xml              пакет com.anooplan.app, minSdk 24, targetSdk 35
 ├── assets/www/                      статическая сборка Vite (создаётся сборкой, в git не хранится)
 ├── java/com/anooplan/app/
 │   ├── MainActivity.java            WebView, выбор файла, экспорт на диск, кнопка «Назад»

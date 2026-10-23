@@ -27,8 +27,14 @@ jobs:
         run: |
           set -euo pipefail
           SDK="${ANDROID_HOME:-/usr/local/lib/android/sdk}"
-          BT="$(ls -d "$SDK"/build-tools/* | sort -V | tail -1)"
-          PLATFORM="$(ls -d "$SDK"/platforms/android-3* | sort -V | tail -1)"
+          BT="$SDK/build-tools/35.0.0"
+          PLATFORM="$SDK/platforms/android-35"
+          if [ ! -x "$BT/aapt" ] || [ ! -f "$PLATFORM/android.jar" ]; then
+            SDKMANAGER="$(find "$SDK/cmdline-tools" -name sdkmanager -type f | head -1)"
+            [ -n "$SDKMANAGER" ] || { echo "Нет sdkmanager для установки build-tools 35" >&2; exit 1; }
+            yes | "$SDKMANAGER" --licenses >/dev/null || true
+            "$SDKMANAGER" "build-tools;35.0.0" "platforms;android-35"
+          fi
           {
             echo "ANDROID_JAR=$PLATFORM/android.jar"
             echo "AAPT=$BT/aapt"

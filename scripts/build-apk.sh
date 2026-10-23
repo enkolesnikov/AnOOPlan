@@ -3,7 +3,7 @@
 #
 # Пути к инструментам можно переопределить переменными окружения:
 #   ANDROID_JAR  — jar платформы Android (по умолчанию tools/android.jar)
-#   AAPT, ZIPALIGN, APKSIGNER, D8_CMD — инструменты (по умолчанию из PATH)
+#   AAPT, ZIPALIGN, APKSIGNER, D8_CMD — инструменты (по умолчанию из tools/build-tools/35.0.0)
 #   KS_PASS, KS_ALIAS, VERSION_NAME, VERSION_CODE
 set -euo pipefail
 
@@ -13,6 +13,11 @@ BUILD_DIR="$ROOT/build"
 TOOLS_DIR="$ROOT/tools"
 ANDROID_JAR="${ANDROID_JAR:-$TOOLS_DIR/android.jar}"
 R8_JAR="${R8_JAR:-$TOOLS_DIR/r8.jar}"
+TARGET_SDK="${TARGET_SDK:-35}"
+BUILD_TOOLS_DIR="${BUILD_TOOLS_DIR:-$TOOLS_DIR/build-tools/35.0.0}"
+if [ -z "${AAPT:-}" ] && [ -x "$BUILD_TOOLS_DIR/aapt" ]; then AAPT="$BUILD_TOOLS_DIR/aapt"; fi
+if [ -z "${ZIPALIGN:-}" ] && [ -x "$BUILD_TOOLS_DIR/zipalign" ]; then ZIPALIGN="$BUILD_TOOLS_DIR/zipalign"; fi
+if [ -z "${APKSIGNER:-}" ] && [ -x "$BUILD_TOOLS_DIR/apksigner" ]; then APKSIGNER="$BUILD_TOOLS_DIR/apksigner"; fi
 AAPT="${AAPT:-aapt}"
 ZIPALIGN="${ZIPALIGN:-zipalign}"
 APKSIGNER="${APKSIGNER:-apksigner}"
@@ -22,8 +27,8 @@ KS_PASS="${KS_PASS:-anooplan-build-pass}"
 KS_ALIAS="${KS_ALIAS:-anooplan}"
 
 PACKAGE="com.anooplan.app"
-VERSION_NAME="${VERSION_NAME:-1.7.0}"
-VERSION_CODE="${VERSION_CODE:-9}"
+VERSION_NAME="${VERSION_NAME:-1.7.1}"
+VERSION_CODE="${VERSION_CODE:-10}"
 OUT_APK="$BUILD_DIR/AnOOPlan-${VERSION_NAME}.apk"
 
 say() { printf '\n\033[1;36m==> %s\033[0m\n' "$1"; }
@@ -33,6 +38,9 @@ need javac; need java; need zip; need node; need python3
 need "$AAPT"; need "$ZIPALIGN"; need "$APKSIGNER"
 [ -f "$ANDROID_JAR" ] || { echo "Нет $ANDROID_JAR — выполните scripts/fetch-tools.sh или задайте ANDROID_JAR" >&2; exit 1; }
 
+if [ -z "$D8_CMD" ] && [ -x "$BUILD_TOOLS_DIR/d8" ]; then
+    D8_CMD="$BUILD_TOOLS_DIR/d8"
+fi
 if [ -z "$D8_CMD" ]; then
     if command -v d8 >/dev/null 2>&1; then
         D8_CMD="d8"
@@ -66,7 +74,7 @@ mkdir -p "$BUILD_DIR/gen" "$BUILD_DIR/classes" "$BUILD_DIR/dex"
     -S "$ANDROID_DIR/res" \
     -I "$ANDROID_JAR" \
     --min-sdk-version 24 \
-    --target-sdk-version 34 \
+    --target-sdk-version "$TARGET_SDK" \
     --version-code "$VERSION_CODE" \
     --version-name "$VERSION_NAME" \
     --rename-manifest-package "$PACKAGE"
@@ -92,7 +100,7 @@ rm -f "$UNSIGNED" "$ALIGNED"
     -I "$ANDROID_JAR" \
     -F "$UNSIGNED" \
     --min-sdk-version 24 \
-    --target-sdk-version 34 \
+    --target-sdk-version "$TARGET_SDK" \
     --version-code "$VERSION_CODE" \
     --version-name "$VERSION_NAME" \
     --rename-manifest-package "$PACKAGE"
