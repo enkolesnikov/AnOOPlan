@@ -53,6 +53,12 @@ jobs:
       - name: Дымовой тест интерфейса
         run: npm run smoke
 
+      - name: Браузер для E2E
+        run: npx playwright install --with-deps chromium
+
+      - name: E2E с реальным PDF
+        run: npm run test:ui
+
       - name: Проверить наличие секретов
         env:
           KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}

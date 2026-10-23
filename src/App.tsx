@@ -12,6 +12,7 @@ import { orphanPhotoKeys, purgePhotoBlobs } from './photos';
 import { AboutSheet, APP_VERSION } from './About';
 import { clearDiagnostics, diagnosticsText, logDiagnostic, readDiagnostics, type DiagnosticEntry } from './diagnostics';
 import { unusedStorageKeys } from './storage-gc';
+import { migrateProject } from './migrations';
 import { createUuid as uid, cloneValue as clone, decodeImage, loadBitmap } from './compat';
 
 type PdfjsModule = typeof import('pdfjs-dist/legacy/build/pdf.mjs');
@@ -293,7 +294,15 @@ export default function App() {
     else { setRedo(source.slice(0, -1)); setUndo(items => [...items, clone(project)]); }
     setProject(clone(next)); projectRef.current = clone(next); setSelection(null); setDraft([]);
   }
-  function load(p: Project, exists: boolean) {
+  function load(value: unknown, exists: boolean) {
+    let p: Project;
+    try {
+      p = migrateProject(value);
+    } catch (error) {
+      logDiagnostic('error', error, 'load');
+      setError(error instanceof Error ? error.message : String(error));
+      return;
+    }
     setProject(p); projectRef.current = p; setSaved(exists ? JSON.stringify(p) : ''); setPersisted(exists);
     setFloorId(p.floors[0]?.id || ''); setUndo([]); setRedo([]); setSelection(null); setDraft([]); setMeasure([]); setCalibration([]); setCableSegments([]); setView('plan'); setTool('select'); setError('');
   }
@@ -1164,6 +1173,41 @@ export default function App() {
     const blob = await response.blob(); const link = document.createElement('a'); link.href = URL.createObjectURL(blob); link.download = `${current.name}.${kind === 'backup' ? 'json' : kind}`; link.click(); setTimeout(() => URL.revokeObjectURL(link.href), 1000);
     setMessage(kind === 'backup' ? 'Резервная копия с PDF выгружена.' : `Экспорт ${kind.toUpperCase()} готов.`);
   }
+  async function restoreProjectFile(file: File): Promise<void> {
+    const parsed = JSON.parse(await file.text()) as Record<string, unknown>;
+    if (staticMode) {
+      const hasProject = Boolean(parsed) && typeof parsed === 'object' && 'project' in parsed;
+      const project = migrateProject(hasProject ? parsed.project : parsed);
+      if (hasProject) {
+        const rawPdfs = Array.isArray(parsed.pdfs) ? parsed.pdfs as { id?: string; dataBase64?: string }[] : [];
+        for (const pdf of rawPdfs) {
+          if (pdf?.id && pdf.dataBase64) {
+            const bytes = Uint8Array.from(atob(pdf.dataBase64), c => c.charCodeAt(0));
+            await idbPut(pdf.id.replace(/^idb:/, ''), new Blob([bytes], { type: 'application/pdf' }));
+          }
+        }
+        const rawPhotos = Array.isArray(parsed.photos) ? parsed.photos as { key?: string; dataBase64?: string; mime?: string }[] : [];
+        for (const photo of rawPhotos) {
+          if (photo?.key && photo.dataBase64) {
+            const bytes = Uint8Array.from(atob(photo.dataBase64), c => c.charCodeAt(0));
+            await idbPut('photo:' + photo.key, new Blob([bytes], { type: photo.mime || 'image/jpeg' }));
+          }
+        }
+      }
+      load(project, true);
+      setMessage('Проект загружен из файла.');
+      return;
+    }
+    if (parsed && typeof parsed === 'object' && 'project' in parsed) {
+      const result = await api<Project>('/api/restore', jsonOptions('POST', parsed));
+      load(result, true);
+      setMessage('Резервная копия с PDF восстановлена.');
+      return;
+    }
+    load(parsed, false);
+    setMessage('Проект загружен из файла. Подложку PDF при необходимости загрузите заново.');
+  }
+
   async function exportDiagnostics(): Promise<void> {
     const blob = new Blob([diagnosticsText(APP_VERSION)], { type: 'text/plain;charset=utf-8' });
     const name = `AnOOPlan-диагностика-${new Date().toISOString().slice(0, 10)}.txt`;
@@ -1261,9 +1305,7 @@ export default function App() {
     <input hidden ref={photoInput} type="file" accept="image/*" onChange={e => { const file = e.target.files?.[0]; if (file) void run(() => addPhoto(file)); e.target.value = ''; }} />
     <input hidden ref={cameraInput} type="file" accept="image/*" capture="environment" onChange={e => { const file = e.target.files?.[0]; if (file) void run(() => addPhoto(file)); e.target.value = ''; }} />
     <input hidden ref={upload} type="file" accept="application/pdf,.pdf" onChange={e => { const file = e.target.files?.[0]; if (file) void run(() => uploadPdf(file)); e.target.value = ''; }} />
-    <input hidden ref={restoreInput} type="file" accept="application/json,.json" onChange={e => { const file = e.target.files?.[0]; if (file && mayLeave()) void run(async () => { const parsed = JSON.parse(await file.text()) as Record<string, unknown>; if (staticMode) { const proj = (parsed && typeof parsed === 'object' && 'project' in parsed) ? parsed.project : parsed; if (proj && (proj as Partial<Project>).schemaVersion === 1 && Array.isArray((proj as Partial<Project>).floors)) { const rawPdfs = (parsed && typeof parsed === 'object' && 'pdfs' in parsed && Array.isArray(parsed.pdfs)) ? parsed.pdfs as { id: string; dataBase64?: string }[] : []; for (const pdf of rawPdfs) { if (pdf && pdf.id && pdf.dataBase64) { const bytes = Uint8Array.from(atob(pdf.dataBase64), c => c.charCodeAt(0)); await idbPut(pdf.id.replace(/^idb:/, ''), new Blob([bytes], { type: 'application/pdf' })); } }
-        const rawPhotos = (parsed && typeof parsed === 'object' && 'photos' in parsed && Array.isArray((parsed as { photos?: unknown }).photos)) ? (parsed as { photos: { key?: string; dataBase64?: string; mime?: string }[] }).photos : [];
-        for (const photo of rawPhotos) { if (photo && photo.key && photo.dataBase64) { const bytes = Uint8Array.from(atob(photo.dataBase64), c => c.charCodeAt(0)); await idbPut('photo:' + photo.key, new Blob([bytes], { type: photo.mime || 'image/jpeg' })); } } load(proj as unknown as Project, true); setMessage('Проект загружен из файла.'); } else { setError('Файл не является проектом AnOOPlan.'); } } else if (parsed && typeof parsed === 'object' && 'project' in parsed) { const result = await api<Project>('/api/restore', jsonOptions('POST', parsed)); load(result, true); setMessage('Резервная копия с PDF восстановлена.'); } else if (parsed && (parsed as Partial<Project>).schemaVersion === 1 && Array.isArray((parsed as Partial<Project>).floors)) { load(parsed as unknown as Project, false); setMessage('Проект загружен из файла. Подложку PDF при необходимости загрузите заново.'); } else { setError('Файл не является проектом или резервной копией AnOOPlan.'); } }); e.target.value = ''; }} />
+    <input hidden ref={restoreInput} type="file" accept="application/json,.json" onChange={e => { const file = e.target.files?.[0]; if (file && mayLeave()) void run(() => restoreProjectFile(file)); e.target.value = ''; }} />
     {projects && <div className="modal-backdrop"><section className="modal"><div className="modal-heading"><h2>Открыть проект</h2><button onClick={() => setProjects(null)}>×</button></div>{projects.length ? projects.map(p => <div className="project-row" key={p.id}><button className="project-option" disabled={busy} onClick={() => { if (mayLeave()) void run(async () => { const result = staticMode ? lsProjects().find(x => x.id === p.id)! : await api<Project>(`/api/projects/${p.id}`); load(result, true); setProjects(null); setMessage(`Проект «${result.name}» открыт.`); }); }}><strong>{p.name}</strong><small>{new Date(p.updatedAt).toLocaleString('ru-RU')}</small><span>→</span></button><button className="project-delete" disabled={busy} title="Удалить проект" onClick={() => void run(() => deleteProject(p.id, p.name))}>🗑</button></div>) : <p className="help">Сохранённых проектов пока нет.</p>}</section></div>}
   </div>;
 }

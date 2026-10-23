@@ -12,8 +12,8 @@
 - Репозиторий: <https://github.com/enkolesnikov/AnOOPlan>
 - Релизы с APK: <https://github.com/enkolesnikov/AnOOPlan/releases>
 - Веб-версия: <https://enkolesnikov.github.io/AnOOPlan/>
-- Текущая версия: **1.9.2**, versionCode 17, `com.anooplan.app`, minSdk 24, targetSdk 35.
-  APK ~1,8 МБ, WebView 98+, 81 юнит-тест.
+- Текущая версия: **1.10.0**, versionCode 18, `com.anooplan.app`, minSdk 24, targetSdk 35.
+  APK ~1,8 МБ, WebView 98+, 85 юнит-тестов + E2E.
 - Подпись: SHA-256 сертификата `6431374cf6a7d385c4c47f0f2bf54fcb5ee5b2c7120f057b18c4062af92fe097`.
 
 ## Режимы работы
@@ -40,14 +40,15 @@ APK всегда работает в режиме «Браузер»: запро
 | Большие листы | `src/render-plan.ts` | бюджет 12 Мпикс, рендер видимой области для A1/A0 |
 | Хранилище | `src/storage-gc.ts` | ссылки на PDF/фото, фоновый GC сирот |
 | Диагностика | `src/diagnostics.ts` | локальный журнал ошибок (50 записей), экспорт |
+| Схема проекта | `src/migrations.ts` | миграции/нормализация, `CURRENT_SCHEMA_VERSION`, отказ от будущих версий |
 | Совместимость | `src/compat.ts`, `src/polyfills.ts`, `src/pdf-worker.ts` | фолбэки WebView, полифилл `Promise.withResolvers` |
 | Оболочка Android | `android/java/com/anooplan/app/` | `MainActivity`, `AssetServer`, `NativeBridge`, `PdfPrinter` |
 | Сборка APK | `scripts/build-apk.sh`, `scripts/fetch-tools.sh` | aapt + javac + d8 + zipalign + apksigner, **без Gradle** |
-| Тесты | `tests/*.test.ts`, `scripts/smoke-dom.mjs` | 81 юнит-тест + смоук интерфейса в happy-dom |
+| Тесты | `tests/*.test.ts`, `tests/e2e/`, `scripts/smoke-dom.mjs` | 85 юнит-тестов, смоук happy-dom и Playwright E2E с реальным PDF |
 
 ### Ключевые решения (не пересматривать без причины)
 
-1. **WebView вместо Kotlin-переписывания.** Одна кодовая база для сайта и APK, 81 тест, быстрые
+1. **WebView вместо Kotlin-переписывания.** Одна кодовая база для сайта и APK, 85 тестов, быстрые
    итерации. Kotlin оправдан только при ежедневной работе пером и листах A1+ — тогда начинать
    с порта `engine.ts` в KMP, а не с UI.
 2. **Статика отдаётся по origin `https://appassets.local/`** через `AssetServer.shouldInterceptRequest`.
@@ -74,7 +75,8 @@ APK всегда работает в режиме «Браузер»: запро
 
 ```bash
 npm ci                      # зависимости (Node 22.5+, проверено на Node 24)
-npm test                    # 81 тест
+npm test                    # 85 тестов
+npm run test:ui             # сборка + Playwright E2E с реальным PDF
 npm run smoke               # смоук интерфейса (happy-dom)
 npm run build               # tsc --noEmit + vite build
 bash scripts/fetch-tools.sh # platform-35, build-tools 35.0.0, r8.jar
@@ -95,17 +97,17 @@ Android-инструменты; JDK на VPS уже установлен. Есл
 
 ## CI и релиз
 
-- `.github/workflows/android-apk.yml` — на каждый push в `main`: `npm ci`, тесты, смоук,
+- `.github/workflows/android-apk.yml` — на каждый push в `main`: `npm ci`, тесты, смоук, E2E,
   **неподписанный** APK (`AnOOPlan-apk-unsigned`). Ключ в раннере не создаётся.
 - `.github/workflows/deploy.yml` — GitHub Pages.
-- `.github/workflows/android-release.yml` — по тегу `v*`: собирает подписанный APK из GitHub Secrets,
-  проверяет SHA-256 сертификата, создаёт GitHub Release и удаляет keystore с раннера.
+- `.github/workflows/android-release.yml` — по тегу `v*`: тесты, смоук, E2E, подписанный APK
+  из GitHub Secrets, проверка SHA-256 сертификата, GitHub Release, удаление keystore с раннера.
 
 Порядок релиза:
 
 1. Поднять версию в `package.json`, `android/AndroidManifest.xml` (`versionName`, `versionCode`)
    и `scripts/build-apk.sh` (`VERSION_NAME`, `VERSION_CODE`).
-2. Обновить `README.md` и этот файл, прогнать `npm test`, `npm run smoke`, `npm run build`.
+2. Обновить `README.md` и этот файл, прогнать `npm test`, `npm run smoke`, `npm run test:ui`, `npm run build`.
 3. Закоммитить и запушить `main`; дождаться зелёного CI.
 4. Поставить аннотированный тег `vX.Y.Z` и запушить его — релиз соберёт workflow.
 5. Проверить, что в GitHub Release приложен APK и сертификат совпал с `ANDROID_CERT_SHA256`.
@@ -127,24 +129,22 @@ Android-инструменты; JDK на VPS уже установлен. Есл
 
 ## Тесты и что ими не покрыто
 
-- 81 юнит-тест: движок, экспорт, PDF, план-SVG, рендер больших листов, фото, GC, диагностика,
-  конфигурация Android и релиза.
+- 85 юнит-тестов: движок, экспорт, PDF, план-SVG, рендер больших листов, фото, GC, диагностика,
+  миграции схемы, конфигурация Android и релиза.
 - `npm run smoke` — happy-dom: интерфейс, автосохранение, CSV/XLSX/PDF, фото, лицензии, диагностика.
-- В смоуке **PDF.js заменён заглушкой**, поэтому реальный рендер PDF и выгрузка подложки им не
-  проверяются. Именно так прошёл баг 1.8.3 с белой заливкой плана. Playwright и Chromium на VPS
-  установлены, но E2E-тест с реальным PDF в CI пока не добавлен — это P1.
-- Ручные проверки: загрузка PDF → калибровка → план → PDF; фото; удаление проекта/этапа; диагностика;
-  установка APK на эмулятор Android 15.
+- `npm run test:ui` — Playwright с реальным PDF: загрузка, экспорт журнала, проверка подложки
+  листа «План» по пикселям. В смоуке PDF.js по-прежнему заглушка, поэтому E2E дополняет его,
+  а не заменяет.
+- Ручные проверки: калибровка, фото, удаление проекта/этапа, установка APK на эмулятор Android 15.
 
 ## Известные проблемы и техдолг
 
 **P0** — открытых нет.
 
 **P1**
-- E2E с реальным PDF в CI (Playwright): загрузка, экспорт журнала, проверка подложки плана.
 - `App.tsx` ~1200 строк в одном компоненте. Разбивать постепенно на хуки/компоненты
   (`useProjectStorage`, `usePlanViewport`, `usePdfBackground`, панели), не одним рефакторингом.
-- Схема проекта без миграций — обязательный пункт перед облаком/совместной работой.
+- Слой миграций уже есть, но `schemaVersion` пока 1: перед облаком добавить v2 и ревизии сущностей.
 - `xlsx` 0.18.5: high без фикса в npm; используется на запись и в тестах, не на чтение чужих файлов.
   Рассмотреть ExcelJS или вендоринг официальной сборки SheetJS.
 - План в PDF выгружается только для `floor.page`; многостраничные этажи — отдельная задача.
@@ -164,11 +164,11 @@ Android-инструменты; JDK на VPS уже установлен. Есл
 
 ## Что делать дальше
 
-Инженерные задачи (1.9.x–2.0):
-1. E2E-тест реального PDF в CI — закрывает класс регрессий, который уже дважды проявлялся вручную.
-2. Разбиение `App.tsx` на хуки без изменения поведения.
-3. Слой миграций `schemaVersion` и ревизии сущностей — фундамент для облака.
-4. Многостраничный план в PDF и доступность.
+Инженерные задачи (1.10.x–2.0):
+1. Разбиение `App.tsx` на хуки без изменения поведения.
+2. Схема v2 и ревизии сущностей — фундамент для облака.
+3. Многостраничный план в PDF и доступность.
+4. При желании — замена `xlsx` и уменьшение памяти при рендере.
 
 Продуктовые задачи (по ценности):
 1. Пины-замечания с фото (punch list) — дешёвый вход в полевые сценарии.
@@ -218,4 +218,4 @@ Android-инструменты; JDK на VPS уже установлен. Есл
 2. `npm ci && npm test && npm run smoke` — убедиться, что база зелёная.
 3. `bash scripts/fetch-tools.sh && bash scripts/build-apk.sh` — собрать APK локально
    (на VPS keystore уже на месте).
-4. Взять P1-задачи: E2E с реальным PDF и разбиение `App.tsx`; перед облаком — миграции схемы.
+4. Взять P1-задачи: разбиение `App.tsx` и многостраничный план; перед облаком — схема v2 и ревизии.

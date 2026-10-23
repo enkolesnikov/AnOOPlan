@@ -12,7 +12,7 @@
 
 [![Скачать APK](https://img.shields.io/badge/%D1%81%D0%BA%D0%B0%D1%87%D0%B0%D1%82%D1%8C-APK-2ea043?logo=android&logoColor=white)](https://github.com/enkolesnikov/AnOOPlan/releases/latest)
 
-- **APK:** [последний релиз](https://github.com/enkolesnikov/AnOOPlan/releases/latest) (`AnOOPlan-1.9.2.apk`) — 1,8 МБ со встроенными шрифтами, Android 7.0+ (minSdk 24, WebView 98+, targetSdk 35), без интернета;
+- **APK:** [последний релиз](https://github.com/enkolesnikov/AnOOPlan/releases/latest) (`AnOOPlan-1.10.0.apk`) — 1,8 МБ со встроенными шрифтами, Android 7.0+ (minSdk 24, WebView 98+, targetSdk 35), без интернета;
 - **Веб-версия:** [enkolesnikov.github.io/AnOOPlan](https://enkolesnikov.github.io/AnOOPlan/);
 - **Исходный проект:** [enkolesnikov/ooplan](https://github.com/enkolesnikov/ooplan).
 
@@ -85,12 +85,18 @@ npm run dev
 
 APK — это нативная оболочка (WebView) вокруг той же статической сборки, без Gradle и без сервера:
 
-- `com.anooplan.app`, minSdk 24, targetSdk 35, версия 1.9.2;
+- `com.anooplan.app`, minSdk 24, targetSdk 35, версия 1.10.0;
 - ассеты (`dist/`) упакованы в APK и отдаются WebView по origin `https://appassets.local/`, поэтому работают `localStorage`, `IndexedDB` (PDF-планы) и `crypto.randomUUID()`;
 - режим хранения — «Браузер»: проекты автосохраняются на устройстве, PDF читаются из памяти телефона через системный выбор файлов;
 - экспорт CSV и JSON-копии сохраняется в общую папку **Загрузки/AnOOPlan** без запроса опасных разрешений (MediaStore);
 - XLSX и PDF журнала собираются **на самом телефоне**: сервер для выгрузки не нужен;
 - разрешение `INTERNET` не запрашивается: приложение работает полностью офлайн.
+
+### Что нового в 1.10.0
+
+- **E2E с реальным PDF**: Playwright-тест загружает PDF, экспортирует журнал и проверяет, что подложка плана действительно попала в лист «План» (а не только что файл начинается с `%PDF-`). Тест входит в CI и release-workflow.
+- **Слой миграций схемы**: загрузка проекта проходит через `src/migrations.ts` — старые JSON без `schemaVersion` нормализуются, проекты из будущей версии отклоняются с понятной ошибкой, а не ломают интерфейс.
+- 85 юнит-тестов, смоук, E2E и подписанный APK.
 
 ### Что нового в 1.9.2
 
