@@ -1,5 +1,6 @@
 import type { Project } from '../src/model.js';
 import { normalizeEquipmentColor } from '../src/equipment-icons.js';
+import { isCatalogDate } from '../src/estimate.js';
 
 export class ApiError extends Error {
   constructor(public status: number, message: string) { super(message); }
@@ -100,6 +101,32 @@ export function assertProject(input: unknown, pdfExists: (id: string) => boolean
     // Диаметр/сечение кабеля необязательны: отсутствие означает «неизвестно», но заданное значение должно быть > 0.
     for (const k of ['outerDiameterMm', 'crossSectionMm2']) positiveOrEmpty(c[k], `cable.${k}`);
     number(c.quantity, 'cable.quantity', false, 1); if (!Number.isInteger(c.quantity)) fail('Количество кабелей должно быть целым');
+  }
+  // Справочник цен и смета необязательны; заданные поля проверяются структурно (иначе 422).
+  if (p.catalog !== undefined) {
+    for (const item of array(p.catalog, 'project.catalog')) {
+      const entry = item && typeof item === 'object' && !Array.isArray(item) ? item as Record<string, unknown> : null;
+      const priceOk = entry !== null && (entry.price === null || (typeof entry.price === 'number' && Number.isFinite(entry.price) && entry.price >= 0));
+      const valid = entry !== null
+        && (entry.kind === 'equipment' || entry.kind === 'cable' || entry.kind === 'tray')
+        && typeof entry.name === 'string' && entry.name.trim() !== ''
+        && typeof entry.unit === 'string'
+        && priceOk
+        && typeof entry.note === 'string';
+      if (!valid) fail('project.catalog: некорректная позиция');
+    }
+  }
+  if (p.catalogDate !== undefined && p.catalogDate !== null && !isCatalogDate(p.catalogDate)) {
+    fail('project.catalogDate: ожидается дата YYYY-MM-DD');
+  }
+  if (p.estimate !== undefined) {
+    if (!p.estimate || typeof p.estimate !== 'object' || Array.isArray(p.estimate)) fail('project.estimate: некорректный процент работ');
+    const estimate = p.estimate as Record<string, unknown>;
+    if (!(estimate.laborPercent === null
+      || (typeof estimate.laborPercent === 'number' && Number.isFinite(estimate.laborPercent) && estimate.laborPercent >= 0))) {
+      fail('project.estimate: некорректный процент работ');
+    }
+    if (estimate.note !== undefined && typeof estimate.note !== 'string') fail('project.estimate: некорректное примечание');
   }
 }
 

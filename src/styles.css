@@ -287,6 +287,41 @@ td small { display: block; color: var(--muted); font-size: 12px; }
 .document-empty { padding: 28px; text-align: center; color: var(--muted); }
 .document-note { margin-top: 12px; color: var(--muted); font-size: 12px; }
 
+/* ── Смета и справочник цен ──────────────────────────────────────────── */
+.estimate-status { display: flex; flex-direction: column; align-items: flex-end; gap: 6px; font-size: 12px; color: var(--muted); white-space: nowrap; }
+.estimate-status strong { color: var(--text); }
+.estimate-controls { display: flex; flex-wrap: wrap; gap: 12px; margin-bottom: 16px; }
+.estimate-labor { width: 140px; flex: 0 0 auto; }
+.estimate-note-field { flex: 1; min-width: 220px; }
+.estimate-warnings { border: 1px solid #f2d3ab; background: #fdf6ec; border-radius: 10px; padding: 10px 12px; margin-bottom: 16px; font-size: 13px; }
+.estimate-warnings strong { color: #a5610f; }
+.estimate-warnings ul { margin: 6px 0 0; padding-left: 18px; color: var(--muted); }
+.estimate-section { margin-bottom: 18px; }
+.estimate-section-head { display: flex; align-items: center; gap: 10px; margin-bottom: 6px; flex-wrap: wrap; }
+.estimate-section-head h2 { margin: 0; font-size: 16px; }
+.estimate-section-total { display: flex; justify-content: space-between; gap: 12px; padding: 8px 12px; border: 1px solid var(--border-soft); border-top: none; border-radius: 0 0 10px 10px; font-size: 13px; color: var(--muted); }
+.estimate-work-summary { border: 1px solid var(--border-soft); border-radius: 10px; padding: 12px 14px; font-size: 14px; }
+.estimate-work-summary p { margin: 0 0 8px; }
+.estimate-work-summary .estimate-section-total { border: none; padding: 0; }
+.estimate-work-summary .help { margin: 6px 0 0; }
+.estimate-section-total strong { color: var(--text); }
+.estimate-totals { display: flex; flex-wrap: wrap; gap: 12px; margin: 18px 0 6px; }
+.estimate-totals > div { flex: 1; min-width: 160px; display: flex; flex-direction: column; gap: 4px; padding: 12px 14px; border: 1px solid var(--border-soft); border-radius: 10px; background: var(--surface-3); font-size: 12px; color: var(--muted); }
+.estimate-totals strong { font-size: 18px; color: var(--text); }
+.estimate-totals > .estimate-grand { border-color: var(--accent); background: var(--accent-soft); }
+.estimate-grand strong { font-size: 22px; color: var(--accent-2); }
+.catalog-editor { margin-top: 18px; border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; }
+.catalog-editor summary { cursor: pointer; font-weight: 600; display: flex; gap: 8px; }
+.catalog-editor summary span { color: var(--muted); font-weight: 400; }
+.catalog-controls { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 12px; margin: 10px 0; }
+.catalog-date { width: 170px; flex: 0 0 auto; }
+.catalog-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.catalog-table td { white-space: normal; vertical-align: middle; }
+.catalog-table input, .catalog-table select { width: 100%; min-width: 70px; }
+.catalog-table .catalog-name { min-width: 180px; }
+.catalog-table .catalog-remove { width: 44px; }
+.catalog-table .catalog-remove button { width: 30px; min-height: 30px; padding: 0; }
+
 /* ---------- properties panel ---------- */
 .properties {
   width: 340px; flex-shrink: 0; display: flex; flex-direction: column;

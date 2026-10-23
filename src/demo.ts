@@ -1,4 +1,4 @@
-import type { Project, Floor, Equipment, Route, Cable, Segment, Vertex, Pin } from './model';
+import type { Project, Floor, Equipment, Route, Cable, Segment, Vertex, Pin, PriceItem, PriceKind } from './model';
 
 let counter = 0;
 const uid = (): string => `demo-${(++counter)}-${Math.random().toString(36).slice(2, 8)}`;
@@ -16,6 +16,11 @@ const equipment = (
 ): Equipment => ({ id, number, name, type, floorId, x, y, height, note: '', properties: { model: name } });
 
 const DEMO_PRICE_PER_METER = 38; // КВК-П 2×0,75, ₽/м — в учебном проекте стоимость считается сразу
+const DEMO_CATALOG_DATE = '2026-10-01';
+
+/** Позиция учебного справочника цен; id — через uid(), чтобы демо-копии не конфликтовали. */
+const priceItem = (kind: PriceKind, name: string, price: number, unit = 'шт'): PriceItem =>
+  ({ id: uid(), kind, name, unit, price, note: '' });
 
 const cable = (
   id: string, number: string, name: string, brand: string, purpose: string,
@@ -138,5 +143,19 @@ export function createDemoProject(): Project {
     cables,
     pins,
     updatedAt: now,
+    catalog: [
+      priceItem('equipment', 'Шкаф питания', 28500),
+      priceItem('equipment', 'Камера входа', 6500),
+      priceItem('equipment', 'Камера коридора', 6500),
+      priceItem('equipment', 'Камера периметра', 7200),
+      priceItem('equipment', 'Шкаф этажа 2', 24500),
+      priceItem('equipment', 'Камера лестницы', 6500),
+      priceItem('equipment', 'Розетка у входа', 450),
+      priceItem('cable', 'КВК-П 2×0.75', DEMO_PRICE_PER_METER, 'м'),
+      priceItem('tray', 'Лоток', 480, 'м'),
+      priceItem('tray', 'Стояк', 620, 'м'),
+    ],
+    catalogDate: DEMO_CATALOG_DATE,
+    estimate: { laborPercent: 25, note: 'Цены действительны 30 дней' },
   };
 }

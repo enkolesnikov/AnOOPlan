@@ -178,10 +178,10 @@ test('exports contain journal and specifications, BOM CSV, workbook sheets and P
     await h.request('/api/projects', 'POST', p);
     const response = await h.request('/api/projects/project-1/export?format=csv'); assert.equal(response.status, 200);
     const bytes = Buffer.from(await response.arrayBuffer()); assert.deepEqual([...bytes.subarray(0, 3)], [0xef, 0xbb, 0xbf]);
-    const text = bytes.toString('utf8'); assert.match(text, /Кабельный журнал/); assert.match(text, /Инфраструктура/); assert.match(text, /Заполнение лотков/); assert.match(text, /ВВГ/); assert.match(text, /'\=1\+1/);
+    const text = bytes.toString('utf8'); assert.match(text, /Кабельный журнал/); assert.match(text, /Инфраструктура/); assert.match(text, /Заполнение лотков/); assert.match(text, /ВВГ/); assert.match(text, /'\=1\+1/); assert.match(text, /Смета/); assert.match(text, /Коммерческое предложение/); assert.match(text, /Справочник цен/);
     const workbookResponse = await h.request('/api/projects/project-1/export?format=xlsx'); assert.equal(workbookResponse.status, 200);
     const wb = XLSX.read(Buffer.from(await workbookResponse.arrayBuffer()), { type: 'buffer' });
-    assert.deepEqual(wb.SheetNames, ['Кабельный журнал', 'Оборудование', 'Кабели', 'Инфраструктура', 'Заполнение лотков', 'Замечания', 'Предупреждения']);
+    assert.deepEqual(wb.SheetNames, ['Кабельный журнал', 'Оборудование', 'Кабели', 'Инфраструктура', 'Заполнение лотков', 'Смета', 'Коммерческое предложение', 'Справочник цен', 'Замечания', 'Предупреждения']);
     assert.ok(wb.SheetNames.includes('Кабельный журнал'));
     const journal = XLSX.utils.sheet_to_json<any[]>(wb.Sheets['Кабельный журнал'], { header: 1 });
     const journalHeader = journal[0] as string[];

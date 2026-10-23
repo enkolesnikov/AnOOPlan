@@ -1,5 +1,6 @@
 import type { Project } from './model';
 import { normalizeEquipmentColor } from './equipment-icons';
+import { isCatalogDate, normalizeCatalog } from './estimate';
 
 /**
  * Текущая версия схемы проекта. Пока это 1; каркас миграций нужен, чтобы
@@ -180,12 +181,25 @@ export function migrateProject(input: unknown): Project {
     pins: Array.isArray(raw.pins) ? raw.pins.map(normalizePin) : [],
     updatedAt: typeof raw.updatedAt === 'string' ? raw.updatedAt : new Date().toISOString(),
   };
+  // Справочник цен и дата прайса необязательны; повреждённые/отсутствующие поля
+  // нормализуются, а старые проекты грузятся как раньше.
+  project.catalog = normalizeCatalog(raw.catalog);
+  if (isCatalogDate(raw.catalogDate)) project.catalogDate = raw.catalogDate;
   if (isRecord(raw.document)) {
     const document = raw.document;
     project.document = {
       compiledBy: typeof document.compiledBy === 'string' ? document.compiledBy : undefined,
       checkedBy: typeof document.checkedBy === 'string' ? document.checkedBy : undefined,
       date: typeof document.date === 'string' ? document.date : undefined,
+    };
+  }
+  if (isRecord(raw.estimate)) {
+    const source = raw.estimate;
+    project.estimate = {
+      laborPercent: typeof source.laborPercent === 'number' && Number.isFinite(source.laborPercent) && source.laborPercent >= 0
+        ? source.laborPercent
+        : null,
+      note: typeof source.note === 'string' ? source.note : '',
     };
   }
   return project;

@@ -259,6 +259,103 @@ if (pdfEntry) {
 }
 check(/Download\/AnOOPlan/.test(bodyText()), 'путь сохранения показан в интерфейсе');
 
+console.log('\n6c. Смета и справочник цен');
+const estimateTab = Array.from(document.querySelectorAll('.view-tabs button')).find(button => (button.textContent || '').trim() === 'Смета');
+check(Boolean(estimateTab), 'вкладка «Смета» доступна');
+if (estimateTab) estimateTab.click();
+await sleep(300);
+const estimateView = document.querySelector('.estimate-view');
+check(Boolean(estimateView), 'экран сметы открылся');
+const estimateText = estimateView?.textContent || '';
+check(estimateText.includes('Смета и коммерческое предложение'), 'заголовок «Смета и коммерческое предложение» показан');
+check(estimateText.includes('Дата прайса'), 'в смете показана дата прайса');
+const estimateSections = Array.from(document.querySelectorAll('.estimate-section-head h2')).map(node => (node.textContent || '').trim());
+for (const title of ['Оборудование', 'Кабели', 'Лотки', 'Работы']) {
+  check(estimateSections.includes(title), `в смете есть раздел «${title}»: ${estimateSections.join(', ')}`);
+}
+const estimateSectionNodes = Array.from(document.querySelectorAll('.estimate-section'));
+const workSectionNode = estimateSectionNodes.find(node => (node.querySelector('h2')?.textContent || '').trim() === 'Работы');
+const workSectionText = workSectionNode?.textContent || '';
+check(/Работы — 25 % от стоимости материалов/.test(workSectionText), `раздел «Работы» объясняет процент, а не пустая таблица: ${workSectionText.slice(0, 140)}`);
+check(!workSectionText.includes('Позиций нет'), 'в разделе «Работы» нет строки «Позиций нет»');
+check(Boolean(workSectionNode?.querySelector('.estimate-work-summary')) && !workSectionNode?.querySelector('table'), 'раздел «Работы» без таблицы позиций');
+const materialTables = estimateSectionNodes.filter(node => (node.querySelector('h2')?.textContent || '').trim() !== 'Работы').filter(node => node.querySelector('table.estimate-table'));
+check(materialTables.length === 3, `у материальных разделов таблица позиций сохранена: ${materialTables.length}/3`);
+const estimateTotal = () => (document.querySelector('.estimate-total-value')?.textContent || '').trim();
+const totalNumber = () => Number(estimateTotal().replace(/[^\d,.-]/g, '').replace(',', '.'));
+check(/\d/.test(estimateTotal()), `итог сметы показан числом: ${estimateTotal()}`);
+const laborInput = document.querySelector('input[aria-label="Работы, %"]');
+check(Boolean(laborInput) && (laborInput.value || '').replace(',', '.') === '25', `поле «Работы, %» = 25 (получено: ${laborInput?.value || '—'})`);
+const catalogDetails = document.querySelector('.catalog-editor');
+check(Boolean(catalogDetails), 'блок «Справочник цен» есть на экране сметы');
+if (catalogDetails) catalogDetails.open = true;
+await sleep(120);
+const catalogPrices = Array.from(document.querySelectorAll('.catalog-price input')).map(input => (input.value || '').replace(/\s/g, ''));
+check(catalogPrices.includes('28500') && catalogPrices.includes('6500'), `в справочнике есть цены 28500 и 6500: ${catalogPrices.slice(0, 6).join(', ')}`);
+const catalogExport = Array.from(document.querySelectorAll('.catalog-actions button')).find(button => (button.textContent || '').includes('Экспорт справочника'));
+check(Boolean(catalogExport), 'кнопка «Экспорт справочника» есть');
+const catalogImport = Array.from(document.querySelectorAll('.catalog-actions button')).find(button => (button.textContent || '').includes('Импорт справочника'));
+check(Boolean(catalogImport), 'кнопка «Импорт справочника» есть');
+check(Boolean(document.querySelector('input.catalog-import-input[type="file"]')), 'скрытое поле импорта JSON подключено');
+const catalogSavedBefore = saved.filter(file => file.name.endsWith('.json')).length;
+let exportedCatalog = null;
+if (catalogExport) {
+  catalogExport.click();
+  await sleep(600);
+  const catalogFiles = saved.filter(file => file.name.endsWith('.json'));
+  const statusText = document.querySelector('.statusbar')?.textContent || '';
+  check(catalogFiles.length > catalogSavedBefore || /каталог/i.test(statusText), `экспорт справочника сработал через мост или сообщение: ${catalogFiles.map(file => file.name).pop() || statusText.slice(0, 60)}`);
+  if (catalogFiles.length) {
+    let exported = null;
+    try { exported = JSON.parse(Buffer.from(catalogFiles[catalogFiles.length - 1].base64, 'base64').toString('utf8')); } catch { exported = null; }
+    exportedCatalog = exported;
+    check(Boolean(exported) && Array.isArray(exported.catalog) && exported.catalog.length > 0, `в JSON экспорта непустой справочник: ${exported?.catalog?.length ?? 0} поз.`);
+    check(exported?.catalogDate === '2026-10-01', `в JSON экспорта дата прайса: ${exported?.catalogDate ?? '—'}`);
+    check(Boolean(exported) && !Object.prototype.hasOwnProperty.call(exported, 'estimate'), 'в JSON экспорта нет сметы — формат симметричен импорту');
+  }
+}
+const beforeLaborTotal = totalNumber();
+if (laborInput) {
+  const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
+  setter.call(laborInput, '30');
+  laborInput.dispatchEvent(new window.Event('input', { bubbles: true }));
+  await sleep(350);
+  const afterLaborTotal = totalNumber();
+  check(Number.isFinite(beforeLaborTotal) && Number.isFinite(afterLaborTotal) && afterLaborTotal > beforeLaborTotal, `изменение «Работы, %» меняет ИТОГО: ${beforeLaborTotal} → ${afterLaborTotal}`);
+  const laborAfter = document.querySelector('input[aria-label="Работы, %"]');
+  setter.call(laborAfter, '25');
+  laborAfter.dispatchEvent(new window.Event('input', { bubbles: true }));
+  await sleep(250);
+}
+const catalogDateInput = document.querySelector('input[aria-label="Дата прайса"]');
+const catalogImportInput = document.querySelector('input.catalog-import-input');
+check(Boolean(catalogDateInput) && (catalogDateInput.value || '') === '2026-10-01', `дата прайса в форме до импорта: ${catalogDateInput?.value || '—'}`);
+const setCatalogImportFiles = payload => {
+  const file = new window.File([JSON.stringify(payload)], 'catalog.json', { type: 'application/json' });
+  Object.defineProperty(catalogImportInput, 'files', { configurable: true, value: [file] });
+  catalogImportInput.dispatchEvent(new window.Event('change', { bubbles: true }));
+};
+if (catalogImportInput && catalogDateInput) {
+  setCatalogImportFiles({ catalog: [{ id: 'import-1', kind: 'equipment', name: 'Импорт тест', unit: 'шт', price: 100, note: '' }], catalogDate: '2026-02-30' });
+  await sleep(500);
+  check((catalogDateInput.value || '') === '2026-10-01', `невалидная дата «2026-02-30» не сохраняется, дата прайса прежняя: ${catalogDateInput.value || '—'}`);
+  const importedNames = Array.from(document.querySelectorAll('.catalog-name input')).map(input => input.value);
+  check(importedNames.includes('Импорт тест'), `импорт с невалидной датой заменил позиции справочника: ${importedNames.join(', ').slice(0, 80)}`);
+  setCatalogImportFiles({ catalog: [{ id: 'import-2', kind: 'cable', name: 'Кабель тест', unit: 'м', price: 50, note: '' }], catalogDate: '2026-05-01' });
+  await sleep(500);
+  check((catalogDateInput.value || '') === '2026-05-01', `валидная дата импорта сохраняется: ${catalogDateInput.value || '—'}`);
+  if (exportedCatalog) {
+    setCatalogImportFiles(exportedCatalog);
+    await sleep(600);
+    check((catalogDateInput.value || '') === '2026-10-01', `корректный импорт ставит валидную дату прайса: ${catalogDateInput.value || '—'}`);
+    const restoredNames = document.querySelectorAll('.catalog-name input').length;
+    check(restoredNames === exportedCatalog.catalog.length, `корректный импорт восстанавливает позиции: ${restoredNames}/${exportedCatalog.catalog.length}`);
+  }
+}
+const planTabBack = Array.from(document.querySelectorAll('.view-tabs button')).find(button => (button.textContent || '').trim() === 'План');
+if (planTabBack) planTabBack.click();
+await sleep(200);
+
 console.log('\n7. Долгое нажатие и панель действий');
 const equipmentTab = Array.from(document.querySelectorAll('.structure-tabs button')).find(button => (button.textContent || '').includes('Оборуд'));
 if (equipmentTab) equipmentTab.click();
@@ -528,6 +625,7 @@ if (fillCableRow) {
   const cableLabels = Array.from(document.querySelectorAll('.properties label')).map(label => label.textContent || '');
   check(cableLabels.some(text => text.includes('Внешний диаметр, мм')), 'в свойствах кабеля есть поле «Внешний диаметр, мм»');
   check(cableLabels.some(text => text.includes('Площадь сечения, мм²')), 'в свойствах кабеля есть поле «Площадь сечения, мм²»');
+  check(cableLabels.some(text => text.includes('Ручная цена; если пусто — берётся из справочника цен')), 'у «Цена за метр» есть подсказка про справочник цен');
   const diameterField = Array.from(document.querySelectorAll('.properties label')).find(label => (label.textContent || '').includes('Внешний диаметр, мм'));
   const diameterInput = diameterField?.querySelector('input');
   const diameterValue = Number((diameterInput?.value || '').replace(',', '.'));

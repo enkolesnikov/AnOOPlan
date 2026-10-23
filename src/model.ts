@@ -28,5 +28,36 @@ export interface Cable {
   /** Площадь сечения кабеля по внешнему диаметру, мм². Если задана, приоритетнее диаметра. */
   crossSectionMm2?: number | null;
 }
+
+/** Вид позиции справочника цен: оборудование, кабель или кабеленесущая система. */
+export type PriceKind = 'equipment' | 'cable' | 'tray';
+
+/** Позиция справочника цен проекта. Хранится в проекте, поэтому переживает офлайн, снапшоты и JSON-копию. */
+export interface PriceItem {
+  id: string;
+  kind: PriceKind;
+  /** Модель оборудования, марка кабеля или тип трассы. Сопоставление — без учёта регистра и пробелов по краям. */
+  name: string;
+  /** Единица измерения: «шт», «м» и т.п. */
+  unit: string;
+  /** Цена за единицу, ₽. null — цена неизвестна, а не 0. */
+  price: number | null;
+  note: string;
+}
+
+/** Настройки сметы проекта. Работы считаются процентом от стоимости материалов. */
+export interface ProjectEstimate {
+  laborPercent: number | null;
+  note?: string;
+}
 export interface ProjectDocument { compiledBy?:string; checkedBy?:string; date?:string }
-export interface Project { schemaVersion:1|2; id:string; name:string; floors:Floor[]; equipment:Equipment[]; routes:Route[]; cables:Cable[]; pins:Pin[]; updatedAt:string; document?:ProjectDocument }
+export interface Project {
+  schemaVersion:1|2; id:string; name:string; floors:Floor[]; equipment:Equipment[];
+  routes:Route[]; cables:Cable[]; pins:Pin[]; updatedAt:string; document?:ProjectDocument;
+  /** Справочник цен проекта. Отсутствие трактуется как пустой справочник. */
+  catalog?: PriceItem[];
+  /** Дата актуальности прайса (YYYY-MM-DD), показывается в смете и КП. */
+  catalogDate?: string | null;
+  /** Настройки сметы: процент работ и примечание. */
+  estimate?: ProjectEstimate;
+}

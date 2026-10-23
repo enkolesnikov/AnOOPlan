@@ -4,6 +4,7 @@ import { PDFDocument, rgb, type PDFFont, type PDFPage } from 'pdf-lib';
 import fontkit from '@pdf-lib/fontkit';
 import type { Cable, Project } from './model';
 import { cableSection, calculateCable, domainWarnings, specifications, validateProject } from './engine';
+import { estimate } from './estimate';
 import type { JournalFonts } from './export-fonts';
 
 export interface JournalPhoto { number: string; name: string; data: ArrayBuffer; mime: string }
@@ -283,7 +284,12 @@ class Renderer {
   }
 }
 
-function buildSections(project: Project): Section[] {
+type EstimateResult = ReturnType<typeof estimate>;
+
+/** Подпись строки работ: «Работы (25 %)»; без заданного процента — «Работы (не задан)», а не 0. */
+const laborLabel = (percent: number | null): string => (percent === null ? 'Работы (не задан)' : `Работы (${formatNumber(percent)} %)`);
+
+function buildSections(project: Project, estimateResult: EstimateResult): Section[] {
   const specs = specifications(project);
   const equipmentNumber = (id: string) => project.equipment.find(item => item.id === id)?.number || '—';
 
@@ -389,6 +395,52 @@ function buildSections(project: Project): Section[] {
       ]),
     },
     {
+      title: 'Смета',
+      note: `Дата прайса: ${estimateResult.catalogDate ?? '—'}. Неизвестные значения показаны как «—» и не заменяются нулём.`,
+      columns: [
+        { title: 'Раздел', width: 110 },
+        { title: 'Позиция', width: 190 },
+        { title: 'Ед.', width: 40 },
+        { title: 'Количество', width: 60, align: 'right' },
+        { title: 'Цена, ₽', width: 70, align: 'right' },
+        { title: 'Сумма, ₽', width: 80, align: 'right' },
+      ],
+      rows: [
+        ...estimateResult.sections.filter(section => section.kind !== 'work').flatMap(section => [
+          ...section.lines.map(line => [
+            section.title,
+            line.name || '—',
+            line.unit || '—',
+            formatNumber(line.quantity),
+            formatNumber(line.price),
+            formatNumber(line.total),
+          ]),
+          ['', `Итого: ${section.title}`, '', '', '', formatNumber(section.total)],
+        ]),
+        ['', 'Итого материалы', '', '', '', formatNumber(estimateResult.materials)],
+        ['', laborLabel(estimateResult.laborPercent), '', '', '', formatNumber(estimateResult.labor)],
+        ['', 'Итого по смете', '', '', '', formatNumber(estimateResult.total)],
+      ],
+    },
+    {
+      title: 'Коммерческое предложение',
+      note: [
+        `Дата прайса: ${estimateResult.catalogDate ?? '—'}`,
+        project.estimate?.note ? `Примечание: ${project.estimate.note}` : '',
+        'Цены без НДС. Неизвестные значения не заменяются нулём.',
+      ].filter(Boolean).join(' · '),
+      columns: [
+        { title: 'Раздел', width: 220 },
+        { title: 'Сумма, ₽', width: 120, align: 'right' },
+      ],
+      rows: [
+        ...estimateResult.sections.filter(section => section.kind !== 'work').map(section => [section.title, formatNumber(section.total)]),
+        ['Итого материалы', formatNumber(estimateResult.materials)],
+        [laborLabel(estimateResult.laborPercent), formatNumber(estimateResult.labor)],
+        ['Итого', formatNumber(estimateResult.total)],
+      ],
+    },
+    {
       title: 'Замечания',
       note: 'Пины-замечания по этажам. Статус «закрыто» означает, что замечание отработано.',
       columns: [
@@ -424,13 +476,14 @@ export async function buildJournalPdf(project: Project, fonts: JournalFonts, opt
   const renderer = new Renderer(document, regular, bold);
   renderer.cover(project);
 
-  for (const section of buildSections(project)) {
+  const estimateResult = estimate(project);
+  for (const section of buildSections(project, estimateResult)) {
     renderer.heading(section.title, section.note);
     if (section.rows.length) renderer.table(section.columns, section.rows);
     else renderer.paragraph('Нет записей.', MUTED);
   }
 
-  const warnings = [...new Set([...validateProject(project), ...domainWarnings(project), ...specifications(project).errors])];
+  const warnings = [...new Set([...validateProject(project), ...domainWarnings(project), ...specifications(project).errors, ...estimateResult.warnings])];
   if (warnings.length) {
     renderer.heading('Замечания и предупреждения', 'Проверьте данные перед применением документации на объекте.');
     renderer.list(warnings);

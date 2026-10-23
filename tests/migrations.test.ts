@@ -177,3 +177,89 @@ test('корректный цвет оборудования переживае�
   assert.equal(second.equipment[0].color, '#aabbcc');
   assert.deepEqual(second.equipment, first.equipment);
 });
+
+test('старый проект без справочника, даты прайса и сметы загружается', () => {
+  const migrated = migrateProject(project());
+  assert.deepEqual(migrated.catalog, []);
+  assert.equal(migrated.catalogDate, undefined);
+  assert.equal(migrated.estimate, undefined);
+  // Старые поля не пострадали и новые необязательные поля не заменили их на 0.
+  assert.equal(migrated.floors[0].metersPerUnit, 0.1);
+  assert.equal(migrated.equipment[0].height, null);
+});
+
+test('мусор в справочнике цен нормализуется и не роняет загрузку', () => {
+  const notArray = rawProject();
+  notArray.catalog = 'нет';
+  assert.deepEqual(migrateProject(notArray).catalog, []);
+
+  const raw = rawProject();
+  raw.catalog = [
+    null,
+    { kind: 'bad', name: 'X' },
+    { kind: 'cable', name: '  ' },
+    { kind: 'cable', name: ' ВВГ ', unit: 'м', price: -5 },
+    { kind: 'equipment', name: 'Шкаф', price: Number.NaN },
+    { kind: 'tray', name: 'Лоток', unit: 5, price: '100' },
+    { id: 't2', kind: 'tray', name: 'Стояк', price: 620 },
+  ];
+  const catalog = migrateProject(raw).catalog ?? [];
+  assert.equal(catalog.length, 4);
+  assert.deepEqual(catalog[0], { id: 'price-4', kind: 'cable', name: 'ВВГ', unit: 'м', price: null, note: '' });
+  assert.deepEqual(catalog[1], { id: 'price-5', kind: 'equipment', name: 'Шкаф', unit: 'шт', price: null, note: '' });
+  assert.deepEqual(catalog[2], { id: 'price-6', kind: 'tray', name: 'Лоток', unit: 'шт', price: null, note: '' });
+  assert.deepEqual(catalog[3], { id: 't2', kind: 'tray', name: 'Стояк', unit: 'шт', price: 620, note: '' });
+});
+
+test('смета: некорректный процент работ становится null, валидный сохраняется', () => {
+  for (const estimate of ['смета', [], 5, true]) {
+    const raw = rawProject();
+    raw.estimate = estimate;
+    assert.equal(migrateProject(raw).estimate, undefined, `оценка ${JSON.stringify(estimate)}`);
+  }
+  for (const laborPercent of ['25', -5, Number.NaN, Number.POSITIVE_INFINITY, null, true]) {
+    const raw = rawProject();
+    raw.estimate = { laborPercent, note: 5 };
+    assert.deepEqual(migrateProject(raw).estimate, { laborPercent: null, note: '' }, `процент ${String(laborPercent)}`);
+  }
+  const zero = rawProject();
+  zero.estimate = { laborPercent: 0, note: 'Без работ' };
+  assert.deepEqual(migrateProject(zero).estimate, { laborPercent: 0, note: 'Без работ' });
+});
+
+test('catalogDate: валидная дата сохраняется, мусор и null — undefined', () => {
+  const cases: [unknown, string | undefined][] = [
+    ['2026-10-01', '2026-10-01'],
+    ['2024-02-29', '2024-02-29'],
+    ['2026-02-30', undefined],
+    ['01.10.2026', undefined],
+    ['2026-1-01', undefined],
+    [null, undefined],
+    [42, undefined],
+  ];
+  for (const [value, expected] of cases) {
+    const raw = rawProject();
+    raw.catalogDate = value;
+    assert.equal(migrateProject(raw).catalogDate, expected, `дата ${String(value)}`);
+  }
+});
+
+test('каталог, дата прайса и смета переживают JSON round-trip', () => {
+  const raw = rawProject();
+  raw.catalog = [
+    { id: 'e1', kind: 'equipment', name: 'Шкаф питания', unit: 'шт', price: 28500, note: '' },
+    { id: 'c1', kind: 'cable', name: 'КВК-П 2×0.75', unit: 'м', price: null, note: 'уточнить' },
+  ];
+  raw.catalogDate = '2026-10-01';
+  raw.estimate = { laborPercent: 25, note: 'Цены действительны 30 дней' };
+  const first = migrateProject(raw);
+  assert.equal(first.schemaVersion, 2);
+  assert.equal(first.catalog?.length, 2);
+  assert.equal(first.catalogDate, '2026-10-01');
+  assert.deepEqual(first.estimate, { laborPercent: 25, note: 'Цены действительны 30 дней' });
+  const second = migrateProject(JSON.parse(JSON.stringify(first)));
+  assert.deepEqual(second.catalog, first.catalog);
+  assert.equal(second.catalogDate, first.catalogDate);
+  assert.deepEqual(second.estimate, first.estimate);
+  assert.equal(second.catalog?.[1].price, null, 'неизвестная цена остаётся null, а не 0');
+});

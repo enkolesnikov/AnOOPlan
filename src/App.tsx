@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { CSSProperties, PointerEvent as ReactPointerEvent } from 'react';
-import type { Project, Floor, Equipment, Route, Cable, Segment, Vertex, Point, Pin } from './model';
+import type { Project, Floor, Equipment, Route, Cable, Segment, Vertex, Point, Pin, PriceItem, PriceKind } from './model';
 import { calculateCable, cableSection, trayFill, specifications, validateProject, domainWarnings, chainEnds, findRoute } from './engine';
 import { createDemoProject } from './demo';
 import { exportSheets } from './sheets';
@@ -23,6 +23,7 @@ import { usePdfBackground } from './use-pdf-background';
 import { useSnapshots, type SnapshotEntry } from './use-snapshots';
 import { usePhotoUrls } from './use-photo-urls';
 import { EQUIPMENT_COLOR_PRESETS, EQUIPMENT_ICON_GLYPHS, equipmentColor, equipmentIcon, equipmentIconLabel } from './equipment-icons';
+import { estimate, isCatalogDate, normalizeCatalog } from './estimate';
 
 const SNAP_PX = 12;
 const SHEET_SIZES: Record<string, { landscape: number; portrait: number }> = {
@@ -35,7 +36,7 @@ const SHEET_SIZES: Record<string, { landscape: number; portrait: number }> = {
 const CABLE_SNAP_LIMIT = 100;
 type Selection = { kind: 'equipment' | 'route' | 'cable' | 'pin'; id: string } | null;
 type Tool = 'select' | 'pan' | 'equipment' | 'route' | 'calibrate' | 'cable' | 'measure' | 'pin';
-type View = 'plan' | 'journal' | 'specs';
+type View = 'plan' | 'journal' | 'specs' | 'estimate';
 const number = (value: unknown) => typeof value === 'number' && Number.isFinite(value) ? value.toLocaleString('ru-RU', { maximumFractionDigits: 3 }) : '—';
 // Статусы заполнения приходят из движка английскими ключами — в интерфейсе показываем по-русски.
 const FILL_STATUS_LABELS: Record<string, string> = { ok: 'ок', warning: 'внимание', over: 'превышено', empty: 'пусто', incomplete: 'неполный' };
@@ -911,7 +912,7 @@ export default function App() {
 
   return <div className="app-shell">
     <header className="topbar"><button className="menu-toggle" aria-label="Меню" onClick={() => setMenuOpen(v => !v)}>☰</button><div className="brand"><span className="brand-mark">A</span><div>AnOOPlan<small>кабельный план</small></div></div><div className="project-heading"><input aria-label="Название проекта" value={project.name} onChange={e => mutate(p => { p.name = e.target.value; })} /><span className={dirty ? 'save-indicator dirty' : 'save-indicator'}>{dirty ? '● Не сохранён' : '● Сохранён'}</span></div><div className="top-actions"><button className="desk-only" onClick={() => { if (mayLeave()) load(freshProject(), false); }}>Новый</button><button className="desk-only" disabled={busy} onClick={() => void run(async () => { setProjects(staticMode ? readLocalProjects().map(p => ({ id: p.id, name: p.name, updatedAt: p.updatedAt })) : await api('/api/projects')); })}>Открыть</button><button disabled={busy} title="Загрузить ранее экспортированный JSON-проект" onClick={() => restoreInput.current?.click()}>Загрузить</button><button className="primary" disabled={busy || (persisted && !dirty)} onClick={() => void run(async () => { await saveProject(); })}>{busy ? 'Подождите…' : persisted && !dirty ? 'Сохранено ✓' : 'Сохранить'}</button></div></header>
-    <div className="commandbar"><div className="view-tabs">{([['plan', 'План'], ['journal', 'Журнал'], ['specs', 'Ведомости']] as const).map(([id, label]) => <button key={id} className={view === id ? 'active' : ''} onClick={() => setView(id)}>{label}</button>)}</div><div className="command-actions"><button className="desk-only" onClick={() => { if (mayLeave()) { load(createDemoProject(), false); setMessage('Учебный проект: синтетические данные, не рабочая документация.'); } }}>Учебный проект</button><button className="export-trigger" onClick={() => setExportOpen(true)}>Экспорт / копия ↓</button></div></div>
+    <div className="commandbar"><div className="view-tabs">{([['plan', 'План'], ['journal', 'Журнал'], ['specs', 'Ведомости'], ['estimate', 'Смета']] as const).map(([id, label]) => <button key={id} className={view === id ? 'active' : ''} onClick={() => setView(id)}>{label}</button>)}</div><div className="command-actions"><button className="desk-only" onClick={() => { if (mayLeave()) { load(createDemoProject(), false); setMessage('Учебный проект: синтетические данные, не рабочая документация.'); } }}>Учебный проект</button><button className="export-trigger" onClick={() => setExportOpen(true)}>Экспорт / копия ↓</button></div></div>
     {error && <div className="banner error" role="alert"><strong>Не удалось выполнить действие.</strong> {error}<button onClick={() => setError('')}>×</button></div>}
     <div className="workspace"><aside className={`sidebar ${menuOpen ? 'open' : ''}`}><div className="sidebar-title">Структура проекта <span>{project.floors.length} эт.</span></div><div className="structure-tabs">{([['floors', 'Этажи'], ['equipment', 'Оборуд.'], ['routes', 'Трассы'], ['cables', 'Кабели'], ['pins', 'Зам.']] as const).map(([id, name]) => <button className={tab === id ? 'active' : ''} key={id} onClick={() => setTab(id)}>{name}<span>{project[id].length}</span></button>)}</div>
       <div className="object-list" onPointerDown={listPressDown} onPointerMove={moveLongPress} onPointerUp={cancelLongPress} onPointerCancel={cancelLongPress} onPointerLeave={cancelLongPress}>{tab === 'floors' ? project.floors.map((f, i) => <button key={f.id} className={`object-row ${floor?.id === f.id ? 'selected' : ''}`} onClick={() => { setFloorId(f.id); setSelection(null); setMenuOpen(false); }}><span className="object-icon">{String(i + 1).padStart(2, '0')}</span><span><strong>{f.name}</strong><small>{f.pdfId ? `PDF · страница ${f.page}` : 'Без подложки'} · {f.elevation === null ? 'отметка не задана' : `${number(f.elevation)} м`}</small></span><i className={f.metersPerUnit ? 'dot calibrated' : 'dot'} /></button>) : tab === 'equipment' ? project.equipment.map(eq => <button key={eq.id} data-kind="equipment" data-id={eq.id} className={`object-row ${selection?.id === eq.id ? 'selected' : ''}`} onClick={() => { setSelection({ kind: 'equipment', id: eq.id }); setFloorId(eq.floorId); setView('plan'); setMenuOpen(false); }}><span className="object-icon equipment-icon"><EquipmentIcon item={eq} /></span><span><strong>{eq.number}</strong><small>{eq.name}</small></span></button>) : tab === 'routes' ? project.routes.map(r => <button key={r.id} data-kind="route" data-id={r.id} className={`object-row ${selection?.id === r.id ? 'selected' : ''}`} onClick={() => { setSelection({ kind: 'route', id: r.id }); if (r.segments[0]) setFloorId(r.segments[0].a.floorId); setView('plan'); setMenuOpen(false); }}><span className="object-icon route-icon">⌁</span><span><strong>{r.number} · {r.type}</strong><small>{r.segments.length} сегм.</small></span></button>) : tab === 'pins' ? project.pins.map(pin => <button key={pin.id} data-kind="pin" data-id={pin.id} className={`object-row ${selection?.id === pin.id ? 'selected' : ''}`} onClick={() => { setSelection({ kind: 'pin', id: pin.id }); setFloorId(pin.floorId); setView('plan'); setMenuOpen(false); }}><span className="object-icon pin-icon">📍</span><span><strong>{pin.number}</strong><small>{pin.comment || 'Без текста'} · {pin.status === 'closed' ? 'закрыто' : 'открыто'}</small></span></button>) : project.cables.map(c => { const calc = cableCalcs.get(c.id)!; return <button key={c.id} data-kind="cable" data-id={c.id} className={`object-row ${selection?.id === c.id ? 'selected' : ''}`} onClick={() => { setSelection({ kind: 'cable', id: c.id }); setMenuOpen(false); }}><span className="object-icon cable-icon">↝</span><span><strong>{c.number} · {c.brand || c.name}</strong><small>{calc.complete ? `${number(calc.total)} м` : 'Неполный расчёт'}</small></span><i className={calc.complete ? 'dot calibrated' : 'dot warning'} /></button>; })}
@@ -970,7 +971,7 @@ export default function App() {
         </div>}
         <div className="plan-badge"><span className="dot calibrated" />{floor?.name || 'Нет этажей'}<span> / </span>{floor?.metersPerUnit ? `${number(floor.metersPerUnit)} м/ед.` : 'Масштаб не задан'}</div>
         <div className="plan-legend"><span className="legend-line" /> Трасса <span className="legend-equipment" /> Оборудование <span className="legend-cable" /> Выбранный кабель</div>
-      </div><div className="tool-hint"><span>{toolHints[tool]}</span><small>Координаты PDF: {pointer ? `${number(pointer.x)}; ${number(pointer.y)}` : '—'}</small></div><PlanAccessibilityList project={project} floor={floor} /></div> : view === 'journal' ? <section className="document-view"><div className="document-title"><div><span className="eyebrow">ДОКУМЕНТАЦИЯ</span><h1>Кабельный журнал</h1><p>Расчёт по выбранным сегментам, высотам и запасам. Единица измерения — метр.</p></div><button className="primary" onClick={() => { setView('plan'); setTool('cable'); }}>＋ Кабель</button></div><div className="table-scroll"><table><thead><tr><th>Кабель / марка</th><th>От → до</th><th>Геометрия</th><th>Запас трасс</th><th>Запас кабеля</th><th>Концы</th><th>Итог / шт.</th><th>Кол.</th><th>Стоимость, ₽</th><th>Статус</th></tr></thead><tbody>{project.cables.map(c => { const calc = cableCalcs.get(c.id)!; return <tr key={c.id} className={selection?.id === c.id ? 'selected' : ''} onClick={() => setSelection({ kind: 'cable', id: c.id })}><td><strong>{c.number}</strong><small>{c.brand || c.name}</small></td><td>{project.equipment.find(e => e.id === c.fromId)?.number || '?'} → {project.equipment.find(e => e.id === c.toId)?.number || '?'}</td><td>{number(calc.geometry)}</td><td>{number(calc.routeReserve)}</td><td>{number(calc.cableReserve)}</td><td>{number(calc.endReserve)}</td><td><strong>{number(calc.total)}</strong></td><td>{c.quantity}</td><td>{calc.cost === null ? '—' : number(calc.cost)}</td><td><span className={`badge ${calc.complete ? 'good' : 'warn'}`}>{calc.complete ? 'Рассчитан' : 'Неполный'}</span></td></tr>; })}</tbody></table>{!project.cables.length && <div className="document-empty">Создайте кабель: выберите оборудование и упорядоченную цепочку сегментов на плане.</div>}</div><div className="document-summary"><strong>{totals.metersComplete ? `${number(totals.meters)} м` : "Метраж рассчитан не полностью"}</strong><span>{totals.costComplete ? `Стоимость: ${number(totals.cost)} ₽` : "Стоимость не рассчитана: задайте цены за метр"}</span></div><div className="document-note">Итог указан для одного кабеля. Количество применяется в ведомости. Неполные значения не подменяются нулём.</div></section> : <section className="document-view"><div className="document-title"><div><span className="eyebrow">ДОКУМЕНТАЦИЯ</span><h1>Ведомости и проверка</h1><p>Кабельная продукция и инфраструктура. Общие сегменты инфраструктуры учитываются один раз.</p></div></div><SpecificationTables value={specifications(project)} /><h2>Замечания к проекту</h2><IssueList value={issues} /><div className="document-note">Расчёт не заменяет проверку проектировщиком. PDF может содержать разные масштабы: калибруйте каждый этаж и страницу отдельно. Совмещение осей этажей выполняется вручную.</div></section>}</main>
+      </div><div className="tool-hint"><span>{toolHints[tool]}</span><small>Координаты PDF: {pointer ? `${number(pointer.x)}; ${number(pointer.y)}` : '—'}</small></div><PlanAccessibilityList project={project} floor={floor} /></div> : view === 'journal' ? <section className="document-view"><div className="document-title"><div><span className="eyebrow">ДОКУМЕНТАЦИЯ</span><h1>Кабельный журнал</h1><p>Расчёт по выбранным сегментам, высотам и запасам. Единица измерения — метр.</p></div><button className="primary" onClick={() => { setView('plan'); setTool('cable'); }}>＋ Кабель</button></div><div className="table-scroll"><table><thead><tr><th>Кабель / марка</th><th>От → до</th><th>Геометрия</th><th>Запас трасс</th><th>Запас кабеля</th><th>Концы</th><th>Итог / шт.</th><th>Кол.</th><th>Стоимость, ₽</th><th>Статус</th></tr></thead><tbody>{project.cables.map(c => { const calc = cableCalcs.get(c.id)!; return <tr key={c.id} className={selection?.id === c.id ? 'selected' : ''} onClick={() => setSelection({ kind: 'cable', id: c.id })}><td><strong>{c.number}</strong><small>{c.brand || c.name}</small></td><td>{project.equipment.find(e => e.id === c.fromId)?.number || '?'} → {project.equipment.find(e => e.id === c.toId)?.number || '?'}</td><td>{number(calc.geometry)}</td><td>{number(calc.routeReserve)}</td><td>{number(calc.cableReserve)}</td><td>{number(calc.endReserve)}</td><td><strong>{number(calc.total)}</strong></td><td>{c.quantity}</td><td>{calc.cost === null ? '—' : number(calc.cost)}</td><td><span className={`badge ${calc.complete ? 'good' : 'warn'}`}>{calc.complete ? 'Рассчитан' : 'Неполный'}</span></td></tr>; })}</tbody></table>{!project.cables.length && <div className="document-empty">Создайте кабель: выберите оборудование и упорядоченную цепочку сегментов на плане.</div>}</div><div className="document-summary"><strong>{totals.metersComplete ? `${number(totals.meters)} м` : "Метраж рассчитан не полностью"}</strong><span>{totals.costComplete ? `Стоимость: ${number(totals.cost)} ₽` : "Стоимость не рассчитана: задайте цены за метр"}</span></div><div className="document-note">Итог указан для одного кабеля. Количество применяется в ведомости. Неполные значения не подменяются нулём.</div></section> : view === 'specs' ? <section className="document-view"><div className="document-title"><div><span className="eyebrow">ДОКУМЕНТАЦИЯ</span><h1>Ведомости и проверка</h1><p>Кабельная продукция и инфраструктура. Общие сегменты инфраструктуры учитываются один раз.</p></div></div><SpecificationTables value={specifications(project)} /><h2>Замечания к проекту</h2><IssueList value={issues} /><div className="document-note">Расчёт не заменяет проверку проектировщиком. PDF может содержать разные масштабы: калибруйте каждый этаж и страницу отдельно. Совмещение осей этажей выполняется вручную.</div></section> : <EstimateScreen project={project} onChange={mutate} onMessage={setMessage} onError={setError} />}</main>
       <aside className={`properties ${propsOpen ? 'open' : ''}`}><div className="properties-title">Свойства<span>{equipment ? 'ОБОРУДОВАНИЕ' : route ? 'ТРАССА' : cable ? 'КАБЕЛЬ' : pin ? 'ЗАМЕЧАНИЕ' : 'ЭТАЖ'}</span><button className="properties-close" aria-label="Закрыть" onClick={() => setPropsOpen(false)}>×</button></div><div className="properties-content">{selection && pin ? <PinProperties
         pin={pin}
         floors={project.floors}
@@ -985,7 +986,7 @@ export default function App() {
       {equipment && <div className="equipment-appearance"><div className="section-label">Иконка <span>{equipmentIconLabel(equipment.type)}</span></div><div className="icon-preview"><EquipmentIcon item={equipment} size={30} /><span>{equipmentIconLabel(equipment.type)}</span></div><div className="section-label">Цвет иконки <span>{equipmentColor(equipment)}</span></div><div className="color-swatches">{EQUIPMENT_COLOR_PRESETS.map(preset => { const active = equipmentColor(equipment) === preset; return <button key={preset} type="button" className={`color-swatch ${active ? 'active' : ''}`} style={{ background: preset }} aria-label={`Цвет ${preset}`} title={`Цвет ${preset}`} aria-pressed={active} onClick={() => setItem('color', preset)} />; })}<input className="color-custom" type="color" value={equipmentColor(equipment)} onChange={e => setItem('color', e.target.value)} aria-label="Свой цвет иконки" title="Свой цвет иконки" /><button type="button" className="color-default" onClick={() => setItem('color', null)}>По умолчанию</button></div><p className="help">Цвет хранится в проекте и попадает в JSON-копию. По умолчанию цвет зависит от типа оборудования.</p></div>}
       {equipment && <><label className="field">Этаж{floorSelect(equipment.floorId, value => setItem('floorId', value))}</label><div className="field-pair">{itemField('X, ед. PDF', 'x', true)}{itemField('Y, ед. PDF', 'y', true)}</div>{itemField('Высота от пола, м', 'height', true)}<p className="help">Пустая высота означает неизвестное значение. Для подводов кабеля задайте высоту явно, в том числе 0.</p><div className="section-label">Фотографии <span>{equipment.photos?.length || 0}</span></div><div className="photo-strip">{(equipment.photos || []).map(key => photoUrls[key] ? <div className="photo-card" key={key}><img src={photoUrls[key]} alt={`Фото ${equipment.number}`} /><button aria-label="Удалить фото" onClick={() => removePhoto(key)}>×</button></div> : null)}<button className="photo-add" onClick={() => photoInput.current?.click()}>＋ Фото</button><button className="photo-add" onClick={() => cameraInput.current?.click()}>📷 Снять</button></div><p className="help">Снимок монтажа хранится в проекте и попадает в JSON-копию вместе с PDF-планами.</p><details><summary>Дополнительные свойства</summary>{Object.entries(equipment.properties).map(([key, value]) => field(key, value, v => setItem('properties', { ...equipment.properties, [key]: v })))}<button onClick={() => { const key = window.prompt('Название свойства'); if (key) setItem('properties', { ...equipment.properties, [key]: '' }); }}>＋ Свойство</button></details></>}
       {route && <><div className="field-pair">{itemField('Ширина лотка, мм', 'trayWidthMm', true)}{itemField('Высота борта, мм', 'trayHeightMm', true)}</div>{itemField('Площадь лотка, мм²', 'trayAreaMm2', true)}<p className="help">Площадь лотка важнее ширины и высоты: если задана, считается она. Пусто — размер неизвестен, заполнение лотка не рассчитывается.</p><div className="section-label">Заполнение лотка <span>{routeFillWorst ? trayFillText(routeFillWorst.fillPercent, routeFillWorst.status) : 'не рассчитано'}</span></div><div className="tray-fill">{route.segments.map((segment, index) => { const row = fill.segments.find(entry => entry.segmentId === segment.id); return <div className={`tray-fill-row ${row?.status ?? 'empty'}`} key={segment.id}><strong>{route.number}.{index + 1}</strong><span>{fillPercentText(row?.fillPercent)}</span><em>{row ? fillStatus(row.status) : 'нет данных'}</em>{row?.warnings?.length ? <small>{row.warnings.join(' ')}</small> : null}</div>; })}</div><p className="help">Порог внимания — 40 %, превышения — 50 %. Максимум по трассе: {routeFillWorst ? trayFillText(routeFillWorst.fillPercent, routeFillWorst.status) : 'не рассчитано'}.</p><div className="section-label">Сегменты <span>{route.segments.length}</span></div><p className="help">Вершины тянутся на плане. Координаты и высоты можно задать точно ниже. При ручном изменении согласуйте соседние вершины.</p>{route.segments.map((s, index) => <details className="segment-editor" key={s.id}><summary>Сегмент {route.number}.{index + 1} {s.a.floorId !== s.b.floorId ? ' · стояк ↕' : ''}</summary><label className="field">Геометрия<select value={s.mode} onChange={e => mutate(p => { p.routes.find(r => r.id === route.id)!.segments.find(segment => segment.id === s.id)!.mode = e.target.value as Segment['mode']; })}><option value="orthogonal">Ортогональная</option><option value="spatial">Пространственная</option></select></label>{(['a', 'b'] as const).map(end => <div className="endpoint" key={end}><strong>{end === 'a' ? 'Начало' : 'Конец'}</strong><label className="field">Этаж{floorSelect(s[end].floorId, value => segmentField(s, end, 'floorId', value))}</label><div className="field-pair">{field('X', s[end].x, v => segmentField(s, end, 'x', Number(v)), true)}{field('Y', s[end].y, v => segmentField(s, end, 'y', Number(v)), true)}</div>{field('Высота, м', s[end].height, v => segmentField(s, end, 'height', v === '' ? null : Number(v)), true)}</div>)}<div className="field-pair">{field('Запас, %', s.reservePercent, v => mutate(p => { p.routes.find(r => r.id === route.id)!.segments.find(seg => seg.id === s.id)!.reservePercent = Number(v); }), true)}{field('Запас, м', s.reserveFixed, v => mutate(p => { p.routes.find(r => r.id === route.id)!.segments.find(seg => seg.id === s.id)!.reserveFixed = Number(v); }), true)}</div><button className="danger" onClick={() => { const linked = project.cables.filter(c => c.segmentIds.includes(s.id)); if (window.confirm(`Удалить сегмент? ${linked.length ? `Связанных кабелей: ${linked.length}. Они будут удалены.` : ''}`)) mutate(p => { p.routes.find(r => r.id === route.id)!.segments = p.routes.find(r => r.id === route.id)!.segments.filter(seg => seg.id !== s.id); p.cables = p.cables.filter(c => !c.segmentIds.includes(s.id)); }); }}>Удалить сегмент</button></details>)}<button className="wide" onClick={addRiser}>＋ Межэтажный стояк</button></>}
-      {cable && <>{itemField('Марка', 'brand')}{itemField('Назначение', 'purpose')}<label className="field">От{equipmentSelect(cable.fromId, value => setItem('fromId', value))}</label><label className="field">До{equipmentSelect(cable.toId, value => setItem('toId', value))}</label><div className="field-pair">{itemField('Запас, %', 'reservePercent', true)}{itemField('Запас, м', 'reserveFixed', true)}</div><div className="field-pair">{itemField('На начале, м', 'startReserve', true)}{itemField('На конце, м', 'endReserve', true)}</div>{itemField('Количество', 'quantity', true)}{itemField('Цена за метр, ₽', 'pricePerMeter', true)}<div className="field-pair">{itemField('Внешний диаметр, мм', 'outerDiameterMm', true)}{itemField('Площадь сечения, мм²', 'crossSectionMm2', true)}</div><p className="help">Площадь важнее диаметра: если заданы оба, считается площадь. Пусто — значение неизвестно, заполнение не рассчитывается.</p><div className="section-label">Порядок обхода</div><ol className="segment-order">{cable.segmentIds.map((id, i) => <li key={id}><span>{segmentName(id)}</span><button disabled={!i} title="Выше" onClick={() => { const next = [...cable.segmentIds]; [next[i - 1], next[i]] = [next[i], next[i - 1]]; setItem('segmentIds', next); }}>↑</button><button disabled={i === cable.segmentIds.length - 1} title="Ниже" onClick={() => { const next = [...cable.segmentIds]; [next[i + 1], next[i]] = [next[i], next[i + 1]]; setItem('segmentIds', next); }}>↓</button><button title="Удалить из цепочки" onClick={() => setItem('segmentIds', cable.segmentIds.filter(s => s !== id))}>×</button></li>)}</ol><button className="wide" onClick={() => { setCableSegments([...cable.segmentIds]); setCableFrom(cable.fromId); setCableTo(cable.toId); setTool('cable'); setView('plan'); setMessage('Измените цепочку кликами. Кнопка «Применить» в свойствах сохранит выбор.'); }}>Выбрать сегменты на плане</button>{tool === 'cable' && <button className="primary wide" onClick={() => { setItem('segmentIds', [...cableSegments]); setItem('fromId', cableFrom); setItem('toId', cableTo); setTool('select'); setCableSegments([]); }}>Применить цепочку к {cable.number}</button>}{calculation && <div className={`calculation-card ${calculation.complete ? '' : 'incomplete'}`}><span>ИТОГ / 1 КАБЕЛЬ</span><strong>{number(calculation.total)} <small>м</small></strong><dl><dt>Геометрия</dt><dd>{number(calculation.geometry)} м</dd><dt>Запас трассы</dt><dd>{number(calculation.routeReserve)} м</dd><dt>Запас кабеля</dt><dd>{number(calculation.cableReserve)} м</dd><dt>Запас концов</dt><dd>{number(calculation.endReserve)} м</dd><dt>Сечение</dt><dd>{areaMm2Text(cableSectionResult?.areaMm2)}</dd><dt>Заполнение лотка</dt><dd>{trayFillText(cableFill?.percent, cableFill?.status)}</dd></dl>{calculation.errors.map((e, i) => <p key={i}>{e}</p>)}{cableSectionResult?.errors.map((e, i) => <p key={'section-' + i}>{e}</p>)}{cableFill && cableFill.unknown > 0 && <p>Заполнение не рассчитано для сегментов: {cableFill.unknown} (неизвестен лоток или сечение кабеля).</p>}</div>}</>}
+      {cable && <>{itemField('Марка', 'brand')}{itemField('Назначение', 'purpose')}<label className="field">От{equipmentSelect(cable.fromId, value => setItem('fromId', value))}</label><label className="field">До{equipmentSelect(cable.toId, value => setItem('toId', value))}</label><div className="field-pair">{itemField('Запас, %', 'reservePercent', true)}{itemField('Запас, м', 'reserveFixed', true)}</div><div className="field-pair">{itemField('На начале, м', 'startReserve', true)}{itemField('На конце, м', 'endReserve', true)}</div>{itemField('Количество', 'quantity', true)}{field('Цена за метр, ₽', cable.pricePerMeter ?? '', value => setItem('pricePerMeter', value === '' ? null : Number(value)), true, 'Ручная цена; если пусто — берётся из справочника цен')}<div className="field-pair">{itemField('Внешний диаметр, мм', 'outerDiameterMm', true)}{itemField('Площадь сечения, мм²', 'crossSectionMm2', true)}</div><p className="help">Площадь важнее диаметра: если заданы оба, считается площадь. Пусто — значение неизвестно, заполнение не рассчитывается.</p><div className="section-label">Порядок обхода</div><ol className="segment-order">{cable.segmentIds.map((id, i) => <li key={id}><span>{segmentName(id)}</span><button disabled={!i} title="Выше" onClick={() => { const next = [...cable.segmentIds]; [next[i - 1], next[i]] = [next[i], next[i - 1]]; setItem('segmentIds', next); }}>↑</button><button disabled={i === cable.segmentIds.length - 1} title="Ниже" onClick={() => { const next = [...cable.segmentIds]; [next[i + 1], next[i]] = [next[i], next[i + 1]]; setItem('segmentIds', next); }}>↓</button><button title="Удалить из цепочки" onClick={() => setItem('segmentIds', cable.segmentIds.filter(s => s !== id))}>×</button></li>)}</ol><button className="wide" onClick={() => { setCableSegments([...cable.segmentIds]); setCableFrom(cable.fromId); setCableTo(cable.toId); setTool('cable'); setView('plan'); setMessage('Измените цепочку кликами. Кнопка «Применить» в свойствах сохранит выбор.'); }}>Выбрать сегменты на плане</button>{tool === 'cable' && <button className="primary wide" onClick={() => { setItem('segmentIds', [...cableSegments]); setItem('fromId', cableFrom); setItem('toId', cableTo); setTool('select'); setCableSegments([]); }}>Применить цепочку к {cable.number}</button>}{calculation && <div className={`calculation-card ${calculation.complete ? '' : 'incomplete'}`}><span>ИТОГ / 1 КАБЕЛЬ</span><strong>{number(calculation.total)} <small>м</small></strong><dl><dt>Геометрия</dt><dd>{number(calculation.geometry)} м</dd><dt>Запас трассы</dt><dd>{number(calculation.routeReserve)} м</dd><dt>Запас кабеля</dt><dd>{number(calculation.cableReserve)} м</dd><dt>Запас концов</dt><dd>{number(calculation.endReserve)} м</dd><dt>Сечение</dt><dd>{areaMm2Text(cableSectionResult?.areaMm2)}</dd><dt>Заполнение лотка</dt><dd>{trayFillText(cableFill?.percent, cableFill?.status)}</dd></dl>{calculation.errors.map((e, i) => <p key={i}>{e}</p>)}{cableSectionResult?.errors.map((e, i) => <p key={'section-' + i}>{e}</p>)}{cableFill && cableFill.unknown > 0 && <p>Заполнение не рассчитано для сегментов: {cableFill.unknown} (неизвестен лоток или сечение кабеля).</p>}</div>}</>}
       <label className="field">Примечание<textarea value={(equipment || route || cable)?.note || ''} onChange={e => setItem('note', e.target.value)} /></label><div className="property-actions"><button onClick={copySelection}>Копировать</button><button className="danger" onClick={removeSelection}>Удалить</button></div></> : floor ? <><div className="object-heading"><span className="eyebrow">ТЕКУЩИЙ ЭТАЖ</span><h2>{floor.name}</h2></div>{field('Название', floor.name, v => mutate(p => { p.floors.find(f => f.id === floor.id)!.name = v; }))}{field('Отметка пола, м', floor.elevation, v => mutate(p => { p.floors.find(f => f.id === floor.id)!.elevation = v === '' ? null : Number(v); }), true, 'Абсолютная отметка для расчёта межэтажных стояков.')}<div className="scale-card"><span className="eyebrow">МАСШТАБ ПОДЛОЖКИ</span><strong>{floor.metersPerUnit ? `${number(floor.metersPerUnit)} м/ед.` : 'Не откалиброван'}</strong><button onClick={() => { setTool('calibrate'); setView('plan'); setCalibration([]); }}>↔ Калибровка по 2 точкам</button></div><details className="scale-presets"><summary>Масштаб по формату листа</summary><div className="field-pair"><label className="field">Формат<select value={sheetFormat} onChange={e => setSheetFormat(e.target.value)}>{Object.keys(SHEET_SIZES).map(size => <option key={size} value={size}>{size}</option>)}</select></label><label className="field">Масштаб<select value={sheetScale} onChange={e => setSheetScale(e.target.value)}>{['50', '100', '200', '500'].map(value => <option key={value} value={value}>1:{value}</option>)}</select></label></div><button className="wide" onClick={applySheetScale}>Применить масштаб листа</button><p className="help">Если план — стандартный лист {sheetFormat} в масштабе 1:{sheetScale}, калибровка двумя точками не нужна.</p></details>{field('Метров в единице PDF', floor.metersPerUnit, v => mutate(p => { p.floors.find(f => f.id === floor.id)!.metersPerUnit = v === '' ? null : Number(v); }), true)}<div className="section-label">Подложка</div><p className="help">{floor.pdfId ? `Исходный PDF подключён. Страница ${floor.page}; ${number(floor.width)} × ${number(floor.height)} ед.` : 'PDF не загружен. Можно чертить на чистом листе; для метража необходим масштаб.'}</p>{floor.pdfId && pdfPages > 0 && <label className="field mobile-only">Страница PDF<input type="number" min="1" max={pdfPages} value={floor.page} onChange={e => { const page = Math.max(1, Math.min(pdfPages, Number(e.target.value) || 1)); if (page !== floor.page) mutate(p => { const f = p.floors.find(f => f.id === floor.id)!; f.page = page; f.metersPerUnit = null; }); }} /></label>}<button className="wide" disabled={busy} onClick={() => upload.current?.click()}>↑ {floor.pdfId ? 'Заменить PDF…' : 'Загрузить PDF…'}</button><p className="help">При замене PDF или страницы объекты остаются на прежних координатах. Проверьте положение и повторите калибровку.</p><div className="section-label">Система координат</div><p className="help">X/Y хранятся в единицах PDF. Зум не влияет на длины. Для стояка совпадающие X/Y на разных этажах должны соответствовать одной физической оси.</p><button className="danger wide" disabled={project.floors.length < 2} onClick={() => { const eqIds = project.equipment.filter(eq => eq.floorId === floor.id).map(eq => eq.id); const pinIds = project.pins.filter(pin => pin.floorId === floor.id).map(pin => pin.id); const segmentIds = project.routes.flatMap(r => r.segments).filter(s => s.a.floorId === floor.id || s.b.floorId === floor.id).map(s => s.id); if (window.confirm('Удалить этаж, его оборудование, связанные сегменты и кабели?')) { const photoKeys = orphanPhotoKeys(project, [...eqIds, ...pinIds]); mutate(p => { p.floors = p.floors.filter(f => f.id !== floor.id); p.equipment = p.equipment.filter(eq => eq.floorId !== floor.id); p.pins = p.pins.filter(pin => pin.floorId !== floor.id); p.routes.forEach(r => { r.segments = r.segments.filter(s => !segmentIds.includes(s.id)); }); p.routes = p.routes.filter(r => r.segments.length); p.cables = p.cables.filter(c => !eqIds.includes(c.fromId) && !eqIds.includes(c.toId) && !c.segmentIds.some(id => segmentIds.includes(id))); }); void purgePhotoBlobs(photoKeys, idbDelete); setFloorId(''); } }}>Удалить этаж</button></> : <p className="help">Добавьте этаж для начала работы.</p>}</div></aside>
     </div><footer className="statusbar"><span role="status" aria-live="polite"><i className="dot calibrated" />{message}</span><span>{project.equipment.length} оборуд. · {project.routes.length} трасс · {project.cables.length} кабелей <b>{staticMode ? 'БРАУЗЕР' : 'СЕРВЕР'}</b></span></footer>
     {aboutOpen && <AboutSheet
@@ -1037,6 +1038,169 @@ function EquipmentSymbol({ item, zoom }: { item: Equipment; zoom: number }) {
     </g>
     <text x={size / 2 + 4 / zoom} y={4 / zoom} fontSize={12 / zoom} className="svg-label">{item.number}</text>
   </>;
+}
+
+
+const PRICE_KIND_LABELS: Record<PriceKind, string> = { equipment: 'Оборудование', cable: 'Кабель', tray: 'Лоток' };
+const PRICE_SOURCE_LABELS: Record<'manual' | 'catalog', string> = { manual: 'вручную', catalog: 'справочник' };
+/** Деньги и количества: null — «—», а не 0. */
+const moneyText = (value: number | null | undefined): string => (typeof value === 'number' && Number.isFinite(value) ? `${number(value)} ₽` : '—');
+const quantityText = (value: number | null | undefined): string => (typeof value === 'number' && Number.isFinite(value) ? number(value) : '—');
+/** Неотрицательное конечное число из строки, иначе null (пусто/мусор/минус не сохраняются). */
+const nonNegativeOrNull = (raw: string): number | null => {
+  if (raw.trim() === '') return null;
+  const value = Number(raw.replace(',', '.'));
+  return Number.isFinite(value) && value >= 0 ? value : null;
+};
+
+/**
+ * Экран «Смета и коммерческое предложение»: расчёт по справочнику цен проекта,
+ * процент работ и редактирование/импорт-экспорт самого справочника.
+ */
+function EstimateScreen({ project, onChange, onMessage, onError }: {
+  project: Project;
+  onChange: (recipe: (project: Project) => void) => void;
+  onMessage: (text: string) => void;
+  onError: (text: string) => void;
+}) {
+  const result = useMemo(() => estimate(project), [project]);
+  const importInput = useRef<HTMLInputElement>(null);
+  const catalog = project.catalog ?? [];
+  function updateCatalogItem(index: number, patch: Partial<PriceItem>): void {
+    onChange(p => {
+      const items = [...(p.catalog ?? [])];
+      if (!items[index]) return;
+      items[index] = { ...items[index], ...patch };
+      p.catalog = items;
+    });
+  }
+  function setEstimate(patch: { laborPercent?: number | null; note?: string }): void {
+    onChange(p => { p.estimate = { ...(p.estimate ?? { laborPercent: null }), ...patch }; });
+  }
+  async function exportCatalog(): Promise<void> {
+    try {
+      const payload = { schemaVersion: 2, catalog, catalogDate: project.catalogDate ?? null };
+      const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json;charset=utf-8' });
+      const name = `AnOOPlan-каталог-${project.catalogDate || new Date().toISOString().slice(0, 10)}.json`;
+      const savedPath = await saveBlobOnDevice(name, blob);
+      if (!savedPath) {
+        const link = document.createElement('a');
+        link.href = URL.createObjectURL(blob);
+        link.download = name;
+        link.click();
+        setTimeout(() => URL.revokeObjectURL(link.href), 1000);
+      }
+      onMessage(savedPath ? `Справочник цен сохранён: ${savedPath}` : 'Справочник цен сформирован.');
+    } catch (error) {
+      onError(error instanceof Error ? error.message : String(error));
+    }
+  }
+  async function importCatalogFile(file: File): Promise<void> {
+    try {
+      const text = await file.text();
+      let parsed: unknown;
+      try {
+        parsed = JSON.parse(text);
+      } catch {
+        onError('Не удалось прочитать JSON: файл повреждён или это не JSON.');
+        return;
+      }
+      const container = parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed as Record<string, unknown> : null;
+      const raw = container && Array.isArray(container.catalog) ? container.catalog : Array.isArray(parsed) ? parsed : null;
+      if (!raw) {
+        onError('Файл не похож на справочник цен: ожидается массив позиций или объект с полем catalog.');
+        return;
+      }
+      const items = normalizeCatalog(raw);
+      if (!window.confirm(`Заменить справочник цен? Позиций в файле: ${items.length}`)) return;
+      const rawDate = container ? container.catalogDate : null;
+      // Невалидную/отсутствующую дату из файла не сохраняем и не затираем текущую дату прайса.
+      onChange(p => { p.catalog = items; if (isCatalogDate(rawDate)) p.catalogDate = rawDate; });
+      onMessage(`Справочник цен импортирован: ${items.length} поз.`);
+    } catch (error) {
+      onError(error instanceof Error ? error.message : String(error));
+    }
+  }
+  const catalogDateText = project.catalogDate || result.catalogDate || 'не задана';
+  return <section className="document-view estimate-view">
+    <div className="document-title">
+      <div>
+        <span className="eyebrow">ДОКУМЕНТАЦИЯ</span>
+        <h1>Смета и коммерческое предложение</h1>
+        <p>Стоимость материалов по справочнику цен и работы процентом от материалов. Неизвестные цены не подменяются нулём.</p>
+      </div>
+      <div className="estimate-status">
+        <span className={`badge ${result.complete ? 'good' : 'warn'}`}>{result.complete ? 'Смета рассчитана' : 'Смета неполная'}</span>
+        <small>Дата прайса: <strong>{catalogDateText}</strong></small>
+      </div>
+    </div>
+    <div className="estimate-controls">
+      <label className="field estimate-labor">Работы, %<NumberField value={project.estimate?.laborPercent ?? null} ariaLabel="Работы, %" placeholder="Не задано" onCommit={raw => setEstimate({ laborPercent: raw === '' ? null : nonNegativeOrNull(raw) })} /></label>
+      <label className="field estimate-note-field">Примечание к смете<input type="text" value={project.estimate?.note ?? ''} placeholder="Например: Цены действительны 30 дней" onChange={event => setEstimate({ note: event.target.value })} /></label>
+    </div>
+    {!result.complete && <div className="estimate-warnings"><strong>Смета неполная</strong><ul>{result.warnings.map((warning, index) => <li key={index}>{warning}</li>)}</ul></div>}
+    {result.sections.map(section => <section className="estimate-section" key={section.kind}>
+      <div className="estimate-section-head">
+        <h2>{section.title}</h2>
+        <span className={`badge ${section.complete ? 'good' : 'warn'}`}>{section.complete ? 'раздел рассчитан' : 'неполный раздел'}</span>
+      </div>
+      {section.kind === 'work' ? <div className="estimate-work-summary">
+        <p>Работы {result.laborPercent === null ? 'не рассчитаны: не задан процент.' : `— ${number(result.laborPercent)} % от стоимости материалов.`}</p>
+        <div className="estimate-section-total"><span>Итого по разделу</span><strong>{section.total === null ? 'не рассчитано' : moneyText(section.total)}</strong></div>
+        {result.laborPercent !== null && section.total === null && <p className="help">Стоимость работ не рассчитана: сначала должна быть известна стоимость материалов.</p>}
+      </div> : <>
+        <div className="table-scroll"><table className="estimate-table">
+          <thead><tr><th>Позиция</th><th>Ед.</th><th>Количество</th><th>Цена, ₽</th><th>Сумма, ₽</th><th>Источник</th></tr></thead>
+          <tbody>
+            {section.lines.map(line => <tr key={line.id}>
+              <td><strong>{line.name}</strong>{line.note ? <small>{line.note}</small> : null}</td>
+              <td>{line.unit || '—'}</td>
+              <td>{quantityText(line.quantity)}</td>
+              <td>{moneyText(line.price)}</td>
+              <td>{moneyText(line.total)}</td>
+              <td>{line.priceSource ? PRICE_SOURCE_LABELS[line.priceSource] : '—'}</td>
+            </tr>)}
+            {!section.lines.length && <tr><td colSpan={6}>Позиций нет.</td></tr>}
+          </tbody>
+        </table></div>
+        <div className="estimate-section-total"><span>Итого по разделу</span><strong>{section.total === null ? 'не рассчитано' : moneyText(section.total)}</strong></div>
+        {section.warnings.map((warning, index) => <p className="help" key={index}>{warning}</p>)}
+      </>}
+    </section>)}
+    <div className="estimate-totals">
+      <div><span>Материалы</span><strong>{result.materials === null ? 'не рассчитано' : moneyText(result.materials)}</strong></div>
+      <div><span>Работы{result.laborPercent === null ? '' : ` (${number(result.laborPercent)} %)`}</span><strong>{result.labor === null ? 'не рассчитано' : moneyText(result.labor)}</strong></div>
+      <div className="estimate-grand"><span>ИТОГО</span><strong className="estimate-total-value">{result.total === null ? 'Смета не рассчитана' : moneyText(result.total)}</strong></div>
+    </div>
+    <p className="document-note">Смета считается по справочнику цен проекта; ручная цена кабеля приоритетнее справочника. Дата прайса: {catalogDateText}.{project.estimate?.note ? ` Примечание: ${project.estimate.note}.` : ''} Пустые цены не подменяются нулём — они помечены «—» и делают смету неполной.</p>
+    <details className="catalog-editor">
+      <summary>Справочник цен <span>{catalog.length}</span></summary>
+      <div className="catalog-controls">
+        <label className="field catalog-date">Дата прайса<input type="date" value={project.catalogDate ?? ''} aria-label="Дата прайса" onChange={event => onChange(p => { p.catalogDate = event.target.value || null; })} /></label>
+        <div className="catalog-actions">
+          <button type="button" className="catalog-export" onClick={() => void exportCatalog()}>Экспорт справочника</button>
+          <button type="button" className="catalog-import" onClick={() => importInput.current?.click()}>Импорт справочника</button>
+          <button type="button" onClick={() => onChange(p => { p.catalog = [...(p.catalog ?? []), { id: uid(), kind: 'equipment', name: 'Новая позиция', unit: 'шт', price: null, note: '' }]; })}>＋ Позиция</button>
+        </div>
+      </div>
+      <div className="table-scroll"><table className="catalog-table">
+        <thead><tr><th>Вид</th><th>Наименование</th><th>Ед.</th><th>Цена, ₽</th><th>Примечание</th><th /></tr></thead>
+        <tbody>
+          {catalog.map((item, index) => <tr key={item.id}>
+            <td className="catalog-kind"><select value={item.kind} aria-label={`Вид позиции ${index + 1}`} onChange={event => updateCatalogItem(index, { kind: event.target.value as PriceKind })}>{(['equipment', 'cable', 'tray'] as const).map(kind => <option key={kind} value={kind}>{PRICE_KIND_LABELS[kind]}</option>)}</select></td>
+            <td className="catalog-name"><input type="text" value={item.name} aria-label={`Наименование позиции ${index + 1}`} onChange={event => updateCatalogItem(index, { name: event.target.value })} /></td>
+            <td className="catalog-unit"><input type="text" value={item.unit} aria-label={`Единица позиции ${index + 1}`} onChange={event => updateCatalogItem(index, { unit: event.target.value })} /></td>
+            <td className="catalog-price"><NumberField value={item.price} placeholder="Не задано" ariaLabel={`Цена позиции ${index + 1}`} onCommit={raw => updateCatalogItem(index, { price: raw === '' ? null : nonNegativeOrNull(raw) })} /></td>
+            <td className="catalog-note"><input type="text" value={item.note} aria-label={`Примечание позиции ${index + 1}`} onChange={event => updateCatalogItem(index, { note: event.target.value })} /></td>
+            <td className="catalog-remove"><button type="button" aria-label={`Удалить позицию ${item.name}`} title="Удалить позицию" onClick={() => onChange(p => { p.catalog = (p.catalog ?? []).filter(entry => entry.id !== item.id); })}>×</button></td>
+          </tr>)}
+          {!catalog.length && <tr><td colSpan={6}>Справочник пуст. Добавьте позиции или импортируйте JSON.</td></tr>}
+        </tbody>
+      </table></div>
+      <p className="help">Позиции справочника сопоставляются по виду и наименованию без учёта регистра. Цена «—» означает «неизвестно», а не 0. Пустое поле «Работы, %» также делает смету неполной.</p>
+    </details>
+    <input hidden ref={importInput} type="file" accept=".json,application/json" className="catalog-import-input" onChange={event => { const file = event.target.files?.[0]; if (file) void importCatalogFile(file); event.target.value = ''; }} />
+  </section>;
 }
 
 function IssueList({ value }: { value: unknown }) {

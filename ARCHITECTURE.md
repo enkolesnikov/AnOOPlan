@@ -18,7 +18,9 @@ interface Segment { id:string; a:Vertex; b:Vertex; mode:'orthogonal'|'spatial'; 
 interface Route { id:string; number:string; type:string; segments:Segment[]; note:string; trayWidthMm?:number|null; trayHeightMm?:number|null; trayAreaMm2?:number|null }
 interface Cable { id:string; number:string; name:string; brand:string; purpose:string; fromId:string; toId:string; segmentIds:string[]; reservePercent:number; reserveFixed:number; startReserve:number; endReserve:number; quantity:number; note:string; outerDiameterMm?:number|null; crossSectionMm2?:number|null }
 interface Pin { id:string; number:string; floorId:string; x:number; y:number; comment:string; status:'open'|'closed'; photos?:string[]; createdAt:string; updatedAt:string }
-interface Project { schemaVersion:1|2; id:string; name:string; floors:Floor[]; equipment:Equipment[]; routes:Route[]; cables:Cable[]; pins:Pin[]; updatedAt:string }
+interface PriceItem { id:string; kind:'equipment'|'cable'|'tray'; name:string; unit:string; price:number|null; note:string }
+interface ProjectEstimate { laborPercent:number|null; note?:string }
+interface Project { schemaVersion:1|2; id:string; name:string; floors:Floor[]; equipment:Equipment[]; routes:Route[]; cables:Cable[]; pins:Pin[]; updatedAt:string; catalog?:PriceItem[]; catalogDate?:string|null; estimate?:ProjectEstimate }
 ```
 
 Сегменты связаны совпадающими координатами и этажом с допуском 1e-6; height также совпадает. Кабель содержит упорядоченный список ID сегментов, каждый физический сегмент допускается один раз. Направление сегмента определяется обходом цепочки. Концы кабеля должны совпадать в плане с началом/концом цепочки на соответствующем этаже; вертикальные подводы от высоты оборудования до высоты трассы учитываются отдельно. Межэтажный сегмент разрешён только при совпадающих x,y (общая система координат этажей), учитывает отметки полов. Неизвестные высоты/масштаб и разрывы означают неполный расчёт; итог null.
@@ -53,6 +55,12 @@ interface Project { schemaVersion:1|2; id:string; name:string; floors:Floor[]; e
 
 Цвет иконки хранится в `Equipment.color` как `#rrggbb`; `equipmentColor()` возвращает валидный сохранённый цвет или цвет по умолчанию для типа (`EQUIPMENT_ICON_DEFAULT_COLORS`: камеры тёмные, шкафы фиолетовые, розетки оранжевые и т.д.). `normalizeEquipmentColor()` принимает `#rgb`/`#rrggbb` (приводит к нижнему регистру и полному виду), а мусор возвращает как `null`: при загрузке проекта такое значение отбрасывается в `undefined`, при сохранении через API — отклоняется с 422. Невалидный цвет не подменяется молча: при загрузке мусор отбрасывается в `undefined`, и рисуется цвет по умолчанию для типа; через API такое значение отклоняется. Пользователь выбирает цвет из палитры `EQUIPMENT_COLOR_PRESETS`, произвольным `input type=color` или сбрасывает кнопкой «По умолчанию» (`color: null`). Цвет входит в JSON-копию и снимки версий, как и остальные поля оборудования.
 
+## Справочник цен и смета
+
+Справочник цен — часть проекта (`Project.catalog`): позиции вида `equipment` (модель оборудования), `cable` (марка кабеля) и `tray` (тип трассы) с ценой за единицу. Он входит в JSON-копию, снапшоты и офлайн-хранилище, поэтому старые снимки сохраняют свои цены: смена прайса в текущем проекте не пересчитывает историю. `Project.catalogDate` (YYYY-MM-DD) фиксирует дату актуальности прайса и печатается в смете и коммерческом предложении. `normalizePriceItem`/`normalizeCatalog` в `src/estimate.ts` нормализуют записи: цена — `null` при нечисловом/отрицательном значении (не 0), пустые и повреждённые записи отбрасываются. Каталог импортируется/экспортируется JSON-файлом; API валидирует его структуру (422 на некорректную позицию).
+
+`estimate(project)` собирает смету по четырём разделам: «Оборудование» (количество по модели × цена из справочника), «Кабели» (итоговые метры одного кабеля × количество × цена: ручная `cable.pricePerMeter` приоритетнее справочника по марке), «Лотки» (длина по типу трассы × цена) и «Работы» (`Project.estimate.laborPercent` % от стоимости материалов). Итог = материалы + работы. Пустая или отсутствующая цена/количество делают строку, раздел и итог `null` с пометкой «неполная смета»: неизвестное не подменяется нулём. Предупреждения сметы попадают в лист «Предупреждения» и PDF. Выгрузка: XLSX/CSV — листы/разделы «Смета», «Коммерческое предложение» и «Справочник цен»; PDF — секции «Смета» и «Коммерческое предложение».
+
 ## API
 - GET /api/projects → {id,name,updatedAt}[]
 - POST /api/projects тело Project → Project (создание; повтор ID → 409)
@@ -79,6 +87,7 @@ interface Project { schemaVersion:1|2; id:string; name:string; floors:Floor[]; e
 ## Владение модулями
 `src/model.ts` — модель данных (общая для клиента и сервера); схема версионируется, менять осторожно.
 `src/engine.ts` — расчёты: длины, запасы, автопрокладка, заполнение лотка, спецификации, валидация.
+`src/estimate.ts` — справочник цен, смета по разделам и нормализация каталога.
 `src/equipment-icons.ts` — иконки и цвета оборудования (общий набор для плана, PDF и списка).
 `src/App.tsx`, `src/styles.css` — интерфейс; расчёты импортируются из движка и мемоизируются.
 `src/sheets.ts`, `src/export-xlsx.ts`, `src/export-pdf.ts`, `src/client-csv.ts` — выгрузки.
