@@ -403,6 +403,27 @@ if (historyButton) {
   check(Boolean(makeSnapshot), 'в истории есть кнопка снимка');
 }
 
+console.log('\n7h. Отмена, нумерация сегментов и замечания');
+const planTab = Array.from(document.querySelectorAll('.view-tabs button')).find(button => (button.textContent || '').trim() === 'План');
+if (planTab) planTab.click();
+await sleep(200);
+const undoButton = buttons().find(button => (button.getAttribute('title') || '').includes('Отменить'));
+check(Boolean(undoButton), 'кнопка «Отменить» присутствует в панели инструментов');
+check(Boolean(buttons().find(button => (button.getAttribute('title') || '').includes('Повторить'))), 'кнопка «Повторить» присутствует');
+const routesTab = Array.from(document.querySelectorAll('.structure-tabs button')).find(button => (button.textContent || '').includes('Трассы'));
+if (routesTab) routesTab.click();
+await sleep(200);
+const routeRow = document.querySelector('.object-row[data-kind="route"]');
+check(Boolean(routeRow), 'в списке есть трассы');
+if (routeRow) {
+  routeRow.click();
+  await sleep(250);
+  const properties = document.querySelector('.properties')?.textContent || '';
+  check(/Сегмент\s+[^\s.]+\.1/.test(properties), `сегменты нумеруются как Т1.1 (найдено: ${properties.slice(0, 160)})`);
+}
+const health = document.querySelector('.project-health')?.textContent || '';
+check(/замечани/.test(health), `контроль данных показывает замечания: ${health.slice(0, 60)}`);
+
 console.log('\n8. Выход с сохранением (кнопка «Назад» в Android)');
 const saveAndExit = window.__anooplanSaveAndExit;
 check(typeof saveAndExit === 'function', 'оболочке доступна функция saveAndExit');

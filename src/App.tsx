@@ -2,11 +2,12 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import type { CSSProperties, PointerEvent as ReactPointerEvent } from 'react';
 import workerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
 import type { Project, Floor, Equipment, Route, Cable, Segment, Vertex, Point } from './model';
-import { calculateCable, specifications, validateProject, chainEnds, findRoute } from './engine';
+import { calculateCable, specifications, validateProject, domainWarnings, chainEnds, findRoute } from './engine';
 import { createDemoProject } from './demo';
 import { exportSheets } from './sheets';
 import type { JournalPhoto } from './export-pdf';
 import { planRender, fallbackPlan, needsClipping, type PlanRender } from './render-plan';
+import { buildPlanSvg } from './plan-svg';
 
 type PdfjsModule = typeof import('pdfjs-dist');
 type PdfLoadingTask = ReturnType<PdfjsModule['getDocument']>;
@@ -249,7 +250,7 @@ export default function App() {
   const route = selection?.kind === 'route' ? project.routes.find(r => r.id === selection.id) : undefined;
   const cable = selection?.kind === 'cable' ? project.cables.find(c => c.id === selection.id) : undefined;
   const calculation = cable ? calculateCable(project, cable) : null;
-  const issues = useMemo(() => validateProject(project), [project]);
+  const issues = useMemo(() => [...validateProject(project), ...domainWarnings(project)], [project]);
   const cableCalcs = useMemo(() => new Map(project.cables.map(c => [c.id, calculateCable(project, c)])), [project]);
   const totals = useMemo(() => {
     let meters = 0, metersComplete = true, cost = 0, costComplete = project.cables.length > 0;
@@ -817,7 +818,7 @@ export default function App() {
     const target = equipment;
     if (!target) return;
     const key = uid();
-    await idbPut('photo:' + key, file);
+    await idbPut('photo:' + key, await compressPhoto(file));
     mutate(p => { const item = p.equipment.find(eq => eq.id === target.id); if (item) item.photos = [...(item.photos || []), key]; });
     setMessage(`Фото прикреплено к ${target.number}${file.name ? `: ${file.name}` : ''}.`);
   }
@@ -959,6 +960,78 @@ export default function App() {
     try { await idbStoreDelete('snapshots', key); } catch { /* уже удалён */ }
     setSnapshots(current => (current || []).filter(item => item.key !== key));
   }
+  async function compressPhoto(file: File): Promise<Blob> {
+    // Фото с телефона уменьшаем до 1600 px по длинной стороне: журнал не раздувается.
+    try {
+      const bitmap = await createImageBitmap(file);
+      const maxSide = 1600;
+      const scale = Math.min(1, maxSide / Math.max(bitmap.width, bitmap.height));
+      const canvas = document.createElement('canvas');
+      canvas.width = Math.max(1, Math.round(bitmap.width * scale));
+      canvas.height = Math.max(1, Math.round(bitmap.height * scale));
+      const context = canvas.getContext('2d');
+      if (!context) return file;
+      context.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+      const blob = await new Promise<Blob | null>(resolve => canvas.toBlob(resolve, 'image/jpeg', 0.82));
+      bitmap.close();
+      return blob || file;
+    } catch {
+      return file;
+    }
+  }
+  async function capturePlan(floorItem: Floor): Promise<{ title: string; png: Uint8Array } | null> {
+    try {
+      const width = 1600;
+      const height = Math.max(1, Math.round(width * floorItem.height / Math.max(1, floorItem.width)));
+      const target = document.createElement('canvas');
+      target.width = width;
+      target.height = height;
+      const context = target.getContext('2d');
+      if (!context) return null;
+      context.fillStyle = '#ffffff';
+      context.fillRect(0, 0, width, height);
+      if (floorItem.pdfId) {
+        try {
+          const pdfjs = await import('pdfjs-dist');
+          pdfjs.GlobalWorkerOptions.workerSrc = workerUrl;
+          const stored = floorItem.pdfId.startsWith('idb:') ? await idbGet(floorItem.pdfId.slice(4)) : null;
+          const loading = stored
+            ? pdfjs.getDocument({ data: await stored.arrayBuffer() })
+            : pdfjs.getDocument(`/api/pdfs/${floorItem.pdfId}`);
+          const pdfDocument = await loading.promise;
+          const page = await pdfDocument.getPage(Math.min(Math.max(1, floorItem.page), pdfDocument.numPages));
+          const viewport = page.getViewport({ scale: width / page.getViewport({ scale: 1 }).width });
+          const layer = document.createElement('canvas');
+          layer.width = Math.max(1, Math.round(viewport.width));
+          layer.height = Math.max(1, Math.round(viewport.height));
+          const layerContext = layer.getContext('2d');
+          if (layerContext) await page.render({ canvasContext: layerContext, viewport, canvas: layer }).promise;
+          context.drawImage(layer, 0, 0, width, height);
+          void pdfDocument.destroy();
+        } catch { /* план выгружается без подложки */ }
+      }
+      const image = new Image();
+      image.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(buildPlanSvg(projectRef.current, floorItem));
+      await image.decode();
+      context.drawImage(image, 0, 0, width, height);
+      const blob = await new Promise<Blob | null>(resolve => target.toBlob(resolve, 'image/png'));
+      if (!blob) return null;
+      return { title: floorItem.name, png: new Uint8Array(await blob.arrayBuffer()) };
+    } catch {
+      return null;
+    }
+  }
+  async function collectPlans(): Promise<{ title: string; png: Uint8Array }[]> {
+    const plans: { title: string; png: Uint8Array }[] = [];
+    for (const floorItem of projectRef.current.floors) {
+      const hasContent = projectRef.current.equipment.some(item => item.floorId === floorItem.id)
+        || projectRef.current.routes.some(route => route.segments.some(segment => segment.a.floorId === floorItem.id || segment.b.floorId === floorItem.id));
+      if (!hasContent) continue;
+      const plan = await capturePlan(floorItem);
+      if (plan) plans.push(plan);
+    }
+    return plans;
+  }
   async function collectPhotos(): Promise<JournalPhoto[]> {
     const assets: JournalPhoto[] = [];
     for (const item of projectRef.current.equipment) {
@@ -975,7 +1048,7 @@ export default function App() {
   async function printJournal() {
     const current = projectRef.current;
     const [{ buildJournalPdf }, { loadJournalFonts }] = await Promise.all([import('./export-pdf'), import('./export-fonts')]);
-    const bytes = await buildJournalPdf(current, await loadJournalFonts(), { photos: await collectPhotos() });
+    const bytes = await buildJournalPdf(current, await loadJournalFonts(), { photos: await collectPhotos(), plans: await collectPlans() });
     nativeBridge()?.printPdf?.(current.name, bytesToBase64(bytes));
     setMessage('Открыт системный диалог печати: выберите принтер или «Сохранить в PDF».');
   }
@@ -991,7 +1064,7 @@ export default function App() {
       } else if (kind === 'pdf') {
         // Офлайн-PDF: pdf-lib + встроенный PT Sans, без сервера и системных шрифтов.
         const [{ buildJournalPdf }, { loadJournalFonts }] = await Promise.all([import('./export-pdf'), import('./export-fonts')]);
-        blob = new Blob([await buildJournalPdf(current, await loadJournalFonts(), { photos: await collectPhotos() }) as unknown as BlobPart], { type: 'application/pdf' });
+        blob = new Blob([await buildJournalPdf(current, await loadJournalFonts(), { photos: await collectPhotos(), plans: await collectPlans() }) as unknown as BlobPart], { type: 'application/pdf' });
       } else if (kind === 'backup') {
         const ids = [...new Set(current.floors.flatMap(f => f.pdfId && f.pdfId.startsWith('idb:') ? [f.pdfId.slice(4)] : []))];
         const pdfs: { id: string; name: string; dataBase64: string }[] = [];
@@ -1093,12 +1166,16 @@ export default function App() {
       </div><div className="tool-hint"><span>{toolHints[tool]}</span><small>Координаты PDF: {pointer ? `${number(pointer.x)}; ${number(pointer.y)}` : '—'}</small></div></div> : view === 'journal' ? <section className="document-view"><div className="document-title"><div><span className="eyebrow">ДОКУМЕНТАЦИЯ</span><h1>Кабельный журнал</h1><p>Расчёт по выбранным сегментам, высотам и запасам. Единица измерения — метр.</p></div><button className="primary" onClick={() => { setView('plan'); setTool('cable'); }}>＋ Кабель</button></div><div className="table-scroll"><table><thead><tr><th>Кабель / марка</th><th>От → до</th><th>Геометрия</th><th>Запас трасс</th><th>Запас кабеля</th><th>Концы</th><th>Итог / шт.</th><th>Кол.</th><th>Стоимость, ₽</th><th>Статус</th></tr></thead><tbody>{project.cables.map(c => { const calc = cableCalcs.get(c.id)!; return <tr key={c.id} className={selection?.id === c.id ? 'selected' : ''} onClick={() => setSelection({ kind: 'cable', id: c.id })}><td><strong>{c.number}</strong><small>{c.brand || c.name}</small></td><td>{project.equipment.find(e => e.id === c.fromId)?.number || '?'} → {project.equipment.find(e => e.id === c.toId)?.number || '?'}</td><td>{number(calc.geometry)}</td><td>{number(calc.routeReserve)}</td><td>{number(calc.cableReserve)}</td><td>{number(calc.endReserve)}</td><td><strong>{number(calc.total)}</strong></td><td>{c.quantity}</td><td>{calc.cost === null ? '—' : number(calc.cost)}</td><td><span className={`badge ${calc.complete ? 'good' : 'warn'}`}>{calc.complete ? 'Рассчитан' : 'Неполный'}</span></td></tr>; })}</tbody></table>{!project.cables.length && <div className="document-empty">Создайте кабель: выберите оборудование и упорядоченную цепочку сегментов на плане.</div>}</div><div className="document-summary"><strong>{totals.metersComplete ? `${number(totals.meters)} м` : "Метраж рассчитан не полностью"}</strong><span>{totals.costComplete ? `Стоимость: ${number(totals.cost)} ₽` : "Стоимость не рассчитана: задайте цены за метр"}</span></div><div className="document-note">Итог указан для одного кабеля. Количество применяется в ведомости. Неполные значения не подменяются нулём.</div></section> : <section className="document-view"><div className="document-title"><div><span className="eyebrow">ДОКУМЕНТАЦИЯ</span><h1>Ведомости и проверка</h1><p>Кабельная продукция и инфраструктура. Общие сегменты инфраструктуры учитываются один раз.</p></div></div><SpecificationTables value={specifications(project)} /><h2>Замечания к проекту</h2><IssueList value={issues} /><div className="document-note">Расчёт не заменяет проверку проектировщиком. PDF может содержать разные масштабы: калибруйте каждый этаж и страницу отдельно. Совмещение осей этажей выполняется вручную.</div></section>}</main>
       <aside className={`properties ${propsOpen ? 'open' : ''}`}><div className="properties-title">Свойства<span>{equipment ? 'ОБОРУДОВАНИЕ' : route ? 'ТРАССА' : cable ? 'КАБЕЛЬ' : 'ЭТАЖ'}</span><button className="properties-close" aria-label="Закрыть" onClick={() => setPropsOpen(false)}>×</button></div><div className="properties-content">{selection && (equipment || route || cable) ? <><div className="object-heading"><span className="eyebrow">{equipment ? 'ОБОРУДОВАНИЕ' : route ? 'КАБЕЛЬНАЯ ТРАССА' : 'КАБЕЛЬ'}</span><h2>{(equipment || route || cable)?.number}</h2></div>{itemField('Обозначение', 'number')}{!route && itemField('Наименование', 'name')}{(equipment || route) && itemField('Тип', 'type')}{equipment && <div className="chip-row">{['Камера', 'Шкаф', 'Коммутатор', 'Считыватель', 'Лоток'].map(value => <button key={value} className="chip" onClick={() => setItem('type', value)}>{value}</button>)}</div>}
       {equipment && <><label className="field">Этаж{floorSelect(equipment.floorId, value => setItem('floorId', value))}</label><div className="field-pair">{itemField('X, ед. PDF', 'x', true)}{itemField('Y, ед. PDF', 'y', true)}</div>{itemField('Высота от пола, м', 'height', true)}<p className="help">Пустая высота означает неизвестное значение. Для подводов кабеля задайте высоту явно, в том числе 0.</p><div className="section-label">Фотографии <span>{equipment.photos?.length || 0}</span></div><div className="photo-strip">{(equipment.photos || []).map(key => photoUrls[key] ? <div className="photo-card" key={key}><img src={photoUrls[key]} alt={`Фото ${equipment.number}`} /><button aria-label="Удалить фото" onClick={() => removePhoto(key)}>×</button></div> : null)}<button className="photo-add" onClick={() => photoInput.current?.click()}>＋ Фото</button><button className="photo-add" onClick={() => cameraInput.current?.click()}>📷 Снять</button></div><p className="help">Снимок монтажа хранится в проекте и попадает в JSON-копию вместе с PDF-планами.</p><details><summary>Дополнительные свойства</summary>{Object.entries(equipment.properties).map(([key, value]) => field(key, value, v => setItem('properties', { ...equipment.properties, [key]: v })))}<button onClick={() => { const key = window.prompt('Название свойства'); if (key) setItem('properties', { ...equipment.properties, [key]: '' }); }}>＋ Свойство</button></details></>}
-      {route && <><div className="section-label">Сегменты <span>{route.segments.length}</span></div><p className="help">Вершины тянутся на плане. Координаты и высоты можно задать точно ниже. При ручном изменении согласуйте соседние вершины.</p>{route.segments.map((s, index) => <details className="segment-editor" key={s.id}><summary>Сегмент {index + 1} {s.a.floorId !== s.b.floorId ? ' · стояк ↕' : ''}</summary><label className="field">Геометрия<select value={s.mode} onChange={e => mutate(p => { p.routes.find(r => r.id === route.id)!.segments.find(segment => segment.id === s.id)!.mode = e.target.value as Segment['mode']; })}><option value="orthogonal">Ортогональная</option><option value="spatial">Пространственная</option></select></label>{(['a', 'b'] as const).map(end => <div className="endpoint" key={end}><strong>{end === 'a' ? 'Начало' : 'Конец'}</strong><label className="field">Этаж{floorSelect(s[end].floorId, value => segmentField(s, end, 'floorId', value))}</label><div className="field-pair">{field('X', s[end].x, v => segmentField(s, end, 'x', Number(v)), true)}{field('Y', s[end].y, v => segmentField(s, end, 'y', Number(v)), true)}</div>{field('Высота, м', s[end].height, v => segmentField(s, end, 'height', v === '' ? null : Number(v)), true)}</div>)}<div className="field-pair">{field('Запас, %', s.reservePercent, v => mutate(p => { p.routes.find(r => r.id === route.id)!.segments.find(seg => seg.id === s.id)!.reservePercent = Number(v); }), true)}{field('Запас, м', s.reserveFixed, v => mutate(p => { p.routes.find(r => r.id === route.id)!.segments.find(seg => seg.id === s.id)!.reserveFixed = Number(v); }), true)}</div><button className="danger" onClick={() => { const linked = project.cables.filter(c => c.segmentIds.includes(s.id)); if (window.confirm(`Удалить сегмент? ${linked.length ? `Связанных кабелей: ${linked.length}. Они будут удалены.` : ''}`)) mutate(p => { p.routes.find(r => r.id === route.id)!.segments = p.routes.find(r => r.id === route.id)!.segments.filter(seg => seg.id !== s.id); p.cables = p.cables.filter(c => !c.segmentIds.includes(s.id)); }); }}>Удалить сегмент</button></details>)}<button className="wide" onClick={addRiser}>＋ Межэтажный стояк</button></>}
+      {route && <><div className="section-label">Сегменты <span>{route.segments.length}</span></div><p className="help">Вершины тянутся на плане. Координаты и высоты можно задать точно ниже. При ручном изменении согласуйте соседние вершины.</p>{route.segments.map((s, index) => <details className="segment-editor" key={s.id}><summary>Сегмент {route.number}.{index + 1} {s.a.floorId !== s.b.floorId ? ' · стояк ↕' : ''}</summary><label className="field">Геометрия<select value={s.mode} onChange={e => mutate(p => { p.routes.find(r => r.id === route.id)!.segments.find(segment => segment.id === s.id)!.mode = e.target.value as Segment['mode']; })}><option value="orthogonal">Ортогональная</option><option value="spatial">Пространственная</option></select></label>{(['a', 'b'] as const).map(end => <div className="endpoint" key={end}><strong>{end === 'a' ? 'Начало' : 'Конец'}</strong><label className="field">Этаж{floorSelect(s[end].floorId, value => segmentField(s, end, 'floorId', value))}</label><div className="field-pair">{field('X', s[end].x, v => segmentField(s, end, 'x', Number(v)), true)}{field('Y', s[end].y, v => segmentField(s, end, 'y', Number(v)), true)}</div>{field('Высота, м', s[end].height, v => segmentField(s, end, 'height', v === '' ? null : Number(v)), true)}</div>)}<div className="field-pair">{field('Запас, %', s.reservePercent, v => mutate(p => { p.routes.find(r => r.id === route.id)!.segments.find(seg => seg.id === s.id)!.reservePercent = Number(v); }), true)}{field('Запас, м', s.reserveFixed, v => mutate(p => { p.routes.find(r => r.id === route.id)!.segments.find(seg => seg.id === s.id)!.reserveFixed = Number(v); }), true)}</div><button className="danger" onClick={() => { const linked = project.cables.filter(c => c.segmentIds.includes(s.id)); if (window.confirm(`Удалить сегмент? ${linked.length ? `Связанных кабелей: ${linked.length}. Они будут удалены.` : ''}`)) mutate(p => { p.routes.find(r => r.id === route.id)!.segments = p.routes.find(r => r.id === route.id)!.segments.filter(seg => seg.id !== s.id); p.cables = p.cables.filter(c => !c.segmentIds.includes(s.id)); }); }}>Удалить сегмент</button></details>)}<button className="wide" onClick={addRiser}>＋ Межэтажный стояк</button></>}
       {cable && <>{itemField('Марка', 'brand')}{itemField('Назначение', 'purpose')}<label className="field">От{equipmentSelect(cable.fromId, value => setItem('fromId', value))}</label><label className="field">До{equipmentSelect(cable.toId, value => setItem('toId', value))}</label><div className="field-pair">{itemField('Запас, %', 'reservePercent', true)}{itemField('Запас, м', 'reserveFixed', true)}</div><div className="field-pair">{itemField('На начале, м', 'startReserve', true)}{itemField('На конце, м', 'endReserve', true)}</div>{itemField('Количество', 'quantity', true)}{itemField('Цена за метр, ₽', 'pricePerMeter', true)}<div className="section-label">Порядок обхода</div><ol className="segment-order">{cable.segmentIds.map((id, i) => <li key={id}><span>{segmentName(id)}</span><button disabled={!i} title="Выше" onClick={() => { const next = [...cable.segmentIds]; [next[i - 1], next[i]] = [next[i], next[i - 1]]; setItem('segmentIds', next); }}>↑</button><button disabled={i === cable.segmentIds.length - 1} title="Ниже" onClick={() => { const next = [...cable.segmentIds]; [next[i + 1], next[i]] = [next[i], next[i + 1]]; setItem('segmentIds', next); }}>↓</button><button title="Удалить из цепочки" onClick={() => setItem('segmentIds', cable.segmentIds.filter(s => s !== id))}>×</button></li>)}</ol><button className="wide" onClick={() => { setCableSegments([...cable.segmentIds]); setCableFrom(cable.fromId); setCableTo(cable.toId); setTool('cable'); setView('plan'); setMessage('Измените цепочку кликами. Кнопка «Применить» в свойствах сохранит выбор.'); }}>Выбрать сегменты на плане</button>{tool === 'cable' && <button className="primary wide" onClick={() => { setItem('segmentIds', [...cableSegments]); setItem('fromId', cableFrom); setItem('toId', cableTo); setTool('select'); setCableSegments([]); }}>Применить цепочку к {cable.number}</button>}{calculation && <div className={`calculation-card ${calculation.complete ? '' : 'incomplete'}`}><span>ИТОГ / 1 КАБЕЛЬ</span><strong>{number(calculation.total)} <small>м</small></strong><dl><dt>Геометрия</dt><dd>{number(calculation.geometry)} м</dd><dt>Запас трассы</dt><dd>{number(calculation.routeReserve)} м</dd><dt>Запас кабеля</dt><dd>{number(calculation.cableReserve)} м</dd><dt>Запас концов</dt><dd>{number(calculation.endReserve)} м</dd></dl>{calculation.errors.map((e, i) => <p key={i}>{e}</p>)}</div>}</>}
       <label className="field">Примечание<textarea value={(equipment || route || cable)?.note || ''} onChange={e => setItem('note', e.target.value)} /></label><div className="property-actions"><button onClick={copySelection}>Копировать</button><button className="danger" onClick={removeSelection}>Удалить</button></div></> : floor ? <><div className="object-heading"><span className="eyebrow">ТЕКУЩИЙ ЭТАЖ</span><h2>{floor.name}</h2></div>{field('Название', floor.name, v => mutate(p => { p.floors.find(f => f.id === floor.id)!.name = v; }))}{field('Отметка пола, м', floor.elevation, v => mutate(p => { p.floors.find(f => f.id === floor.id)!.elevation = v === '' ? null : Number(v); }), true, 'Абсолютная отметка для расчёта межэтажных стояков.')}<div className="scale-card"><span className="eyebrow">МАСШТАБ ПОДЛОЖКИ</span><strong>{floor.metersPerUnit ? `${number(floor.metersPerUnit)} м/ед.` : 'Не откалиброван'}</strong><button onClick={() => { setTool('calibrate'); setView('plan'); setCalibration([]); }}>↔ Калибровка по 2 точкам</button></div><details className="scale-presets"><summary>Масштаб по формату листа</summary><div className="field-pair"><label className="field">Формат<select value={sheetFormat} onChange={e => setSheetFormat(e.target.value)}>{Object.keys(SHEET_SIZES).map(size => <option key={size} value={size}>{size}</option>)}</select></label><label className="field">Масштаб<select value={sheetScale} onChange={e => setSheetScale(e.target.value)}>{['50', '100', '200', '500'].map(value => <option key={value} value={value}>1:{value}</option>)}</select></label></div><button className="wide" onClick={applySheetScale}>Применить масштаб листа</button><p className="help">Если план — стандартный лист {sheetFormat} в масштабе 1:{sheetScale}, калибровка двумя точками не нужна.</p></details>{field('Метров в единице PDF', floor.metersPerUnit, v => mutate(p => { p.floors.find(f => f.id === floor.id)!.metersPerUnit = v === '' ? null : Number(v); }), true)}<div className="section-label">Подложка</div><p className="help">{floor.pdfId ? `Исходный PDF подключён. Страница ${floor.page}; ${number(floor.width)} × ${number(floor.height)} ед.` : 'PDF не загружен. Можно чертить на чистом листе; для метража необходим масштаб.'}</p>{floor.pdfId && pdfPages > 0 && <label className="field mobile-only">Страница PDF<input type="number" min="1" max={pdfPages} value={floor.page} onChange={e => { const page = Math.max(1, Math.min(pdfPages, Number(e.target.value) || 1)); if (page !== floor.page) mutate(p => { const f = p.floors.find(f => f.id === floor.id)!; f.page = page; f.metersPerUnit = null; }); }} /></label>}<button className="wide" disabled={busy} onClick={() => upload.current?.click()}>↑ {floor.pdfId ? 'Заменить PDF…' : 'Загрузить PDF…'}</button><p className="help">При замене PDF или страницы объекты остаются на прежних координатах. Проверьте положение и повторите калибровку.</p><div className="section-label">Система координат</div><p className="help">X/Y хранятся в единицах PDF. Зум не влияет на длины. Для стояка совпадающие X/Y на разных этажах должны соответствовать одной физической оси.</p><button className="danger wide" disabled={project.floors.length < 2} onClick={() => { const eqIds = project.equipment.filter(eq => eq.floorId === floor.id).map(eq => eq.id); const segmentIds = project.routes.flatMap(r => r.segments).filter(s => s.a.floorId === floor.id || s.b.floorId === floor.id).map(s => s.id); if (window.confirm('Удалить этаж, его оборудование, связанные сегменты и кабели?')) { mutate(p => { p.floors = p.floors.filter(f => f.id !== floor.id); p.equipment = p.equipment.filter(eq => eq.floorId !== floor.id); p.routes.forEach(r => { r.segments = r.segments.filter(s => !segmentIds.includes(s.id)); }); p.routes = p.routes.filter(r => r.segments.length); p.cables = p.cables.filter(c => !eqIds.includes(c.fromId) && !eqIds.includes(c.toId) && !c.segmentIds.some(id => segmentIds.includes(id))); }); setFloorId(''); } }}>Удалить этаж</button></> : <p className="help">Добавьте этаж для начала работы.</p>}</div></aside>
     </div><footer className="statusbar"><span><i className="dot calibrated" />{message}</span><span>{project.equipment.length} оборуд. · {project.routes.length} трасс · {project.cables.length} кабелей <b>{staticMode ? 'БРАУЗЕР' : 'СЕРВЕР'}</b></span></footer>
     {(menuOpen || propsOpen) && <div className="scrim" onClick={() => { setMenuOpen(false); setPropsOpen(false); }} />}
     <button className={`props-fab ${propsOpen ? 'active' : ''}`} aria-label="Свойства" onClick={() => setPropsOpen(v => !v)}>⚙</button>
+    <div className="history-fab">
+      <button title="Отменить Ctrl+Z" aria-label="Отменить" disabled={!undo.length} onClick={() => history(true)}>↶</button>
+      <button title="Повторить Ctrl+Shift+Z" aria-label="Повторить" disabled={!redo.length} onClick={() => history(false)}>↷</button>
+    </div>
     {exportOpen && <div className="sheet-backdrop" onClick={() => setExportOpen(false)}><section className="sheet" role="dialog" aria-label="Экспорт и копия" onClick={event => event.stopPropagation()}><div className="sheet-grip" /><div className="sheet-head"><strong>Экспорт и копия</strong><button aria-label="Закрыть" onClick={() => setExportOpen(false)}>×</button></div><div className="sheet-list">{(['csv', 'xlsx', 'pdf', 'backup'] as const).map(format => <button key={format} disabled={busy} onClick={() => { setExportOpen(false); void run(() => download(format)); }}>{format === 'backup' ? 'JSON с исходными PDF' : format.toUpperCase()}</button>)}{typeof nativeBridge()?.printPdf === 'function' && <button onClick={() => { setExportOpen(false); void run(() => printJournal()); }}>Печать A4</button>}<div className="sheet-fields"><label className="field">Составил<input type="text" value={project.document?.compiledBy || ''} onChange={e => mutate(p => { p.document = { ...(p.document || {}), compiledBy: e.target.value }; })} /></label><label className="field">Проверил<input type="text" value={project.document?.checkedBy || ''} onChange={e => mutate(p => { p.document = { ...(p.document || {}), checkedBy: e.target.value }; })} /></label></div><button onClick={() => { setExportOpen(false); void openHistory(); }}>История версий</button><button onClick={() => { setExportOpen(false); restoreInput.current?.click(); }}>Восстановить JSON…</button></div></section></div>}
     {historyOpen && <div className="sheet-backdrop" onClick={() => setHistoryOpen(false)}><section className="sheet" role="dialog" aria-label="История версий" onClick={event => event.stopPropagation()}><div className="sheet-grip" /><div className="sheet-head"><strong>История версий</strong><button aria-label="Закрыть" onClick={() => setHistoryOpen(false)}>×</button></div><div className="sheet-list"><button onClick={() => void takeSnapshot('вручную').then(() => openHistory()).catch(() => setError('Не удалось сделать снимок: хранилище недоступно.'))}>＋ Сделать снимок сейчас</button>{snapshots === null ? <p className="help">Загружаю…</p> : snapshots.length ? snapshots.map(entry => <div className="snapshot-row" key={entry.key}><button className="snapshot-open" onClick={() => void restoreSnapshot(entry.key)}><strong>{new Date(entry.createdAt).toLocaleString('ru-RU')}</strong><small>{entry.reason} · {entry.project.equipment.length} оборуд. · {entry.project.cables.length} кабелей</small></button><button className="snapshot-delete" aria-label="Удалить снимок" onClick={() => void deleteSnapshot(entry.key)}>🗑</button></div>) : <p className="help">Снимков пока нет. Они создаются автоматически раз в 5 минут при изменениях и при ручном сохранении.</p>}</div></section></div>}
     {sheet && <div className="sheet-backdrop" onClick={() => setSheet(null)}><section className="sheet" role="dialog" aria-label="Действия с объектом" onClick={event => event.stopPropagation()}><div className="sheet-grip" /><div className="sheet-head"><strong>{sheetTitle(sheet)}</strong><button aria-label="Закрыть" onClick={() => setSheet(null)}>×</button></div><div className="sheet-list"><button onClick={() => { setPropsOpen(true); setSheet(null); }}>⚙ Свойства</button><button onClick={() => { copyObject(sheet.kind, sheet.id); setSheet(null); }}>⧉ Копировать</button><button className="danger" onClick={() => removeObject(sheet.kind, sheet.id)}>🗑 Удалить</button></div></section></div>}

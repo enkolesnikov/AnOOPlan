@@ -299,6 +299,25 @@ export function specifications(project: Project) {
   return { equipment, cables, infrastructure, errors: [...new Set(errors)] };
 }
 
+/** Доменные предупреждения: не мешают расчёту, но важны для сдачи документации. */
+export function domainWarnings(project: Project): string[] {
+  const warnings: string[] = [];
+  for (const cable of project.cables) {
+    const calculation = calculateCable(project, cable);
+    const brand = `${cable.brand} ${cable.name}`.toLowerCase();
+    const twistedPair = /utp|ftp|stp|витая|патч/.test(brand);
+    if (twistedPair && calculation.total !== null && calculation.total > 100) {
+      warnings.push(`Кабель ${cable.number}: ${Math.round(calculation.total)} м — витая пара длиннее 100 м требует усилителя или оптики`);
+    }
+    if (calculation.pricePerMeter === null) warnings.push(`Кабель ${cable.number}: не задана цена за метр — смета неполная`);
+    else if (calculation.cost === null) warnings.push(`Кабель ${cable.number}: стоимость не рассчитана, проверьте количество и расчёт`);
+  }
+  for (const route of project.routes) {
+    if (!route.segments.length) warnings.push(`Трасса ${route.number}: нет сегментов`);
+  }
+  return [...new Set(warnings)];
+}
+
 export function validateProject(project: Project): string[] {
   const errors: string[] = [];
   if (project.schemaVersion !== 1) errors.push('Неподдерживаемая версия проекта');

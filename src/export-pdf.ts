@@ -3,11 +3,12 @@
 import { PDFDocument, rgb, type PDFFont, type PDFPage } from 'pdf-lib';
 import fontkit from '@pdf-lib/fontkit';
 import type { Project } from './model';
-import { calculateCable, specifications, validateProject } from './engine';
+import { calculateCable, domainWarnings, specifications, validateProject } from './engine';
 import type { JournalFonts } from './export-fonts';
 
 export interface JournalPhoto { number: string; name: string; data: ArrayBuffer; mime: string }
-export interface JournalOptions { photos?: JournalPhoto[] }
+export interface JournalPlan { title: string; png: Uint8Array }
+export interface JournalOptions { photos?: JournalPhoto[]; plans?: JournalPlan[] }
 
 const PAGE = { width: 842, height: 595 };
 const MARGIN = 34;
@@ -238,12 +239,38 @@ class Renderer {
     }
   }
 
-  finish(): void {
+  async plans(items: JournalPlan[]): Promise<void> {
+    for (const item of items) {
+      this.heading(`План: ${item.title}`, 'Подложка этажа и нанесённые трассы с оборудованием — лист для подписи.');
+      try {
+        const image = await this.document.embedPng(item.png);
+        const maxHeight = 380;
+        const scale = Math.min(CONTENT / image.width, maxHeight / image.height);
+        const width = image.width * scale;
+        const height = image.height * scale;
+        this.ensure(height + 16);
+        this.page.drawImage(image, { x: MARGIN + (CONTENT - width) / 2, y: this.y - height, width, height });
+        this.page.drawRectangle({ x: MARGIN, y: this.y - height, width: CONTENT, height, borderColor: BORDER, borderWidth: 0.6 });
+        this.y -= height + 18;
+      } catch {
+        this.paragraph('План не встроен: не удалось подготовить изображение.', DANGER);
+      }
+    }
+  }
+
+  finish(project?: Project): void {
     const total = this.pages.length;
+    const today = new Date().toLocaleDateString('ru-RU');
+    const title = project ? `AnOOPlan · ${project.name}` : 'AnOOPlan · кабельный план';
     this.pages.forEach((page, index) => {
+      // Рамка листа и колонтитул с названием проекта — документ можно подписывать постранично.
+      page.drawRectangle({ x: 18, y: 18, width: PAGE.width - 36, height: PAGE.height - 36, borderColor: BRAND, borderWidth: 0.8 });
       page.drawLine({ start: { x: MARGIN, y: MARGIN + 18 }, end: { x: PAGE.width - MARGIN, y: MARGIN + 18 }, thickness: 0.5, color: BORDER });
-      page.drawText('AnOOPlan · кабельный план', { x: MARGIN, y: MARGIN + 6, size: 7.5, font: this.regular, color: MUTED });
-      const label = `стр. ${index + 1} из ${total}`;
+      page.drawText(title, { x: MARGIN, y: MARGIN + 6, size: 7.5, font: this.regular, color: MUTED });
+      const middle = `Кабельный журнал · ${today}`;
+      const middleWidth = this.regular.widthOfTextAtSize(middle, 7.5);
+      page.drawText(middle, { x: (PAGE.width - middleWidth) / 2, y: MARGIN + 6, size: 7.5, font: this.regular, color: MUTED });
+      const label = `Лист ${index + 1} из ${total}`;
       const width = this.regular.widthOfTextAtSize(label, 7.5);
       page.drawText(label, { x: PAGE.width - MARGIN - width, y: MARGIN + 6, size: 7.5, font: this.regular, color: MUTED });
     });
@@ -346,16 +373,17 @@ export async function buildJournalPdf(project: Project, fonts: JournalFonts, opt
     else renderer.paragraph('Нет записей.', MUTED);
   }
 
-  const warnings = [...new Set([...validateProject(project), ...specifications(project).errors])];
+  const warnings = [...new Set([...validateProject(project), ...domainWarnings(project), ...specifications(project).errors])];
   if (warnings.length) {
     renderer.heading('Замечания и предупреждения', 'Проверьте данные перед применением документации на объекте.');
     renderer.list(warnings);
   }
 
+  await renderer.plans(options.plans ?? []);
   await renderer.photos(options.photos ?? []);
   renderer.totals(project);
   renderer.signatures(project);
-  renderer.finish();
+  renderer.finish(project);
   return document.save();
 }
 

@@ -127,6 +127,19 @@ test('PDF прикладывает фотографии оборудования
   assert.ok(text.includes(equipment.number));
 });
 
+test('PDF прикладывает план этажа и подписывает листы', async () => {
+  const project = createDemoProject();
+  const png = Uint8Array.from(Buffer.from(
+    'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==',
+    'base64',
+  ));
+  const bytes = await buildJournalPdf(project, fonts, { plans: [{ title: project.floors[0].name, png }] });
+  const { text } = await pdfText(bytes);
+  assert.ok(text.includes(`План: ${project.floors[0].name}`), 'нет раздела с планом');
+  assert.ok(text.includes('Лист 1 из'), 'нет подписи листа');
+  assert.ok(text.includes(project.name), 'нет названия проекта в колонтитуле');
+});
+
 test('PDF пустого проекта не падает и сообщает об отсутствии записей', async () => {
   const bytes = await buildJournalPdf(emptyProject(), fonts);
   const { text } = await pdfText(bytes);
