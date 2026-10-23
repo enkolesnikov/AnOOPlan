@@ -14,6 +14,8 @@
 - Веб-версия: <https://enkolesnikov.github.io/AnOOPlan/>
 - Текущая версия: **1.14.0**, versionCode 22, `com.anooplan.app`, minSdk 24, targetSdk 35.
   APK ~1,8 МБ, WebView 98+, 96 юнит-тестов + E2E.
+- Возможности: PDF-планы и калибровка, оборудование, трассы, кабели и автопрокладка, журнал/смета,
+  XLSX/PDF, история версий, фото, пины-замечания с фото.
 - Подпись: SHA-256 сертификата `6431374cf6a7d385c4c47f0f2bf54fcb5ee5b2c7120f057b18c4062af92fe097`.
 
 ## Режимы работы
@@ -45,7 +47,7 @@ APK всегда работает в режиме «Браузер»: запро
 | Совместимость | `src/compat.ts`, `src/polyfills.ts`, `src/pdf-worker.ts` | фолбэки WebView, полифилл `Promise.withResolvers` |
 | Оболочка Android | `android/java/com/anooplan/app/` | `MainActivity`, `AssetServer`, `NativeBridge`, `PdfPrinter` |
 | Сборка APK | `scripts/build-apk.sh`, `scripts/fetch-tools.sh` | aapt + javac + d8 + zipalign + apksigner, **без Gradle** |
-| Тесты | `tests/*.test.ts`, `tests/e2e/`, `scripts/smoke-dom.mjs` | 89 юнит-тестов, смоук happy-dom и Playwright E2E с реальным PDF |
+| Тесты | `tests/*.test.ts`, `tests/e2e/`, `scripts/smoke-dom.mjs` | 96 юнит-тестов, смоук happy-dom и 2 Playwright E2E |
 
 ### Ключевые решения (не пересматривать без причины)
 
@@ -120,6 +122,7 @@ Android-инструменты; JDK на VPS уже установлен. Есл
 
 - Проекты: `localStorage` `cableplan:projects`; черновик — `cableplan:autosave`.
 - PDF и фото: IndexedDB `cableplan`, хранилище `pdfs`; PDF — ключ без префикса, фото — `photo:<key>`.
+- Пины: массив `project.pins` в JSON, фото пинов — те же `photo:<key>`, что у оборудования.
 - Снимки: хранилище `snapshots`, ключ `<projectId>:<timestamp>`, максимум 20 на проект.
 - Диагностика: `cableplan:diagnostics`, до 50 записей, экспорт в текстовый файл.
 - GC запускается через 3 секунды после изменений и учитывает undo/redo и снимки. Поэтому старый блоб
@@ -133,8 +136,8 @@ Android-инструменты; JDK на VPS уже установлен. Есл
 - 96 юнит-тестов: движок, экспорт, PDF, план-SVG, рендер больших листов, фото, GC, IndexedDB,
   localStorage, CSV, многостраничный план, пины, диагностика, миграции схемы, конфигурация Android и релиза.
 - `npm run smoke` — happy-dom: интерфейс, автосохранение, CSV/XLSX/PDF, фото, лицензии, диагностика.
-- `npm run test:ui` — Playwright с двухстраничным PDF: загрузка, экспорт журнала, проверка подложки
-  обоих листов «План» по пикселям. В смоуке PDF.js по-прежнему заглушка, поэтому E2E дополняет его,
+- `npm run test:ui` — 2 Playwright-теста: двухстраничный PDF (подложки обоих листов «План» по пикселям)
+  и создание/редактирование пина. В смоуке PDF.js по-прежнему заглушка, поэтому E2E дополняет его,
   а не заменяет.
 - Ручные проверки: калибровка, фото, удаление проекта/этапа, установка APK на эмулятор Android 15.
 
@@ -143,7 +146,7 @@ Android-инструменты; JDK на VPS уже установлен. Есл
 **P0** — открытых нет.
 
 **P1**
-- `App.tsx` уже ~936 строк: вынесены история, PDF-подложка, снимки, фото, план-экспорт, CSV, GC.
+- `App.tsx` ~1000 строк: вынесены история, PDF-подложка, снимки, фото, план-экспорт, CSV, GC.
   Дальше — `usePlanViewport`, панели свойств/сайдбар и оставшиеся эффекты, без одного большого рефакторинга.
 - Схема v2 и пины уже есть; перед облаком добавить ревизии сущностей и sync-очередь.
 - `xlsx` 0.18.5: high без фикса в npm; используется на запись и в тестах, не на чтение чужих файлов.
@@ -191,6 +194,8 @@ Android-инструменты; JDK на VPS уже установлен. Есл
 - Веб-интерфейс DSH: `systemctl status dsh-web`, порт 3480, ссылка с токеном — `dsh-link`
   (токен меняется при перезапуске, берётся из `journalctl -u dsh-web`).
 - Ключ провайдера — `/etc/dsh/env` (0600), подключается через `EnvironmentFile`.
+- DSH-плагины обновлены: `dshmarket 1.70.1`, `@feng0531/dsh-code-review 0.86.1`; остальные — latest.
+  Новые версии применятся после `systemctl restart dsh-web` (токен ссылки сменится).
 - Android: JDK 17, SDK в `/root/android-sdk`, AVD `AnOOPlan35` (Android 15), Chromium Playwright
   установлен; `adb` в `/root/android-sdk/platform-tools`.
 - Для чистой сборки: `git clone`, `npm ci`, `bash scripts/fetch-tools.sh`, тесты, `build-apk.sh`.
