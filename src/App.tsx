@@ -318,8 +318,10 @@ export default function App() {
     if (!window.confirm(`Удалить проект «${name}»? Это действие необратимо.`)) return;
     if (staticMode) {
       // Снимки принадлежат проекту: без их удаления блобы PDF/фото останутся сиротами.
-      const snapshotKeys = (await idbStoreKeys('snapshots')).filter(key => key.startsWith(id + ':'));
-      for (const key of snapshotKeys) { try { await idbStoreDelete('snapshots', key); } catch { /* хранилище недоступно */ } }
+      try {
+        const snapshotKeys = (await idbStoreKeys('snapshots')).filter(key => key.startsWith(id + ':'));
+        for (const key of snapshotKeys) { try { await idbStoreDelete('snapshots', key); } catch { /* хранилище недоступно */ } }
+      } catch { /* хранилище недоступно — проект всё равно удаляем */ }
       const target = lsProjects().find(p => p.id === id);
       if (target) for (const f of target.floors) if (f.pdfId?.startsWith('idb:')) { try { await idbDelete(f.pdfId.slice(4)); } catch { /* хранилище недоступно */ } }
       if (target) for (const item of target.equipment) for (const key of item.photos || []) { try { await idbDelete('photo:' + key); } catch { /* хранилище недоступно */ } }
