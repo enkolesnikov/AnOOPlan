@@ -7,6 +7,9 @@
 
 ## Скачать и установить
 
+> Продолжаете работу в новой сессии? Начните с [контекст-хендоффа](docs/HANDOFF.md): архитектура, решения, техдолг и инфраструктура.
+
+
 [![Скачать APK](https://img.shields.io/badge/%D1%81%D0%BA%D0%B0%D1%87%D0%B0%D1%82%D1%8C-APK-2ea043?logo=android&logoColor=white)](https://github.com/enkolesnikov/AnOOPlan/releases/latest)
 
 - **APK:** [последний релиз](https://github.com/enkolesnikov/AnOOPlan/releases/latest) (`AnOOPlan-1.6.0.apk`) — 1,7 МБ со встроенными шрифтами, Android 7.0+ (minSdk 24), без интернета;
