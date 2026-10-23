@@ -42,6 +42,20 @@ test('PDF-подложка попадает в лист «План» выгру�
   });
   await expect(page.locator('.statusbar')).toContainText('PDF «plan.pdf» загружен');
 
+  // Подложка должна быть не только в экспорте, но и на canvas плана.
+  const canvas = await page.locator('canvas').evaluate(element => {
+    const canvasElement = element as HTMLCanvasElement;
+    const context = canvasElement.getContext('2d')!;
+    const data = context.getImageData(0, 0, canvasElement.width, canvasElement.height).data;
+    let nonWhite = 0;
+    for (let index = 0; index < data.length; index += 4) {
+      if (data[index] < 240 || data[index + 1] < 240 || data[index + 2] < 240) nonWhite += 1;
+    }
+    return { width: canvasElement.width, height: canvasElement.height, nonWhite };
+  });
+  expect(canvas.width).toBeGreaterThan(0);
+  expect(canvas.nonWhite).toBeGreaterThan(1000);
+
   await page.evaluate(() => { (window as Window & { __planBlobs?: string[] }).__planBlobs = []; });
   await page.locator('.export-trigger').click();
   const downloadPromise = page.waitForEvent('download');

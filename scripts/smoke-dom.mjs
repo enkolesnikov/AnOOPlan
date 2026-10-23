@@ -433,6 +433,10 @@ console.log('\n7h. Отмена, нумерация сегментов и зам
 const planTab = Array.from(document.querySelectorAll('.view-tabs button')).find(button => (button.textContent || '').trim() === 'План');
 if (planTab) planTab.click();
 await sleep(200);
+const accessiblePlan = document.querySelector('.sr-only')?.textContent || '';
+check(accessiblePlan.includes('Объекты на плане'), 'есть текстовая альтернатива плана для скринридера');
+check(/[A-ZА-Я]\d+/.test(accessiblePlan), 'в текстовой альтернативе перечислено оборудование');
+
 const undoButton = buttons().find(button => (button.getAttribute('title') || '').includes('Отменить'));
 check(Boolean(undoButton), 'кнопка «Отменить» присутствует в панели инструментов');
 check(Boolean(buttons().find(button => (button.getAttribute('title') || '').includes('Повторить'))), 'кнопка «Повторить» присутствует');

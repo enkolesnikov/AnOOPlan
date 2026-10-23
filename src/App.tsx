@@ -1,30 +1,28 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { CSSProperties, PointerEvent as ReactPointerEvent } from 'react';
-import workerUrl from './pdf-worker?worker&url';
 import type { Project, Floor, Equipment, Route, Cable, Segment, Vertex, Point } from './model';
 import { calculateCable, specifications, validateProject, domainWarnings, chainEnds, findRoute } from './engine';
 import { createDemoProject } from './demo';
 import { exportSheets } from './sheets';
-import type { JournalPhoto } from './export-pdf';
-import { planRender, fallbackPlan, needsClipping, type PlanRender } from './render-plan';
-import { buildPlanSvg } from './plan-svg';
 import { orphanPhotoKeys, purgePhotoBlobs } from './photos';
 import { AboutSheet, APP_VERSION } from './About';
+import { PlanAccessibilityList } from './PlanAccessibilityList';
+import { collectPhotos, collectPlans } from './plan-capture';
+import { clientCsv } from './client-csv';
+import { collectStorageGarbage } from './garbage-collector';
+import { compressPhoto } from './photo-compress';
 import { clearDiagnostics, diagnosticsText, logDiagnostic, readDiagnostics, type DiagnosticEntry } from './diagnostics';
 import { unusedStorageKeys } from './storage-gc';
 import { migrateProject } from './migrations';
 import { idbDelete, idbGet, idbPut, idbStoreDelete, idbStoreGet, idbStoreGetAll, idbStoreKeys, idbStorePut } from './idb';
 import { deleteLocalProject, readLocalProjects, saveLocalProject } from './local-projects';
-import { createUuid as uid, cloneValue as clone, decodeImage, loadBitmap } from './compat';
+import { createUuid as uid, cloneValue as clone, loadBitmap } from './compat';
+import { useProjectHistory } from './use-project-history';
+import { usePdfBackground } from './use-pdf-background';
+import { useSnapshots, type SnapshotEntry } from './use-snapshots';
+import { usePhotoUrls } from './use-photo-urls';
 
-type PdfjsModule = typeof import('pdfjs-dist/legacy/build/pdf.mjs');
-type PdfLoadingTask = ReturnType<PdfjsModule['getDocument']>;
-type PdfRenderTask = ReturnType<import('pdfjs-dist/legacy/build/pdf.mjs').PDFPageProxy['render']>;
 const SNAP_PX = 12;
-const SNAPSHOT_LIMIT = 20;
-// Бюджет пикселей подложки: A4-A3 рисуются целиком, A1-A0 — по видимой области.
-const PLAN_MAX_PIXELS = 12_000_000;
-interface SnapshotEntry { key: string; createdAt: string; reason: string; project: Project }
 const SHEET_SIZES: Record<string, { landscape: number; portrait: number }> = {
   A4: { landscape: 297, portrait: 210 },
   A3: { landscape: 420, portrait: 297 },
@@ -131,8 +129,6 @@ export default function App() {
   const [calibration, setCalibration] = useState<Point[]>([]);
   const [measure, setMeasure] = useState<Point[]>([]);
   const [measureMode, setMeasureMode] = useState<'length' | 'area'>('length');
-  const [historyOpen, setHistoryOpen] = useState(false);
-  const [snapshots, setSnapshots] = useState<SnapshotEntry[] | null>(null);
   const [sheetFormat, setSheetFormat] = useState('A1');
   const [sheetScale, setSheetScale] = useState('100');
   const [cableSegments, setCableSegments] = useState<string[]>([]);
@@ -144,17 +140,10 @@ export default function App() {
   const [busy, setBusy] = useState(false);
   const [saved, setSaved] = useState('');
   const [persisted, setPersisted] = useState(false);
-  const [undo, setUndo] = useState<Project[]>([]);
-  const [redo, setRedo] = useState<Project[]>([]);
   const [projects, setProjects] = useState<{ id: string; name: string; updatedAt: string }[] | null>(null);
-  const [pdfPages, setPdfPages] = useState(0);
-  const [renderPlan, setRenderPlan] = useState<PlanRender | null>(null);
-  const [renderTick, setRenderTick] = useState(0);
-  const [pdfError, setPdfError] = useState('');
   const [pointer, setPointer] = useState<Point | null>(null);
   const [staticMode, setStaticMode] = useState(false);
   const [exportOpen, setExportOpen] = useState(false);
-  const [photoUrls, setPhotoUrls] = useState<Record<string, string>>({});
   const [sheet, setSheet] = useState<{ kind: 'equipment' | 'route' | 'cable'; id: string } | null>(null);
   const canvas = useRef<HTMLCanvasElement>(null);
   const stage = useRef<HTMLDivElement>(null);
@@ -172,7 +161,6 @@ export default function App() {
   const pinching = useRef(false);
   const pressStart = useRef<Point | null>(null);
   const longPressTimer = useRef<number | null>(null);
-  const pdfCache = useRef<{ key: string; canvas: HTMLCanvasElement } | null>(null);
   projectRef.current = project;
   const floor = project.floors.find(f => f.id === floorId) || project.floors[0];
   const dirty = JSON.stringify(project) !== saved;
@@ -193,21 +181,18 @@ export default function App() {
   }, [project]);
   const issueCount = Array.isArray(issues) ? issues.length : 0;
 
-  function commit(next: Project | ((p: Project) => Project)) {
-    const previous = projectRef.current;
-    const value = typeof next === 'function' ? next(clone(previous)) : next;
-    setUndo(items => [...items.slice(-59), clone(previous)]); setRedo([]);
-    value.updatedAt = new Date().toISOString(); projectRef.current = value; setProject(value); setError('');
-  }
-  function mutate(fn: (p: Project) => void) { commit(p => { fn(p); return p; }); }
-  function history(back: boolean) {
-    const source = back ? undo : redo;
-    if (!source.length) return;
-    const next = source[source.length - 1];
-    if (back) { setUndo(source.slice(0, -1)); setRedo(items => [...items, clone(project)]); }
-    else { setRedo(source.slice(0, -1)); setUndo(items => [...items, clone(project)]); }
-    setProject(clone(next)); projectRef.current = clone(next); setSelection(null); setDraft([]);
-  }
+  const { undo, redo, commit, mutate, history, reset: resetHistory, record: recordHistory } = useProjectHistory(projectRef, setProject, setError, () => {
+    setSelection(null);
+    setDraft([]);
+  });
+  const { pdfPages, renderPlan, pdfError } = usePdfBackground({
+    floor, enabled: view === 'plan', viewRef, zoom, pan, canvas, stage, mutate,
+  });
+  const { historyOpen, setHistoryOpen, snapshots, setSnapshots, takeSnapshot, openHistory, restoreSnapshot, deleteSnapshot } = useSnapshots({
+    projectRef, load, onGarbageCollect: () => void collectStorageGarbage([projectRef.current, ...undo, ...redo]), setError, setMessage,
+  });
+  const photoUrls = usePhotoUrls(equipment);
+
   function load(value: unknown, exists: boolean) {
     let p: Project;
     try {
@@ -218,7 +203,7 @@ export default function App() {
       return;
     }
     setProject(p); projectRef.current = p; setSaved(exists ? JSON.stringify(p) : ''); setPersisted(exists);
-    setFloorId(p.floors[0]?.id || ''); setUndo([]); setRedo([]); setSelection(null); setDraft([]); setMeasure([]); setCalibration([]); setCableSegments([]); setView('plan'); setTool('select'); setError('');
+    setFloorId(p.floors[0]?.id || ''); resetHistory(); setSelection(null); setDraft([]); setMeasure([]); setCalibration([]); setCableSegments([]); setView('plan'); setTool('select'); setError('');
   }
   async function run(task: () => Promise<void>) { setBusy(true); setError(''); try { await task(); } catch (e) { logDiagnostic('error', e, 'run'); setError(e instanceof Error ? e.message : String(e)); } finally { setBusy(false); } }
   async function saveProject(silent = false): Promise<Project> {
@@ -265,6 +250,7 @@ export default function App() {
     setPan({ x: center.x - (center.x - pan.x) * z / zoom, y: center.y - (center.y - pan.y) * z / zoom }); setZoom(z);
   }
   useEffect(() => { const handler = (e: BeforeUnloadEvent) => { if (dirty) { e.preventDefault(); e.returnValue = ''; } }; window.addEventListener('beforeunload', handler); return () => window.removeEventListener('beforeunload', handler); }, [dirty]);
+  useEffect(() => { setDraft([]); setCalibration([]); setMeasure([]); }, [floor?.id, floor?.pdfId]);
   useEffect(() => { fetch('/api/health').then(r => { if (!r.ok) setStaticMode(true); }).catch(() => setStaticMode(true)); }, []);
   useEffect(() => {
     if (!staticMode) return;
@@ -277,28 +263,6 @@ export default function App() {
     const timer = setTimeout(() => { void saveProject(true).catch(error => { logDiagnostic('error', error, 'autosave'); /* повторим при следующем изменении */ }); }, 1500);
     return () => clearTimeout(timer);
   }, [dirty, project]);
-  // Миниатюры фотографий выбранного оборудования берём из IndexedDB.
-  useEffect(() => {
-    const keys = equipment?.photos || [];
-    if (!keys.length) { setPhotoUrls({}); return; }
-    let cancelled = false;
-    const created: string[] = [];
-    void (async () => {
-      const map: Record<string, string> = {};
-      for (const key of keys) {
-        try {
-          const blob = await idbGet('photo:' + key);
-          if (!blob) continue;
-          const url = URL.createObjectURL(blob);
-          created.push(url);
-          map[key] = url;
-        } catch { /* хранилище недоступно */ }
-      }
-      if (cancelled) { created.forEach(url => URL.revokeObjectURL(url)); return; }
-      setPhotoUrls(map);
-    })();
-    return () => { cancelled = true; created.forEach(url => URL.revokeObjectURL(url)); };
-  }, [equipment?.id, equipment?.photos?.length]);
   // Снимок версии: раз в пять минут при несохранённых изменениях и перед восстановлением.
   useEffect(() => {
     const timer = setInterval(() => { if (dirty) void takeSnapshot('автоснимок').catch(() => { /* хранилище недоступно */ }); }, 5 * 60 * 1000);
@@ -340,96 +304,6 @@ export default function App() {
       if (e.key === 'Enter' && draft.length > 1) finishRoute();
     }; window.addEventListener('keydown', key); return () => window.removeEventListener('keydown', key);
   });
-  useEffect(() => { setDraft([]); setCalibration([]); setMeasure([]); setPdfPages(0); setPdfError(''); }, [floor?.id, floor?.pdfId]);
-  useEffect(() => {
-    if (!floor?.pdfId || view !== 'plan') return;
-    const currentFloor = floor;
-    const pdfId = floor.pdfId;
-    const { zoom: currentZoom, pan: currentPan } = viewRef.current;
-    const stageElement = stage.current;
-    const viewWidth = stageElement?.clientWidth || currentFloor.width * currentZoom;
-    const viewHeight = stageElement?.clientHeight || currentFloor.height * currentZoom;
-    const plan = planRender({
-      sheetWidth: currentFloor.width, sheetHeight: currentFloor.height,
-      zoom: currentZoom, dpr: window.devicePixelRatio || 1,
-      viewWidth, viewHeight, panX: currentPan.x, panY: currentPan.y,
-      maxPixels: PLAN_MAX_PIXELS,
-    });
-    const key = `${currentFloor.id}:${pdfId}:${currentFloor.page}:${plan.clipped ? `${plan.scale.toFixed(2)}:${Math.round(plan.clipX)}:${Math.round(plan.clipY)}` : 'full'}`;
-    const target = canvas.current; if (!target) return;
-    if (!plan.clipped && pdfCache.current?.key === key) {
-      const cached = pdfCache.current.canvas;
-      target.width = cached.width; target.height = cached.height;
-      const cacheContext = target.getContext('2d');
-      if (cacheContext) cacheContext.drawImage(cached, 0, 0);
-      setRenderPlan(plan);
-      return;
-    }
-    let cancelled = false;
-    let renderTask: PdfRenderTask | undefined;
-    let loadingTask: PdfLoadingTask | undefined;
-    void (async () => {
-      try {
-        const pdfjs = await import('pdfjs-dist/legacy/build/pdf.mjs');
-        pdfjs.GlobalWorkerOptions.workerSrc = workerUrl;
-        if (pdfId.startsWith('idb:')) {
-          const blob = await idbGet(pdfId.slice(4));
-          if (!blob) throw new Error('PDF не найден в хранилище браузера');
-          loadingTask = pdfjs.getDocument({ data: await blob.arrayBuffer() });
-        } else if (pdfId.startsWith('data:')) {
-          const base64 = pdfId.slice(pdfId.indexOf(',') + 1);
-          loadingTask = pdfjs.getDocument({ data: Uint8Array.from(atob(base64), c => c.charCodeAt(0)) });
-        } else {
-          loadingTask = pdfjs.getDocument({ url: `/api/pdfs/${pdfId}` });
-        }
-        const document = await loadingTask.promise; if (cancelled) return; setPdfPages(document.numPages);
-        const page = await document.getPage(Math.min(Math.max(1, currentFloor.page), document.numPages)); if (cancelled) return;
-        const viewport = page.getViewport({ scale: 1 });
-        if (Math.abs(viewport.width - currentFloor.width) > .01 || Math.abs(viewport.height - currentFloor.height) > .01) {
-          mutate(p => { const floorTarget = p.floors.find(f => f.id === currentFloor.id)!; floorTarget.width = viewport.width; floorTarget.height = viewport.height; });
-        }
-        const draw = async (renderPlanValue: PlanRender) => {
-          const offscreen = window.document.createElement('canvas');
-          offscreen.width = renderPlanValue.canvasWidth;
-          offscreen.height = renderPlanValue.canvasHeight;
-          const offscreenContext = offscreen.getContext('2d');
-          if (!offscreenContext) throw new Error('canvas недоступен');
-          renderTask = page.render({
-            canvasContext: offscreenContext,
-            viewport: page.getViewport({ scale: renderPlanValue.scale }),
-            canvas: offscreen,
-            transform: renderPlanValue.clipped
-              ? [1, 0, 0, 1, -renderPlanValue.clipX * renderPlanValue.scale, -renderPlanValue.clipY * renderPlanValue.scale]
-              : undefined,
-          });
-          await renderTask.promise;
-          const current = canvas.current;
-          if (!current) return;
-          current.width = offscreen.width;
-          current.height = offscreen.height;
-          const context = current.getContext('2d');
-          if (context) { context.clearRect(0, 0, current.width, current.height); context.drawImage(offscreen, 0, 0); }
-          setRenderPlan(renderPlanValue);
-          if (!renderPlanValue.clipped) pdfCache.current = { key, canvas: offscreen };
-        };
-        try {
-          await draw(plan);
-        } catch (error) {
-          // Большой лист не удалось нарисовать по частям — рисуем целиком с ограничением разрешения.
-          if (!plan.clipped) throw error;
-          await draw(fallbackPlan(currentFloor.width, currentFloor.height, PLAN_MAX_PIXELS));
-        }
-      } catch (e) { logDiagnostic('error', e, 'renderPlan'); if (!cancelled) setPdfError(`PDF не отображён: ${e instanceof Error ? e.message : String(e)}`); }
-    })();
-    return () => { cancelled = true; renderTask?.cancel(); loadingTask?.destroy(); };
-  }, [floor?.pdfId, floor?.page, floor?.id, view, renderTick]);
-  // Большие листы перерисовываются по видимой области после жеста (с задержкой).
-  useEffect(() => {
-    if (!floor?.pdfId || !needsClipping(floor.width, floor.height, window.devicePixelRatio || 1, PLAN_MAX_PIXELS)) return;
-    const timer = setTimeout(() => setRenderTick(value => value + 1), 260);
-    return () => clearTimeout(timer);
-  }, [pan, zoom, floor?.pdfId]);
-
   function position(e: { clientX: number; clientY: number }, useSnap = true): Point {
     const rect = stage.current!.getBoundingClientRect();
     let x = (e.clientX - rect.left - pan.x) / zoom, y = (e.clientY - rect.top - pan.y) / zoom;
@@ -591,7 +465,7 @@ export default function App() {
     if (pointers.current.size < 2) pinching.current = false;
     const active = drag.current;
     if (active?.type === 'pinch') { if (pointers.current.size < 2) drag.current = null; return; }
-    if (active && active.type !== 'pan' && JSON.stringify(active.before) !== JSON.stringify(projectRef.current)) { setUndo(items => [...items.slice(-59), active.before]); setRedo([]); }
+    if (active && active.type !== 'pan' && JSON.stringify(active.before) !== JSON.stringify(projectRef.current)) recordHistory(active.before);
     drag.current = null;
     if (!active) runTap(e);
   }
@@ -843,194 +717,10 @@ export default function App() {
     mutate(p => { const target = p.floors.find(f => f.id === floor.id)!; target.pdfId = result.id; target.page = 1; target.metersPerUnit = null; });
     setMessage(`PDF «${result.name}» загружен. Выберите страницу и откалибруйте масштаб.`);
   }
-  function clientCsv(p: Project): string {
-    const specs = specifications(p);
-    const rows: (string | number | null)[][] = [];
-    rows.push(['Кабельный журнал']);
-    rows.push(['Номер', 'Наименование', 'Марка', 'От', 'До', 'Количество', 'Итог одного, м', 'Итог всего, м', 'Полный']);
-    for (const c of p.cables) {
-      const r = calculateCable(p, c);
-      const name = (id: string) => p.equipment.find(e => e.id === id)?.number || id;
-      rows.push([c.number, c.name, c.brand, name(c.fromId), name(c.toId), c.quantity, r.total, r.total === null ? null : r.total * c.quantity, r.complete ? 'Да' : 'Нет']);
-    }
-    rows.push([]); rows.push(['Оборудование']); rows.push(['Тип', 'Модель', 'Этаж', 'Количество']);
-    for (const g of specs.equipment) rows.push([g.type, g.model, g.floor, g.quantity]);
-    rows.push([]); rows.push(['Кабели (сводно)']); rows.push(['Марка', 'Линий', 'Геометрия, м', 'Итого, м']);
-    for (const g of specs.cables) rows.push([g.brand, g.lines, g.geometry, g.total]);
-    rows.push([]); rows.push(['Инфраструктура']); rows.push(['Тип', 'Длина, м', 'Сегментов', 'Кабелей']);
-    for (const g of specs.infrastructure) rows.push([g.type, g.length, g.segments, g.cables]);
-    const cell = (v: string | number | null) => {
-      let text = v === null ? '' : String(v);
-      if (typeof v === 'string' && /^[=+\-@\t\r]/.test(text)) text = `'${text}`;
-      return `"${text.split('"').join('""')}"`;
-    };
-    return '\uFEFF' + rows.map(r => r.map(cell).join(';')).join('\r\n');
-  }
-  /**
-   * Убирает блобы, на которые больше не ссылается ни проект, ни undo/redo,
-   * ни сохранённые проекты, ни снимки версий. Снимки удалённых проектов
-   * тоже вычищаются: иначе они держат PDF и фото вечно.
-   */
-  async function collectStorageGarbage(states: Project[]): Promise<void> {
-    if (!staticMode) return;
-    try {
-      const saved = readLocalProjects();
-      const projectIds = new Set([...states, ...saved].map(item => item.id));
-      const snapshotProjects: Project[] = [];
-      for (const entry of await idbStoreGetAll<SnapshotEntry>('snapshots')) {
-        if (!entry?.key) continue;
-        const projectId = entry.key.slice(0, entry.key.lastIndexOf(':'));
-        if (!projectIds.has(projectId)) {
-          await idbStoreDelete('snapshots', entry.key).catch(() => { /* уже удалён */ });
-          continue;
-        }
-        if (entry.project) snapshotProjects.push(entry.project);
-      }
-      const stale = unusedStorageKeys(await idbStoreKeys('pdfs'), [...states, ...saved, ...snapshotProjects]);
-      for (const key of stale) await idbDelete(key).catch(() => { /* хранилище недоступно */ });
-    } catch { /* хранилище недоступно — повторим при следующем изменении */ }
-  }
-  async function takeSnapshot(reason: string): Promise<void> {
-    // История — вспомогательная функция: без IndexedDB проект всё равно сохраняется.
-    try {
-      const snapshot = clone(projectRef.current);
-      const key = `${snapshot.id}:${Date.now()}`;
-      await idbStorePut('snapshots', key, { key, createdAt: new Date().toISOString(), reason, project: snapshot });
-      const keys = (await idbStoreKeys('snapshots'))
-        .filter(item => item.startsWith(`${snapshot.id}:`))
-        .sort((a, b) => Number(b.split(':')[1]) - Number(a.split(':')[1]));
-      for (const stale of keys.slice(SNAPSHOT_LIMIT)) await idbStoreDelete('snapshots', stale);
-    } catch {
-      // хранилище недоступно — снимок просто не создаётся
-    }
-  }
-  async function openHistory(): Promise<void> {
-    setHistoryOpen(true);
-    setSnapshots(null);
-    try {
-      const projectId = projectRef.current.id;
-      const keys = (await idbStoreKeys('snapshots'))
-        .filter(item => item.startsWith(`${projectId}:`))
-        .sort((a, b) => Number(b.split(':')[1]) - Number(a.split(':')[1]));
-      const list: SnapshotEntry[] = [];
-      for (const key of keys) {
-        const entry = await idbStoreGet<SnapshotEntry>('snapshots', key);
-        if (entry) list.push(entry);
-      }
-      setSnapshots(list);
-    } catch {
-      setSnapshots([]);
-      setError('История версий недоступна: хранилище браузера закрыто.');
-    }
-  }
-  async function restoreSnapshot(key: string): Promise<void> {
-    const entry = snapshots?.find(item => item.key === key);
-    if (!entry) return;
-    if (!window.confirm(`Восстановить проект от ${new Date(entry.createdAt).toLocaleString('ru-RU')}? Текущее состояние сохранится как снимок.`)) return;
-    try { await takeSnapshot('перед восстановлением'); } catch { /* снимок не критичен */ }
-    load(clone(entry.project), true);
-    setHistoryOpen(false);
-    setSnapshots(null);
-    setMessage('Проект восстановлен из снимка.');
-  }
-  async function deleteSnapshot(key: string): Promise<void> {
-    try { await idbStoreDelete('snapshots', key); } catch { /* уже удалён */ }
-    setSnapshots(current => (current || []).filter(item => item.key !== key));
-    void collectStorageGarbage([projectRef.current, ...undo, ...redo]);
-  }
-  async function compressPhoto(file: File): Promise<Blob> {
-    // Фото с телефона уменьшаем до 1600 px по длинной стороне: журнал не раздувается.
-    try {
-      const bitmap = await loadBitmap(file);
-      const maxSide = 1600;
-      const scale = Math.min(1, maxSide / Math.max(bitmap.width, bitmap.height));
-      const canvas = document.createElement('canvas');
-      canvas.width = Math.max(1, Math.round(bitmap.width * scale));
-      canvas.height = Math.max(1, Math.round(bitmap.height * scale));
-      const context = canvas.getContext('2d');
-      if (!context) { bitmap.close(); return file; }
-      bitmap.draw(context, canvas.width, canvas.height);
-      const blob = await new Promise<Blob | null>(resolve => canvas.toBlob(resolve, 'image/jpeg', 0.82));
-      bitmap.close();
-      return blob || file;
-    } catch (error) {
-      logDiagnostic('error', error, 'compressPhoto');
-      return file;
-    }
-  }
-  async function capturePlan(floorItem: Floor): Promise<{ title: string; png: Uint8Array } | null> {
-    try {
-      const width = 1600;
-      const height = Math.max(1, Math.round(width * floorItem.height / Math.max(1, floorItem.width)));
-      const target = document.createElement('canvas');
-      target.width = width;
-      target.height = height;
-      const context = target.getContext('2d');
-      if (!context) return null;
-      context.fillStyle = '#ffffff';
-      context.fillRect(0, 0, width, height);
-      if (floorItem.pdfId) {
-        try {
-          const pdfjs = await import('pdfjs-dist/legacy/build/pdf.mjs');
-          pdfjs.GlobalWorkerOptions.workerSrc = workerUrl;
-          const stored = floorItem.pdfId.startsWith('idb:') ? await idbGet(floorItem.pdfId.slice(4)) : null;
-          const loading = stored
-            ? pdfjs.getDocument({ data: await stored.arrayBuffer() })
-            : floorItem.pdfId.startsWith('data:')
-              ? pdfjs.getDocument({ data: Uint8Array.from(atob(floorItem.pdfId.slice(floorItem.pdfId.indexOf(',') + 1)), c => c.charCodeAt(0)) })
-              : pdfjs.getDocument({ url: `/api/pdfs/${floorItem.pdfId}` });
-          const pdfDocument = await loading.promise;
-          const page = await pdfDocument.getPage(Math.min(Math.max(1, floorItem.page), pdfDocument.numPages));
-          const viewport = page.getViewport({ scale: width / page.getViewport({ scale: 1 }).width });
-          const layer = document.createElement('canvas');
-          layer.width = Math.max(1, Math.round(viewport.width));
-          layer.height = Math.max(1, Math.round(viewport.height));
-          const layerContext = layer.getContext('2d');
-          if (layerContext) await page.render({ canvasContext: layerContext, viewport, canvas: layer }).promise;
-          context.drawImage(layer, 0, 0, width, height);
-          void loading.destroy();
-        } catch (error) { logDiagnostic('error', error, 'capturePlan:pdf'); /* план выгружается без подложки */ }
-      }
-      const image = new Image();
-      image.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(buildPlanSvg(projectRef.current, floorItem));
-      await decodeImage(image);
-      context.drawImage(image, 0, 0, width, height);
-      const blob = await new Promise<Blob | null>(resolve => target.toBlob(resolve, 'image/png'));
-      if (!blob) return null;
-      return { title: floorItem.name, png: new Uint8Array(await blob.arrayBuffer()) };
-    } catch (error) {
-      logDiagnostic('error', error, 'capturePlan');
-      return null;
-    }
-  }
-  async function collectPlans(): Promise<{ title: string; png: Uint8Array }[]> {
-    const plans: { title: string; png: Uint8Array }[] = [];
-    for (const floorItem of projectRef.current.floors) {
-      const hasContent = projectRef.current.equipment.some(item => item.floorId === floorItem.id)
-        || projectRef.current.routes.some(route => route.segments.some(segment => segment.a.floorId === floorItem.id || segment.b.floorId === floorItem.id));
-      if (!hasContent) continue;
-      const plan = await capturePlan(floorItem);
-      if (plan) plans.push(plan);
-    }
-    return plans;
-  }
-  async function collectPhotos(): Promise<JournalPhoto[]> {
-    const assets: JournalPhoto[] = [];
-    for (const item of projectRef.current.equipment) {
-      for (const key of item.photos || []) {
-        try {
-          const blob = await idbGet('photo:' + key);
-          if (!blob) continue;
-          assets.push({ number: item.number, name: item.name, data: await blob.arrayBuffer(), mime: blob.type || 'image/jpeg' });
-        } catch { /* фото недоступно — журнал всё равно выгружается */ }
-      }
-    }
-    return assets;
-  }
   async function printJournal() {
     const current = projectRef.current;
     const [{ buildJournalPdf }, { loadJournalFonts }] = await Promise.all([import('./export-pdf'), import('./export-fonts')]);
-    const bytes = await buildJournalPdf(current, await loadJournalFonts(), { photos: await collectPhotos(), plans: await collectPlans() });
+    const bytes = await buildJournalPdf(current, await loadJournalFonts(), { photos: await collectPhotos(current), plans: await collectPlans(current) });
     nativeBridge()?.printPdf?.(current.name, bytesToBase64(bytes));
     setMessage('Открыт системный диалог печати: выберите принтер или «Сохранить в PDF».');
   }
@@ -1046,7 +736,7 @@ export default function App() {
       } else if (kind === 'pdf') {
         // Офлайн-PDF: pdf-lib + встроенный PT Sans, без сервера и системных шрифтов.
         const [{ buildJournalPdf }, { loadJournalFonts }] = await Promise.all([import('./export-pdf'), import('./export-fonts')]);
-        blob = new Blob([await buildJournalPdf(current, await loadJournalFonts(), { photos: await collectPhotos(), plans: await collectPlans() }) as unknown as BlobPart], { type: 'application/pdf' });
+        blob = new Blob([await buildJournalPdf(current, await loadJournalFonts(), { photos: await collectPhotos(current), plans: await collectPlans(current) }) as unknown as BlobPart], { type: 'application/pdf' });
       } else if (kind === 'backup') {
         const ids = [...new Set(current.floors.flatMap(f => f.pdfId && f.pdfId.startsWith('idb:') ? [f.pdfId.slice(4)] : []))];
         const pdfs: { id: string; name: string; dataBase64: string }[] = [];
@@ -1194,7 +884,7 @@ export default function App() {
         </div>}
         <div className="plan-badge"><span className="dot calibrated" />{floor?.name || 'Нет этажей'}<span> / </span>{floor?.metersPerUnit ? `${number(floor.metersPerUnit)} м/ед.` : 'Масштаб не задан'}</div>
         <div className="plan-legend"><span className="legend-line" /> Трасса <span className="legend-equipment" /> Оборудование <span className="legend-cable" /> Выбранный кабель</div>
-      </div><div className="tool-hint"><span>{toolHints[tool]}</span><small>Координаты PDF: {pointer ? `${number(pointer.x)}; ${number(pointer.y)}` : '—'}</small></div></div> : view === 'journal' ? <section className="document-view"><div className="document-title"><div><span className="eyebrow">ДОКУМЕНТАЦИЯ</span><h1>Кабельный журнал</h1><p>Расчёт по выбранным сегментам, высотам и запасам. Единица измерения — метр.</p></div><button className="primary" onClick={() => { setView('plan'); setTool('cable'); }}>＋ Кабель</button></div><div className="table-scroll"><table><thead><tr><th>Кабель / марка</th><th>От → до</th><th>Геометрия</th><th>Запас трасс</th><th>Запас кабеля</th><th>Концы</th><th>Итог / шт.</th><th>Кол.</th><th>Стоимость, ₽</th><th>Статус</th></tr></thead><tbody>{project.cables.map(c => { const calc = cableCalcs.get(c.id)!; return <tr key={c.id} className={selection?.id === c.id ? 'selected' : ''} onClick={() => setSelection({ kind: 'cable', id: c.id })}><td><strong>{c.number}</strong><small>{c.brand || c.name}</small></td><td>{project.equipment.find(e => e.id === c.fromId)?.number || '?'} → {project.equipment.find(e => e.id === c.toId)?.number || '?'}</td><td>{number(calc.geometry)}</td><td>{number(calc.routeReserve)}</td><td>{number(calc.cableReserve)}</td><td>{number(calc.endReserve)}</td><td><strong>{number(calc.total)}</strong></td><td>{c.quantity}</td><td>{calc.cost === null ? '—' : number(calc.cost)}</td><td><span className={`badge ${calc.complete ? 'good' : 'warn'}`}>{calc.complete ? 'Рассчитан' : 'Неполный'}</span></td></tr>; })}</tbody></table>{!project.cables.length && <div className="document-empty">Создайте кабель: выберите оборудование и упорядоченную цепочку сегментов на плане.</div>}</div><div className="document-summary"><strong>{totals.metersComplete ? `${number(totals.meters)} м` : "Метраж рассчитан не полностью"}</strong><span>{totals.costComplete ? `Стоимость: ${number(totals.cost)} ₽` : "Стоимость не рассчитана: задайте цены за метр"}</span></div><div className="document-note">Итог указан для одного кабеля. Количество применяется в ведомости. Неполные значения не подменяются нулём.</div></section> : <section className="document-view"><div className="document-title"><div><span className="eyebrow">ДОКУМЕНТАЦИЯ</span><h1>Ведомости и проверка</h1><p>Кабельная продукция и инфраструктура. Общие сегменты инфраструктуры учитываются один раз.</p></div></div><SpecificationTables value={specifications(project)} /><h2>Замечания к проекту</h2><IssueList value={issues} /><div className="document-note">Расчёт не заменяет проверку проектировщиком. PDF может содержать разные масштабы: калибруйте каждый этаж и страницу отдельно. Совмещение осей этажей выполняется вручную.</div></section>}</main>
+      </div><div className="tool-hint"><span>{toolHints[tool]}</span><small>Координаты PDF: {pointer ? `${number(pointer.x)}; ${number(pointer.y)}` : '—'}</small></div><PlanAccessibilityList project={project} floor={floor} /></div> : view === 'journal' ? <section className="document-view"><div className="document-title"><div><span className="eyebrow">ДОКУМЕНТАЦИЯ</span><h1>Кабельный журнал</h1><p>Расчёт по выбранным сегментам, высотам и запасам. Единица измерения — метр.</p></div><button className="primary" onClick={() => { setView('plan'); setTool('cable'); }}>＋ Кабель</button></div><div className="table-scroll"><table><thead><tr><th>Кабель / марка</th><th>От → до</th><th>Геометрия</th><th>Запас трасс</th><th>Запас кабеля</th><th>Концы</th><th>Итог / шт.</th><th>Кол.</th><th>Стоимость, ₽</th><th>Статус</th></tr></thead><tbody>{project.cables.map(c => { const calc = cableCalcs.get(c.id)!; return <tr key={c.id} className={selection?.id === c.id ? 'selected' : ''} onClick={() => setSelection({ kind: 'cable', id: c.id })}><td><strong>{c.number}</strong><small>{c.brand || c.name}</small></td><td>{project.equipment.find(e => e.id === c.fromId)?.number || '?'} → {project.equipment.find(e => e.id === c.toId)?.number || '?'}</td><td>{number(calc.geometry)}</td><td>{number(calc.routeReserve)}</td><td>{number(calc.cableReserve)}</td><td>{number(calc.endReserve)}</td><td><strong>{number(calc.total)}</strong></td><td>{c.quantity}</td><td>{calc.cost === null ? '—' : number(calc.cost)}</td><td><span className={`badge ${calc.complete ? 'good' : 'warn'}`}>{calc.complete ? 'Рассчитан' : 'Неполный'}</span></td></tr>; })}</tbody></table>{!project.cables.length && <div className="document-empty">Создайте кабель: выберите оборудование и упорядоченную цепочку сегментов на плане.</div>}</div><div className="document-summary"><strong>{totals.metersComplete ? `${number(totals.meters)} м` : "Метраж рассчитан не полностью"}</strong><span>{totals.costComplete ? `Стоимость: ${number(totals.cost)} ₽` : "Стоимость не рассчитана: задайте цены за метр"}</span></div><div className="document-note">Итог указан для одного кабеля. Количество применяется в ведомости. Неполные значения не подменяются нулём.</div></section> : <section className="document-view"><div className="document-title"><div><span className="eyebrow">ДОКУМЕНТАЦИЯ</span><h1>Ведомости и проверка</h1><p>Кабельная продукция и инфраструктура. Общие сегменты инфраструктуры учитываются один раз.</p></div></div><SpecificationTables value={specifications(project)} /><h2>Замечания к проекту</h2><IssueList value={issues} /><div className="document-note">Расчёт не заменяет проверку проектировщиком. PDF может содержать разные масштабы: калибруйте каждый этаж и страницу отдельно. Совмещение осей этажей выполняется вручную.</div></section>}</main>
       <aside className={`properties ${propsOpen ? 'open' : ''}`}><div className="properties-title">Свойства<span>{equipment ? 'ОБОРУДОВАНИЕ' : route ? 'ТРАССА' : cable ? 'КАБЕЛЬ' : 'ЭТАЖ'}</span><button className="properties-close" aria-label="Закрыть" onClick={() => setPropsOpen(false)}>×</button></div><div className="properties-content">{selection && (equipment || route || cable) ? <><div className="object-heading"><span className="eyebrow">{equipment ? 'ОБОРУДОВАНИЕ' : route ? 'КАБЕЛЬНАЯ ТРАССА' : 'КАБЕЛЬ'}</span><h2>{(equipment || route || cable)?.number}</h2></div>{itemField('Обозначение', 'number')}{!route && itemField('Наименование', 'name')}{(equipment || route) && itemField('Тип', 'type')}{equipment && <div className="chip-row">{['Камера', 'Шкаф', 'Коммутатор', 'Считыватель', 'Лоток'].map(value => <button key={value} className="chip" onClick={() => setItem('type', value)}>{value}</button>)}</div>}
       {equipment && <><label className="field">Этаж{floorSelect(equipment.floorId, value => setItem('floorId', value))}</label><div className="field-pair">{itemField('X, ед. PDF', 'x', true)}{itemField('Y, ед. PDF', 'y', true)}</div>{itemField('Высота от пола, м', 'height', true)}<p className="help">Пустая высота означает неизвестное значение. Для подводов кабеля задайте высоту явно, в том числе 0.</p><div className="section-label">Фотографии <span>{equipment.photos?.length || 0}</span></div><div className="photo-strip">{(equipment.photos || []).map(key => photoUrls[key] ? <div className="photo-card" key={key}><img src={photoUrls[key]} alt={`Фото ${equipment.number}`} /><button aria-label="Удалить фото" onClick={() => removePhoto(key)}>×</button></div> : null)}<button className="photo-add" onClick={() => photoInput.current?.click()}>＋ Фото</button><button className="photo-add" onClick={() => cameraInput.current?.click()}>📷 Снять</button></div><p className="help">Снимок монтажа хранится в проекте и попадает в JSON-копию вместе с PDF-планами.</p><details><summary>Дополнительные свойства</summary>{Object.entries(equipment.properties).map(([key, value]) => field(key, value, v => setItem('properties', { ...equipment.properties, [key]: v })))}<button onClick={() => { const key = window.prompt('Название свойства'); if (key) setItem('properties', { ...equipment.properties, [key]: '' }); }}>＋ Свойство</button></details></>}
       {route && <><div className="section-label">Сегменты <span>{route.segments.length}</span></div><p className="help">Вершины тянутся на плане. Координаты и высоты можно задать точно ниже. При ручном изменении согласуйте соседние вершины.</p>{route.segments.map((s, index) => <details className="segment-editor" key={s.id}><summary>Сегмент {route.number}.{index + 1} {s.a.floorId !== s.b.floorId ? ' · стояк ↕' : ''}</summary><label className="field">Геометрия<select value={s.mode} onChange={e => mutate(p => { p.routes.find(r => r.id === route.id)!.segments.find(segment => segment.id === s.id)!.mode = e.target.value as Segment['mode']; })}><option value="orthogonal">Ортогональная</option><option value="spatial">Пространственная</option></select></label>{(['a', 'b'] as const).map(end => <div className="endpoint" key={end}><strong>{end === 'a' ? 'Начало' : 'Конец'}</strong><label className="field">Этаж{floorSelect(s[end].floorId, value => segmentField(s, end, 'floorId', value))}</label><div className="field-pair">{field('X', s[end].x, v => segmentField(s, end, 'x', Number(v)), true)}{field('Y', s[end].y, v => segmentField(s, end, 'y', Number(v)), true)}</div>{field('Высота, м', s[end].height, v => segmentField(s, end, 'height', v === '' ? null : Number(v)), true)}</div>)}<div className="field-pair">{field('Запас, %', s.reservePercent, v => mutate(p => { p.routes.find(r => r.id === route.id)!.segments.find(seg => seg.id === s.id)!.reservePercent = Number(v); }), true)}{field('Запас, м', s.reserveFixed, v => mutate(p => { p.routes.find(r => r.id === route.id)!.segments.find(seg => seg.id === s.id)!.reserveFixed = Number(v); }), true)}</div><button className="danger" onClick={() => { const linked = project.cables.filter(c => c.segmentIds.includes(s.id)); if (window.confirm(`Удалить сегмент? ${linked.length ? `Связанных кабелей: ${linked.length}. Они будут удалены.` : ''}`)) mutate(p => { p.routes.find(r => r.id === route.id)!.segments = p.routes.find(r => r.id === route.id)!.segments.filter(seg => seg.id !== s.id); p.cables = p.cables.filter(c => !c.segmentIds.includes(s.id)); }); }}>Удалить сегмент</button></details>)}<button className="wide" onClick={addRiser}>＋ Межэтажный стояк</button></>}

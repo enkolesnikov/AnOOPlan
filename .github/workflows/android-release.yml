@@ -53,6 +53,14 @@ jobs:
       - name: Дымовой тест интерфейса
         run: npm run smoke
 
+      - name: Кэш браузеров Playwright
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-v1
+          restore-keys: |
+            playwright-${{ runner.os }}-
+
       - name: Браузер для E2E
         run: npx playwright install --with-deps chromium
 
