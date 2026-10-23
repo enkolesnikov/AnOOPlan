@@ -320,8 +320,8 @@ export function domainWarnings(project: Project): string[] {
 
 export function validateProject(project: Project): string[] {
   const errors: string[] = [];
-  if (project.schemaVersion !== 1) errors.push('Неподдерживаемая версия проекта');
-  for (const [name, items] of [['этажа', project.floors], ['оборудования', project.equipment], ['трассы', project.routes], ['кабеля', project.cables]] as const) {
+  if (project.schemaVersion !== 1 && project.schemaVersion !== 2) errors.push('Неподдерживаемая версия проекта');
+  for (const [name, items] of [['этажа', project.floors], ['оборудования', project.equipment], ['трассы', project.routes], ['кабеля', project.cables], ['замечания', (project.pins ?? [])]] as const) {
     const seen = new Set<string>();
     for (const item of items) {
       if (!item.id || seen.has(item.id)) errors.push(`Пустой или повторяющийся ID ${name}: ${item.id}`);
@@ -343,6 +343,12 @@ export function validateProject(project: Project): string[] {
   uniqueFields(project.equipment, 'оборудования');
   uniqueFields(project.routes, 'трассы');
   uniqueFields(project.cables, 'кабеля');
+  uniqueFields(project.pins ?? [], 'замечания');
+  const floorIds = new Set(project.floors.map(floor => floor.id));
+  for (const pin of project.pins ?? []) {
+    if (!floorIds.has(pin.floorId)) errors.push(`Замечание ${pin.number}: этаж не найден`);
+    if (pin.status !== 'open' && pin.status !== 'closed') errors.push(`Замечание ${pin.number}: неизвестный статус`);
+  }
   for (const floor of project.floors) {
     if (!finite(floor.metersPerUnit) || floor.metersPerUnit <= 0) errors.push(`Этаж ${floor.name}: неизвестен или неверен масштаб`);
     if (!finite(floor.elevation)) errors.push(`Этаж ${floor.name}: неизвестна отметка`);

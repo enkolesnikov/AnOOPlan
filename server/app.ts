@@ -65,11 +65,11 @@ export function createApp(options?: { dataDir: string }) {
     const ids = [...new Set(project.floors.flatMap(f => f.pdfId ? [f.pdfId] : []))];
     const pdfs = ids.map(id => { const record = store.pdf(id); if (!record) throw new ApiError(409, `Отсутствует PDF: ${id}`); return { id, name: record.name, dataBase64: record.bytes.toString('base64') }; });
     res.setHeader('Content-Disposition', 'attachment; filename="project-backup.json"');
-    res.json({ schemaVersion: 1, project, pdfs });
+    res.json({ schemaVersion: 2, project, pdfs });
   });
   app.post('/api/restore', (req, res) => {
     const backup = req.body;
-    if (!backup || typeof backup !== 'object' || (backup.schemaVersion !== undefined && backup.schemaVersion !== 1) || !Array.isArray(backup.pdfs) || backup.pdfs.length > 1000) throw new ApiError(422, 'Некорректный backup');
+    if (!backup || typeof backup !== 'object' || (backup.schemaVersion !== undefined && backup.schemaVersion !== 1 && backup.schemaVersion !== 2) || !Array.isArray(backup.pdfs) || backup.pdfs.length > 1000) throw new ApiError(422, 'Некорректный backup');
     const ids = new Set<string>();
     const records: PdfRecord[] = backup.pdfs.map((raw: any) => {
       if (!raw || typeof raw.id !== 'string' || !raw.id.trim() || raw.id.length > 10000 || ids.has(raw.id) || typeof raw.name !== 'string' || raw.name.length > 10000) throw new ApiError(422, 'Некорректный или повторяющийся PDF ID');

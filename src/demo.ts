@@ -1,4 +1,4 @@
-import type { Project, Floor, Equipment, Route, Cable, Segment, Vertex } from './model';
+import type { Project, Floor, Equipment, Route, Cable, Segment, Vertex, Pin } from './model';
 
 let counter = 0;
 const uid = (): string => `demo-${(++counter)}-${Math.random().toString(36).slice(2, 8)}`;
@@ -119,14 +119,21 @@ export function createDemoProject(): Project {
     cable(uid(), 'Л4', 'Камера лестницы', 'КВК-П 2×0.75', 'Видеонаблюдение', byNumber('Ш1').id, byNumber('К4').id, [s5.id, s6.id, s7.id]),
   ];
 
+  const now = new Date().toISOString();
+  const pins: Pin[] = [
+    { id: uid(), number: 'З-1', floorId: f1.id, x: 300, y: 420, comment: 'Проверить высоту камеры и подвод кабеля.', status: 'open', photos: [], createdAt: now, updatedAt: now },
+    { id: uid(), number: 'З-2', floorId: f2.id, x: 500, y: 260, comment: 'Уточнить марку кабеля у заказчика.', status: 'closed', photos: [], createdAt: now, updatedAt: now },
+  ];
+
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
     id: uid(),
     name: 'Учебный проект',
     floors: [f1, f2],
     equipment: equipmentList,
     routes,
     cables,
-    updatedAt: new Date().toISOString(),
+    pins,
+    updatedAt: now,
   };
 }

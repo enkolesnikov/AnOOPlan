@@ -4,7 +4,7 @@ import type { Project } from './model';
  * Текущая версия схемы проекта. Пока это 1; каркас миграций нужен, чтобы
  * добавлять v2, v3 и т.д. без риска потерять старые проекты.
  */
-export const CURRENT_SCHEMA_VERSION = 1;
+export const CURRENT_SCHEMA_VERSION = 2;
 
 export class ProjectSchemaError extends Error {
   constructor(message: string) {
@@ -22,7 +22,9 @@ const isRecord = (value: unknown): value is RawProject =>
  * Миграции "с версии N на N+1". Пока пусто; при добавлении v2 сюда
  * кладётся функция 1 → 2, и migrateProject применит её к старым файлам.
  */
-const MIGRATIONS: Record<number, (project: RawProject) => RawProject> = {};
+const MIGRATIONS: Record<number, (project: RawProject) => RawProject> = {
+  1: project => ({ ...project, schemaVersion: 2, pins: [] }),
+};
 
 function normalizeFloor(value: unknown): Project['floors'][number] {
   if (!isRecord(value)) throw new ProjectSchemaError('В проекте повреждён список этажей.');
@@ -70,6 +72,24 @@ function normalizeRoute(value: unknown): Project['routes'][number] {
     segments: Array.isArray(value.segments) ? value.segments : [],
     note: typeof value.note === 'string' ? value.note : '',
   } as Project['routes'][number];
+}
+
+function normalizePin(value: unknown): Project['pins'][number] {
+  if (!isRecord(value)) throw new ProjectSchemaError('В проекте повреждён список замечаний.');
+  const status = value.status === 'closed' ? 'closed' : 'open';
+  const now = new Date().toISOString();
+  return {
+    id: String(value.id ?? ''),
+    number: typeof value.number === 'string' ? value.number : '',
+    floorId: String(value.floorId ?? ''),
+    x: Number(value.x) || 0,
+    y: Number(value.y) || 0,
+    comment: typeof value.comment === 'string' ? value.comment : '',
+    status,
+    photos: Array.isArray(value.photos) ? value.photos.filter((key): key is string => typeof key === 'string' && key.length > 0) : [],
+    createdAt: typeof value.createdAt === 'string' ? value.createdAt : now,
+    updatedAt: typeof value.updatedAt === 'string' ? value.updatedAt : now,
+  };
 }
 
 function normalizeCable(value: unknown): Project['cables'][number] {
@@ -126,13 +146,14 @@ export function migrateProject(input: unknown): Project {
   }
 
   const project: Project = {
-    schemaVersion: 1,
+    schemaVersion: 2,
     id: raw.id,
     name: typeof raw.name === 'string' && raw.name ? raw.name : 'Проект',
     floors: raw.floors.map(normalizeFloor),
     equipment: raw.equipment.map(normalizeEquipment),
     routes: raw.routes.map(normalizeRoute),
     cables: raw.cables.map(normalizeCable),
+    pins: Array.isArray(raw.pins) ? raw.pins.map(normalizePin) : [],
     updatedAt: typeof raw.updatedAt === 'string' ? raw.updatedAt : new Date().toISOString(),
   };
   if (isRecord(raw.document)) {

@@ -108,3 +108,28 @@ test('PDF-подложка попадает в лист «План» выгру�
   expect(result.stats.some(item => item.cyan > 100_000)).toBeTruthy();
   expect(pageErrors).toEqual([]);
 });
+
+test('замечание создаётся кликом на плане и редактируется', async ({ page }) => {
+  page.on('dialog', dialog => void dialog.accept());
+  await page.goto('/');
+  await expect(page.locator('.statusbar')).toContainText('БРАУЗЕР');
+  await page.locator('.command-actions button').filter({ hasText: 'Учебный проект' }).click();
+  await expect(page.locator('.statusbar')).toContainText('Учебный проект');
+
+  await page.locator('.drawing-options button[title="Замечание"]').click();
+  const stage = page.locator('.drawing-stage');
+  const box = await stage.boundingBox();
+  expect(box).toBeTruthy();
+  await page.mouse.click(box!.x + 50, box!.y + 50);
+  await expect(page.locator('.properties')).toContainText('ЗАМЕЧАНИЕ');
+  const pinNumber = await page.locator('.properties h2').innerText();
+
+  const pinsTab = page.locator('.structure-tabs button').filter({ hasText: 'Зам.' });
+  await pinsTab.click();
+  await expect(page.locator('.object-row[data-kind="pin"]')).toHaveCount(3);
+
+  const comment = page.locator('.properties textarea').first();
+  await comment.fill('Проверить крепление лотка');
+  await page.locator('.properties select').filter({ has: page.locator('option[value="closed"]') }).selectOption('closed');
+  await expect(page.locator('.object-row[data-kind="pin"]').filter({ hasText: pinNumber }).filter({ hasText: 'закрыто' })).toHaveCount(1);
+});

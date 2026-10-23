@@ -1,13 +1,12 @@
 import { useEffect, useState } from 'react';
-import type { Equipment } from './model';
 import { idbGet } from './idb';
 
 /** Миниатюры фотографий выбранного оборудования из IndexedDB. */
-export function usePhotoUrls(equipment: Equipment | undefined): Record<string, string> {
+export function usePhotoUrls(photos: string[] | undefined, ownerId: string | undefined): Record<string, string> {
   const [photoUrls, setPhotoUrls] = useState<Record<string, string>>({});
 
   useEffect(() => {
-    const keys = equipment?.photos || [];
+    const keys = photos || [];
     if (!keys.length) { setPhotoUrls({}); return; }
     let cancelled = false;
     const created: string[] = [];
@@ -26,7 +25,7 @@ export function usePhotoUrls(equipment: Equipment | undefined): Record<string, s
       setPhotoUrls(map);
     })();
     return () => { cancelled = true; created.forEach(url => URL.revokeObjectURL(url)); };
-  }, [equipment?.id, equipment?.photos?.length]);
+  }, [ownerId, photos?.length]);
 
   return photoUrls;
 }

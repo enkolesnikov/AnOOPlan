@@ -8,7 +8,7 @@ import type { JournalFonts } from './export-fonts';
 
 export interface JournalPhoto { number: string; name: string; data: ArrayBuffer; mime: string }
 export interface JournalPlan { title: string; png: Uint8Array }
-export interface JournalOptions { photos?: JournalPhoto[]; plans?: JournalPlan[] }
+export interface JournalOptions { photos?: JournalPhoto[]; pinPhotos?: JournalPhoto[]; plans?: JournalPlan[] }
 
 const PAGE = { width: 842, height: 595 };
 const MARGIN = 34;
@@ -205,9 +205,9 @@ class Renderer {
     this.y -= 18;
   }
 
-  async photos(items: JournalPhoto[]): Promise<void> {
+  async photos(items: JournalPhoto[], title = 'Фотографии оборудования'): Promise<void> {
     if (!items.length) return;
-    this.heading('Фотографии оборудования', `Снимков в проекте: ${items.length}. Форматы: JPEG и PNG.`);
+    this.heading(title, `Снимков в проекте: ${items.length}. Форматы: JPEG и PNG.`);
     const gap = 16;
     const cellWidth = (CONTENT - gap) / 2;
     const imageHeight = 200;
@@ -351,6 +351,26 @@ function buildSections(project: Project): Section[] {
       ],
       rows: specs.infrastructure.map(row => [row.type, formatNumber(row.length), String(row.segments), String(row.cables)]),
     },
+    {
+      title: 'Замечания',
+      note: 'Пины-замечания по этажам. Статус «закрыто» означает, что замечание отработано.',
+      columns: [
+        { title: '№', width: 44 },
+        { title: 'Этаж', width: 150 },
+        { title: 'X', width: 70, align: 'right' },
+        { title: 'Y', width: 70, align: 'right' },
+        { title: 'Замечание', width: 286 },
+        { title: 'Статус', width: 90 },
+      ],
+      rows: (project.pins ?? []).map(pin => [
+        pin.number,
+        project.floors.find(floor => floor.id === pin.floorId)?.name || '—',
+        formatNumber(pin.x),
+        formatNumber(pin.y),
+        pin.comment || '—',
+        pin.status === 'closed' ? 'закрыто' : 'открыто',
+      ]),
+    },
   ];
 }
 
@@ -381,6 +401,7 @@ export async function buildJournalPdf(project: Project, fonts: JournalFonts, opt
 
   await renderer.plans(options.plans ?? []);
   await renderer.photos(options.photos ?? []);
+  await renderer.photos(options.pinPhotos ?? [], 'Фотографии замечаний');
   renderer.totals(project);
   renderer.signatures(project);
   renderer.finish(project);

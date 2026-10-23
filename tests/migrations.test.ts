@@ -8,20 +8,34 @@ function project(): Project {
     schemaVersion: 1, id: 'p1', name: 'Проект', updatedAt: '2026-01-01T00:00:00Z',
     floors: [{ id: 'f1', name: 'Этаж', elevation: 0, metersPerUnit: 0.1, page: 1, width: 1000, height: 700 }],
     equipment: [{ id: 'e1', number: 'E1', name: 'Камера', type: 'Камера', floorId: 'f1', x: 1, y: 2, height: null, note: '', properties: {} }],
-    routes: [], cables: [],
+    routes: [], cables: [], pins: [],
   };
 }
 
-test('валидный проект v1 проходит миграцию без потери данных', () => {
+test('валидный проект v1 мигрирует в v2 без потери данных', () => {
   const source = project();
   const migrated = migrateProject(source);
-  assert.equal(migrated.schemaVersion, 1);
+  assert.equal(migrated.schemaVersion, 2);
   assert.equal(migrated.id, source.id);
   assert.deepEqual(migrated.floors, source.floors);
   assert.deepEqual(migrated.routes, source.routes);
   assert.deepEqual(migrated.cables, source.cables);
+  assert.deepEqual(migrated.pins, []);
   assert.deepEqual(migrated.equipment[0], { ...source.equipment[0], photos: [] });
-  assert.equal(CURRENT_SCHEMA_VERSION, 1);
+  assert.equal(CURRENT_SCHEMA_VERSION, 2);
+});
+
+test('проект v2 сохраняет пины и нормализует их поля', () => {
+  const source = JSON.parse(JSON.stringify(project())) as Record<string, unknown>;
+  source.schemaVersion = 2;
+  source.pins = [{ id: 'z1', number: 'З-1', floorId: 'f1', x: 10, y: 20, comment: 'Проверить', status: 'open', photos: ['p1'] }];
+  const migrated = migrateProject(source);
+  assert.equal(migrated.schemaVersion, 2);
+  assert.equal(migrated.pins.length, 1);
+  assert.equal(migrated.pins[0].number, 'З-1');
+  assert.equal(migrated.pins[0].status, 'open');
+  assert.deepEqual(migrated.pins[0].photos, ['p1']);
+  assert.ok(migrated.pins[0].createdAt);
 });
 
 test('старый JSON без schemaVersion и photos нормализуется', () => {
@@ -31,7 +45,7 @@ test('старый JSON без schemaVersion и photos нормализуетс�
   delete equipment.photos;
   equipment.note = undefined;
   const migrated = migrateProject(legacy);
-  assert.equal(migrated.schemaVersion, 1);
+  assert.equal(migrated.schemaVersion, 2);
   assert.deepEqual(migrated.equipment[0].photos, []);
   assert.equal(migrated.equipment[0].note, '');
 });

@@ -8,13 +8,14 @@ const segment = (id: string, a: Vertex, b: Vertex, extra: Partial<Segment> = {})
 const device = (id: string, x: number, height: number | null = 1, floorId = 'f1'): Equipment => ({ id, number: id, name: `Датчик ${id}`, type: 'Датчик', floorId, x, y: 0, height, note: '', properties: { model: 'Д-1' } });
 function fixture(): Project {
   return {
-    schemaVersion: 1, id: 'p', name: 'Тест', updatedAt: '2026-01-01T00:00:00Z',
+    schemaVersion: 2, id: 'p', name: 'Тест', updatedAt: '2026-01-01T00:00:00Z',
     floors: [
       { id: 'f1', name: 'Первый', elevation: 0, metersPerUnit: 0.1, page: 1, width: 1000, height: 700 },
       { id: 'f2', name: 'Второй', elevation: 4, metersPerUnit: 0.1, page: 2, width: 1000, height: 700 },
     ],
     equipment: [device('a', 0), device('b', 100)],
     routes: [{ id: 'r', number: 'Т1', type: 'Лоток', note: '', segments: [segment('s', vertex('v1', 0), vertex('v2', 100))] }],
+    pins: [],
     cables: [{ id: 'c', number: 'К1', name: 'Линия', brand: 'ВВГ', purpose: '', fromId: 'a', toId: 'b', segmentIds: ['s'], reservePercent: 0, reserveFixed: 0, startReserve: 0, endReserve: 0, quantity: 1, note: '' }],
   };
 }

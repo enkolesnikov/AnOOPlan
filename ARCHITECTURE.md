@@ -17,7 +17,8 @@ interface Vertex { id:string; floorId:string; x:number; y:number; height:number|
 interface Segment { id:string; a:Vertex; b:Vertex; mode:'orthogonal'|'spatial'; reservePercent:number; reserveFixed:number }
 interface Route { id:string; number:string; type:string; segments:Segment[]; note:string }
 interface Cable { id:string; number:string; name:string; brand:string; purpose:string; fromId:string; toId:string; segmentIds:string[]; reservePercent:number; reserveFixed:number; startReserve:number; endReserve:number; quantity:number; note:string }
-interface Project { schemaVersion:1; id:string; name:string; floors:Floor[]; equipment:Equipment[]; routes:Route[]; cables:Cable[]; updatedAt:string }
+interface Pin { id:string; number:string; floorId:string; x:number; y:number; comment:string; status:'open'|'closed'; photos?:string[]; createdAt:string; updatedAt:string }
+interface Project { schemaVersion:1|2; id:string; name:string; floors:Floor[]; equipment:Equipment[]; routes:Route[]; cables:Cable[]; pins:Pin[]; updatedAt:string }
 ```
 
 Сегменты связаны совпадающими координатами и этажом с допуском 1e-6; height также совпадает. Кабель содержит упорядоченный список ID сегментов, каждый физический сегмент допускается один раз. Направление сегмента определяется обходом цепочки. Концы кабеля должны совпадать в плане с началом/концом цепочки на соответствующем этаже; вертикальные подводы от высоты оборудования до высоты трассы учитываются отдельно. Межэтажный сегмент разрешён только при совпадающих x,y (общая система координат этажей), учитывает отметки полов. Неизвестные высоты/масштаб и разрывы означают неполный расчёт; итог null.

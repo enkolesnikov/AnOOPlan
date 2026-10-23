@@ -21,7 +21,7 @@ export function referencedStorageKeys(projects: Iterable<Project>): ReferencedKe
         if (key) pdfs.add(key);
       }
     }
-    for (const item of project.equipment) {
+    for (const item of [...project.equipment, ...(project.pins ?? [])]) {
       for (const key of item.photos || []) if (key) photos.add(key);
     }
   }

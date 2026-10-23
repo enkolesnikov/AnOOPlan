@@ -437,6 +437,36 @@ const accessiblePlan = document.querySelector('.sr-only')?.textContent || '';
 check(accessiblePlan.includes('Объекты на плане'), 'есть текстовая альтернатива плана для скринридера');
 check(/[A-ZА-Я]\d+/.test(accessiblePlan), 'в текстовой альтернативе перечислено оборудование');
 
+const pinsTab = Array.from(document.querySelectorAll('.structure-tabs button')).find(button => (button.textContent || '').includes('Зам.'));
+check(Boolean(pinsTab), 'вкладка «Зам.» доступна');
+if (pinsTab) {
+  pinsTab.click();
+  await sleep(200);
+  const pinRow = document.querySelector('.object-row[data-kind="pin"]');
+  check(Boolean(pinRow), 'в демо-проекте есть замечания');
+  if (pinRow) {
+    pinRow.click();
+    await sleep(200);
+    const pinProperties = document.querySelector('.properties')?.textContent || '';
+    check(pinProperties.includes('ЗАМЕЧАНИЕ'), 'открылись свойства замечания');
+    const pinComment = Array.from(document.querySelectorAll('.properties textarea'))[0];
+    if (pinComment) {
+      pinComment.value = 'Проверить крепление лотка';
+      pinComment.dispatchEvent(new window.Event('input', { bubbles: true }));
+      await sleep(150);
+      check(pinComment.value === 'Проверить крепление лотка', 'текст замечания сохраняется');
+    }
+    const pinStatus = Array.from(document.querySelectorAll('.properties select')).find(select => Array.from(select.options).some(option => option.value === 'closed'));
+    if (pinStatus) {
+      pinStatus.value = 'closed';
+      pinStatus.dispatchEvent(new window.Event('change', { bubbles: true }));
+      await sleep(150);
+      const updatedRow = document.querySelector('.object-row[data-kind="pin"]');
+      check((updatedRow?.textContent || '').includes('закрыто'), 'статус замечания переключается');
+    }
+  }
+}
+
 const undoButton = buttons().find(button => (button.getAttribute('title') || '').includes('Отменить'));
 check(Boolean(undoButton), 'кнопка «Отменить» присутствует в панели инструментов');
 check(Boolean(buttons().find(button => (button.getAttribute('title') || '').includes('Повторить'))), 'кнопка «Повторить» присутствует');

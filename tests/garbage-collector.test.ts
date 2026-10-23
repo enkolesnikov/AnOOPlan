@@ -6,10 +6,10 @@ import { collectStorageGarbage } from '../src/garbage-collector';
 import { idbDelete, idbGet, idbPut } from '../src/idb';
 
 const project = (pdf: string, photo: string): Project => ({
-  schemaVersion: 1, id: 'gc-test', name: 'GC', updatedAt: '2026-01-01T00:00:00Z',
+  schemaVersion: 2, id: 'gc-test', name: 'GC', updatedAt: '2026-01-01T00:00:00Z',
   floors: [{ id: 'f1', name: 'Этаж', elevation: 0, metersPerUnit: 1, page: 1, width: 1000, height: 700, pdfId: 'idb:' + pdf }],
   equipment: [{ id: 'e1', number: 'E1', name: 'Камера', type: 'Камера', floorId: 'f1', x: 0, y: 0, height: null, note: '', properties: {}, photos: [photo] }],
-  routes: [], cables: [],
+  routes: [], cables: [], pins: [],
 });
 
 test('GC удаляет PDF/фото, на которые нет ссылок, и сохраняет используемые', async () => {

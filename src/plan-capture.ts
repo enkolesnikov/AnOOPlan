@@ -166,6 +166,21 @@ export async function collectPlans(project: Project, onProgress?: (done: number,
   return { plans, warnings };
 }
 
+/** Фотографии замечаний для PDF, с подписями. */
+export async function collectPinPhotos(project: Project): Promise<JournalPhoto[]> {
+  const assets: JournalPhoto[] = [];
+  for (const pin of project.pins ?? []) {
+    for (const key of pin.photos || []) {
+      try {
+        const blob = await idbGet('photo:' + key);
+        if (!blob) continue;
+        assets.push({ number: pin.number, name: pin.comment || 'Замечание', data: await blob.arrayBuffer(), mime: blob.type || 'image/jpeg' });
+      } catch { /* фото недоступно — журнал всё равно выгружается */ }
+    }
+  }
+  return assets;
+}
+
 /** Фотографии оборудования для PDF, с подписями. */
 export async function collectPhotos(project: Project): Promise<JournalPhoto[]> {
   const assets: JournalPhoto[] = [];

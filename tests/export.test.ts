@@ -21,9 +21,9 @@ const fonts: JournalFonts = {
 };
 
 const emptyProject = (): Project => ({
-  schemaVersion: 1, id: 'p', name: 'Пустой проект', updatedAt: '2026-01-01T00:00:00Z',
+  schemaVersion: 2, id: 'p', name: 'Пустой проект', updatedAt: '2026-01-01T00:00:00Z',
   floors: [{ id: 'f1', name: 'Этаж 1', elevation: 0, metersPerUnit: 1, page: 1, width: 1000, height: 700 }],
-  equipment: [], routes: [], cables: [],
+  equipment: [], routes: [], cables: [], pins: [],
 });
 
 async function pdfText(bytes: Uint8Array): Promise<{ text: string; pages: number }> {
@@ -43,7 +43,7 @@ async function pdfText(bytes: Uint8Array): Promise<{ text: string; pages: number
 
 test('листы выгрузки совпадают по набору с серверными', () => {
   const sheets = exportSheets(createDemoProject());
-  assert.deepEqual(sheets.map(sheet => sheet.name), ['Кабельный журнал', 'Оборудование', 'Кабели', 'Инфраструктура', 'Предупреждения']);
+  assert.deepEqual(sheets.map(sheet => sheet.name), ['Кабельный журнал', 'Оборудование', 'Кабели', 'Инфраструктура', 'Замечания', 'Предупреждения']);
   const [journal, equipment] = sheets;
   assert.equal(journal.rows[0].length, 19);
   assert.equal(journal.rows.length, createDemoProject().cables.length + 1);
@@ -55,11 +55,14 @@ test('XLSX собирается в приложении и читается об
   const bytes = buildWorkbook(exportSheets(project));
   assert.ok(bytes.length > 5000, `файл неожиданно маленький: ${bytes.length}`);
   const workbook = XLSX.read(bytes, { type: 'array' });
-  assert.deepEqual(workbook.SheetNames, ['Кабельный журнал', 'Оборудование', 'Кабели', 'Инфраструктура', 'Предупреждения']);
+  assert.deepEqual(workbook.SheetNames, ['Кабельный журнал', 'Оборудование', 'Кабели', 'Инфраструктура', 'Замечания', 'Предупреждения']);
   const rows = XLSX.utils.sheet_to_json<Record<string, string>>(workbook.Sheets['Кабельный журнал'], { defval: '' });
   assert.equal(rows.length, project.cables.length);
   assert.ok(rows.some(row => row['Номер'] === project.cables[0].number));
   assert.ok(rows.every(row => 'Итог одного, м' in row));
+  const pins = XLSX.utils.sheet_to_json<Record<string, string>>(workbook.Sheets['Замечания'], { defval: '' });
+  assert.equal(pins.length, project.pins.length);
+  assert.ok(pins.some(row => row['Номер'] === project.pins[0].number));
 });
 
 test('PDF журнала собирается офлайн с кириллицей и встроенным шрифтом', async () => {
@@ -75,6 +78,8 @@ test('PDF журнала собирается офлайн с кириллице
   assert.ok(text.includes('Кабельный журнал'), 'нет заголовка журнала');
   assert.ok(text.includes(project.cables[0].number), 'нет номера кабеля');
   assert.ok(text.includes('Оборудование'), 'нет ведомости оборудования');
+  assert.ok(text.includes('Замечания'), 'нет ведомости замечаний');
+  assert.ok(text.includes(project.pins[0].number), 'нет номера замечания');
   assert.ok(text.includes('Итого, м'), 'нет колонки итога');
   assert.ok(text.includes('полный') || text.includes('неполный'), 'нет статуса расчёта');
   assert.ok(!text.includes('\uFFFD'), 'в тексте есть неизвестные глифы');

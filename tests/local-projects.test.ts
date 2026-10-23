@@ -9,8 +9,8 @@ function storage(): ProjectStorage & { data: Map<string, string> } {
 }
 
 const project = (id: string, name = id): Project => ({
-  schemaVersion: 1, id, name, updatedAt: '2026-01-01T00:00:00Z',
-  floors: [], equipment: [], routes: [], cables: [],
+  schemaVersion: 2, id, name, updatedAt: '2026-01-01T00:00:00Z',
+  floors: [], equipment: [], routes: [], cables: [], pins: [],
 });
 
 test('проекты сохраняются, обновляются и удаляются', () => {

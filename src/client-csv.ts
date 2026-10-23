@@ -16,6 +16,8 @@ export function clientCsv(project: Project): string {
   for (const group of specs.equipment) rows.push([group.type, group.model, group.floor, group.quantity]);
   rows.push([]); rows.push(['Кабели (сводно)']); rows.push(['Марка', 'Линий', 'Геометрия, м', 'Итого, м']);
   for (const group of specs.cables) rows.push([group.brand, group.lines, group.geometry, group.total]);
+  rows.push([]); rows.push(['Замечания']); rows.push(['Номер', 'Этаж', 'X', 'Y', 'Замечание', 'Статус']);
+  for (const pin of project.pins ?? []) rows.push([pin.number, project.floors.find(floor => floor.id === pin.floorId)?.name || '', pin.x, pin.y, pin.comment, pin.status === 'closed' ? 'закрыто' : 'открыто']);
   rows.push([]); rows.push(['Инфраструктура']); rows.push(['Тип', 'Длина, м', 'Сегментов', 'Кабелей']);
   for (const group of specs.infrastructure) rows.push([group.type, group.length, group.segments, group.cables]);
   const cell = (value: string | number | null) => {

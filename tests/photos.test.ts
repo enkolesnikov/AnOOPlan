@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import type { Equipment, Project } from '../src/model';
+import type { Equipment, Pin, Project } from '../src/model';
 import { orphanPhotoKeys, purgePhotoBlobs } from '../src/photos';
 
 const device = (id: string, photos: string[]): Equipment => ({
@@ -8,12 +8,14 @@ const device = (id: string, photos: string[]): Equipment => ({
   x: 0, y: 0, height: null, note: '', properties: {}, photos,
 });
 
+const pin = (id: string, photos: string[]): Pin => ({ id, number: 'З-' + id, floorId: 'f1', x: 1, y: 2, comment: '', status: 'open', photos, createdAt: '2026-01-01T00:00:00Z', updatedAt: '2026-01-01T00:00:00Z' });
+
 function fixture(): Project {
   return {
-    schemaVersion: 1, id: 'p', name: 'Фото', updatedAt: '2026-01-01T00:00:00Z',
+    schemaVersion: 2, id: 'p', name: 'Фото', updatedAt: '2026-01-01T00:00:00Z',
     floors: [{ id: 'f1', name: 'Этаж 1', elevation: 0, metersPerUnit: 0.1, page: 1, width: 1000, height: 700 }],
     equipment: [device('e1', ['a', 'b']), device('e2', ['c']), device('e3', ['b', 'd'])],
-    routes: [], cables: [],
+    routes: [], cables: [], pins: [pin('z1', ['z1'])],
   };
 }
 
@@ -46,4 +48,9 @@ test('очистка удаляет блобы с префиксом photo: и �
   });
   assert.deepEqual(deleted, ['photo:a', 'photo:bad', 'photo:b']);
   assert.equal(removed, 2);
+});
+
+test('удаление замечания возвращает его фото-ключи', () => {
+  const p = fixture();
+  assert.deepEqual(orphanPhotoKeys(p, ['z1']), ['z1']);
 });

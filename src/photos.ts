@@ -12,7 +12,7 @@ export function orphanPhotoKeys(project: Project, equipmentIds: Iterable<string>
   const kept = new Set<string>();
   const candidates = new Set<string>();
 
-  for (const item of project.equipment) {
+  for (const item of [...project.equipment, ...(project.pins ?? [])]) {
     const keys = item.photos || [];
     for (const key of keys) {
       if (!key) continue;

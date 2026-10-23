@@ -11,13 +11,14 @@ import type { Project } from '../src/model.js';
 const originalPdf = Buffer.from('%PDF-1.4\n% synthetic integration fixture\n%%EOF');
 function fixture(): Project {
   return {
-    schemaVersion: 1, id: 'project-1', name: 'Синтетический тест', updatedAt: '2025-01-01T00:00:00.000Z',
+    schemaVersion: 2, id: 'project-1', name: 'Синтетический тест', updatedAt: '2025-01-01T00:00:00.000Z',
     floors: [{ id: 'floor-1', name: 'Первый этаж', elevation: 0, metersPerUnit: 1, page: 1, width: 100, height: 100 }],
     equipment: [
       { id: 'equipment-1', number: 'Ш1', name: 'Щит', type: 'Щит', floorId: 'floor-1', x: 0, y: 0, height: 0, note: '', properties: {} },
       { id: 'equipment-2', number: 'П1', name: 'Прибор', type: 'Прибор', floorId: 'floor-1', x: 3, y: 0, height: 0, note: '', properties: {} },
     ],
     routes: [{ id: 'route-1', number: 'Т1', type: 'Лоток', note: '', segments: [{ id: 'segment-1', a: { id: 'v1', floorId: 'floor-1', x: 0, y: 0, height: 0 }, b: { id: 'v2', floorId: 'floor-1', x: 3, y: 0, height: 0 }, mode: 'orthogonal', reservePercent: 0, reserveFixed: 0 }] }],
+    pins: [],
     cables: [{ id: 'cable-1', number: 'К1', name: 'Кабель', brand: 'ВВГ', purpose: 'Питание', fromId: 'equipment-1', toId: 'equipment-2', segmentIds: ['segment-1'], reservePercent: 0, reserveFixed: 0, startReserve: 0, endReserve: 0, quantity: 2, note: '' }],
   };
 }
@@ -66,6 +67,7 @@ test('engineering incompleteness is saved; malformed structure, references and d
       p => { p.floors[0].pdfId = 'missing'; },
       p => { p.cables[0].quantity = -1; },
       p => { p.routes[0].segments[0].b.id = 'v1'; },
+      p => { const pin = { id: 'pin-1', number: 'З-1', floorId: 'floor-1', x: 0, y: 0, comment: '', status: 'open' as const, photos: [], createdAt: '', updatedAt: '' }; p.pins = [pin, { ...pin, id: 'pin-2' }]; },
     ];
     for (const mutate of cases) { const invalid = fixture(); mutate(invalid); assert.equal((await h.request('/api/projects/project-1', 'PUT', invalid)).status, 422); }
     assert.equal((await h.request('/api/projects/project-1', 'PUT', { ...fixture(), id: 'other' })).status, 422);
@@ -107,7 +109,7 @@ test('exports contain journal and specifications, BOM CSV, workbook sheets and P
     const text = bytes.toString('utf8'); assert.match(text, /Кабельный журнал/); assert.match(text, /Инфраструктура/); assert.match(text, /ВВГ/); assert.match(text, /'\=1\+1/);
     const workbookResponse = await h.request('/api/projects/project-1/export?format=xlsx'); assert.equal(workbookResponse.status, 200);
     const wb = XLSX.read(Buffer.from(await workbookResponse.arrayBuffer()), { type: 'buffer' });
-    assert.equal(wb.SheetNames.length, 5); assert.ok(wb.SheetNames.includes('Кабельный журнал'));
+    assert.equal(wb.SheetNames.length, 6); assert.ok(wb.SheetNames.includes('Кабельный журнал'));
     const journal = XLSX.utils.sheet_to_json<any[]>(wb.Sheets['Кабельный журнал'], { header: 1 });
     assert.equal(journal[1][12], 3); assert.equal(journal[1][13], 6);
     const result = await h.request('/api/projects/project-1/export?format=pdf');

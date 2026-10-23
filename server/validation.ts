@@ -23,13 +23,14 @@ const array = (value: unknown, at: string): any[] => {
 /** Structural/reference errors prevent writes; engineering incompleteness does not. */
 export function assertProject(input: unknown, pdfExists: (id: string) => boolean): asserts input is Project {
   const p = object(input, 'project');
-  if (p.schemaVersion !== 1) fail('Неподдерживаемая schemaVersion');
+  if (p.schemaVersion !== 1 && p.schemaVersion !== 2) fail('Неподдерживаемая schemaVersion');
   text(p.id, 'project.id', true); text(p.name, 'project.name'); text(p.updatedAt, 'updatedAt');
   const ids = new Set<string>();
   const claim = (id: unknown, at: string) => { text(id, at, true); if (ids.has(id as string)) fail(`Повтор ID: ${id}`); ids.add(id as string); };
   claim(p.id, 'project.id');
   const floors = array(p.floors, 'floors'); const equipment = array(p.equipment, 'equipment');
   const routes = array(p.routes, 'routes'); const cables = array(p.cables, 'cables');
+  const pins = p.schemaVersion === 2 ? array(p.pins, 'pins') : [];
   const floorIds = new Set<string>(); const equipmentIds = new Set<string>(); const segmentIds = new Set<string>();
   const uniqueNumbers = (items: any[], at: string) => {
     const seen = new Set<string>();
@@ -43,7 +44,7 @@ export function assertProject(input: unknown, pdfExists: (id: string) => boolean
     number(f.width, 'floor.width', false, 0); number(f.height, 'floor.height', false, 0);
     if (f.pdfId !== undefined) { text(f.pdfId, 'floor.pdfId', true); if (!f.pdfId.startsWith('data:') && !f.pdfId.startsWith('idb:') && !pdfExists(f.pdfId)) fail(`PDF не найден: ${f.pdfId}`); }
   }
-  uniqueNumbers(equipment, 'equipment'); uniqueNumbers(routes, 'routes'); uniqueNumbers(cables, 'cables');
+  uniqueNumbers(equipment, 'equipment'); uniqueNumbers(routes, 'routes'); uniqueNumbers(cables, 'cables'); uniqueNumbers(pins, 'pins');
   const uniqueNames = (items: any[], at: string) => {
     const seen = new Set<string>();
     for (const item of items) { object(item, at); text(item.name, `${at}.name`); const n = item.name.trim(); if (n && seen.has(n)) fail(`Повтор имени ${at}: ${n}`); if (n) seen.add(n); }
@@ -53,6 +54,13 @@ export function assertProject(input: unknown, pdfExists: (id: string) => boolean
     text(v.floorId, `${at}.floorId`, true); if (!floorIds.has(v.floorId)) fail(`Этаж не найден: ${v.floorId}`);
     number(v.x, `${at}.x`); number(v.y, `${at}.y`); number(v.height, `${at}.height`, true, 0);
   };
+  for (const pin of pins) {
+    object(pin, 'pin'); claim(pin.id, 'pin.id'); text(pin.number, 'pin.number'); text(pin.comment, 'pin.comment');
+    if (pin.status !== 'open' && pin.status !== 'closed') fail('pin.status: ожидается open или closed');
+    text(pin.floorId, 'pin.floorId', true); if (!floorIds.has(pin.floorId)) fail(`Этаж не найден: ${pin.floorId}`);
+    number(pin.x, 'pin.x'); number(pin.y, 'pin.y');
+    for (const photo of array(pin.photos ?? [], 'pin.photos')) text(photo, 'pin.photos[]', true);
+  }
   for (const e of equipment) {
     claim(e.id, 'equipment.id'); equipmentIds.add(e.id); text(e.name, 'equipment.name'); text(e.type, 'equipment.type'); text(e.note, 'equipment.note'); position(e, 'equipment');
     const props = object(e.properties, 'equipment.properties'); for (const [k, v] of Object.entries(props)) { text(k, 'property key'); text(v, 'property value'); }
