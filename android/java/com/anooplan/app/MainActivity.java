@@ -114,12 +114,14 @@ public class MainActivity extends Activity implements NativeBridge.Host {
             String[] accept = params.getAcceptTypes();
             boolean wantsPdf = false;
             boolean wantsJson = false;
+            boolean wantsImage = false;
             if (accept != null) {
                 for (String type : accept) {
                     if (type == null) continue;
                     String value = type.toLowerCase();
                     if (value.contains("pdf")) wantsPdf = true;
                     else if (value.contains("json")) wantsJson = true;
+                    else if (value.startsWith("image/")) wantsImage = true;
                 }
             }
 
@@ -129,6 +131,9 @@ public class MainActivity extends Activity implements NativeBridge.Host {
             if (wantsPdf && !wantsJson) {
                 intent.setType("application/pdf");
                 intent.putExtra(Intent.EXTRA_MIME_TYPES, new String[]{"application/pdf"});
+            } else if (wantsImage && !wantsJson) {
+                // Фото оборудования: только изображения.
+                intent.setType("image/*");
             } else {
                 // JSON и прочие файлы: показываем все документы, проверка формата — в приложении.
                 intent.setType("*/*");

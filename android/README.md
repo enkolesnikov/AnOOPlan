@@ -22,8 +22,8 @@ android/
    в режим хранения «Браузер» (`staticMode`).
 3. Зачем защищённый origin, а не `file://`: на `file://` в WebView недоступны `IndexedDB`
    (хранение PDF-планов) и `crypto.randomUUID()`; `https://` даёт полноценный secure context.
-4. `onShowFileChooser` открывает системный `ACTION_OPEN_DOCUMENT`, поэтому «Загрузить PDF»
-   и «Загрузить JSON» работают без разрешений на хранилище.
+4. `onShowFileChooser` открывает системный `ACTION_OPEN_DOCUMENT`, поэтому «Загрузить PDF»,
+   «Загрузить JSON» и фото оборудования (`image/*`) работают без разрешений на хранилище.
 5. `src/export-xlsx.ts`, `src/export-pdf.ts` и `src/export-fonts.ts` собирают Excel и PDF прямо
    в WebView (pdf-lib + PT Sans из `src/assets/fonts`), поэтому сервер для экспорта не нужен;
    `NativeBridge.saveFile(name, base64, mime)` пишет готовый файл в `Download/AnOOPlan` через

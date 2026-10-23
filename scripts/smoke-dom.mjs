@@ -255,6 +255,53 @@ if (row) {
 }
 check(vibrations > 0, 'тактильный отклик вызван через мост');
 
+console.log('\n7b. Жест масштабирования не должен создавать оборудование');
+const stage = document.querySelector('.drawing-stage');
+const equipmentTool = Array.from(document.querySelectorAll('.drawing-toolbar button')).find(button => (button.textContent || '').includes('Оборудование'));
+check(Boolean(equipmentTool), 'инструмент «Оборудование» найден');
+if (equipmentTool) equipmentTool.click();
+await sleep(120);
+const equipmentCount = () => document.querySelectorAll('[data-object="equipment"]').length;
+const pointer = (type, id, x, y) => stage.dispatchEvent(new window.PointerEvent(type, { bubbles: true, cancelable: true, clientX: x, clientY: y, pointerId: id, pointerType: 'touch' }));
+const beforePinch = equipmentCount();
+const sheetStyle = () => document.querySelector('.drawing-sheet')?.getAttribute('style') || '';
+const beforeStyle = sheetStyle();
+pointer('pointerdown', 1, 120, 200);
+pointer('pointerdown', 2, 220, 300);
+pointer('pointermove', 1, 100, 180);
+pointer('pointermove', 2, 240, 320);
+pointer('pointerup', 1, 100, 180);
+pointer('pointerup', 2, 240, 320);
+await sleep(200);
+check(equipmentCount() === beforePinch, `двухпальцевый жест не создал оборудование (${beforePinch} → ${equipmentCount()})`);
+check(sheetStyle() !== beforeStyle, 'жест изменил масштаб или положение листа');
+pointer('pointerdown', 3, 150, 250);
+await sleep(40);
+pointer('pointerup', 3, 150, 250);
+await sleep(250);
+check(equipmentCount() === beforePinch + 1, `одиночный тап создал оборудование (${beforePinch} → ${equipmentCount()})`);
+const propertiesText = document.querySelector('.properties')?.textContent || '';
+check(propertiesText.includes('Фотографии'), 'в свойствах оборудования есть блок «Фотографии»');
+check(Boolean(document.querySelector('.photo-add')), 'кнопка «＋ Фото» доступна');
+
+console.log('\n7c. Рулетка');
+const measureTool = Array.from(document.querySelectorAll('.drawing-toolbar button')).find(button => (button.textContent || '').includes('Рулетка'));
+check(Boolean(measureTool), 'кнопка «Рулетка» есть в панели инструментов');
+if (measureTool) {
+  measureTool.click();
+  await sleep(120);
+  pointer('pointerdown', 4, 100, 100);
+  await sleep(30);
+  pointer('pointerup', 4, 100, 100);
+  await sleep(80);
+  pointer('pointerdown', 5, 200, 100);
+  await sleep(30);
+  pointer('pointerup', 5, 200, 100);
+  await sleep(150);
+  const status = document.querySelector('.statusbar')?.textContent || '';
+  check(/Рулетка: .+ (м|ед\.)/.test(status), `рулетка показала расстояние: ${status.slice(0, 140)}`);
+}
+
 console.log('\n8. Выход с сохранением (кнопка «Назад» в Android)');
 const saveAndExit = window.__anooplanSaveAndExit;
 check(typeof saveAndExit === 'function', 'оболочке доступна функция saveAndExit');

@@ -1,6 +1,6 @@
 export interface Point { x:number; y:number }
 export interface Floor { id:string; name:string; elevation:number|null; metersPerUnit:number|null; pdfId?:string; page:number; width:number; height:number }
-export interface Equipment { id:string; number:string; name:string; type:string; floorId:string; x:number; y:number; height:number|null; note:string; properties:Record<string,string> }
+export interface Equipment { id:string; number:string; name:string; type:string; floorId:string; x:number; y:number; height:number|null; note:string; properties:Record<string,string>; photos?:string[] }
 export interface Vertex { id:string; floorId:string; x:number; y:number; height:number|null }
 export interface Segment { id:string; a:Vertex; b:Vertex; mode:'orthogonal'|'spatial'; reservePercent:number; reserveFixed:number }
 export interface Route { id:string; number:string; type:string; segments:Segment[]; note:string }
