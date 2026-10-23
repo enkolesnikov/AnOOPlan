@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { CSSProperties, PointerEvent as ReactPointerEvent } from 'react';
-import workerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
+import workerUrl from './pdf-worker?worker&url';
 import type { Project, Floor, Equipment, Route, Cable, Segment, Vertex, Point } from './model';
 import { calculateCable, specifications, validateProject, domainWarnings, chainEnds, findRoute } from './engine';
 import { createDemoProject } from './demo';
@@ -9,10 +9,11 @@ import type { JournalPhoto } from './export-pdf';
 import { planRender, fallbackPlan, needsClipping, type PlanRender } from './render-plan';
 import { buildPlanSvg } from './plan-svg';
 import { orphanPhotoKeys, purgePhotoBlobs } from './photos';
+import { createUuid as uid, cloneValue as clone, decodeImage, loadBitmap } from './compat';
 
-type PdfjsModule = typeof import('pdfjs-dist');
+type PdfjsModule = typeof import('pdfjs-dist/legacy/build/pdf.mjs');
 type PdfLoadingTask = ReturnType<PdfjsModule['getDocument']>;
-type PdfRenderTask = ReturnType<import('pdfjs-dist').PDFPageProxy['render']>;
+type PdfRenderTask = ReturnType<import('pdfjs-dist/legacy/build/pdf.mjs').PDFPageProxy['render']>;
 const SNAP_PX = 12;
 const SNAPSHOT_LIMIT = 20;
 // Бюджет пикселей подложки: A4-A3 рисуются целиком, A1-A0 — по видимой области.
@@ -29,8 +30,6 @@ const CABLE_SNAP_LIMIT = 100;
 type Selection = { kind: 'equipment' | 'route' | 'cable'; id: string } | null;
 type Tool = 'select' | 'pan' | 'equipment' | 'route' | 'calibrate' | 'cable' | 'measure';
 type View = 'plan' | 'journal' | 'specs';
-const uid = () => crypto.randomUUID();
-const clone = <T,>(value: T): T => structuredClone(value);
 const number = (value: unknown) => typeof value === 'number' && Number.isFinite(value) ? value.toLocaleString('ru-RU', { maximumFractionDigits: 3 }) : '—';
 const freshFloor = (name = 'Этаж 1'): Floor => ({ id: uid(), name, elevation: null, metersPerUnit: null, page: 1, width: 1000, height: 700 });
 const freshProject = (): Project => ({ schemaVersion: 1, id: uid(), name: 'Новый проект', floors: [freshFloor()], equipment: [], routes: [], cables: [], updatedAt: new Date().toISOString() });
@@ -421,7 +420,7 @@ export default function App() {
     let loadingTask: PdfLoadingTask | undefined;
     void (async () => {
       try {
-        const pdfjs = await import('pdfjs-dist');
+        const pdfjs = await import('pdfjs-dist/legacy/build/pdf.mjs');
         pdfjs.GlobalWorkerOptions.workerSrc = workerUrl;
         if (pdfId.startsWith('idb:')) {
           const blob = await idbGet(pdfId.slice(4));
@@ -913,7 +912,7 @@ export default function App() {
     const cell = (v: string | number | null) => {
       let text = v === null ? '' : String(v);
       if (typeof v === 'string' && /^[=+\-@\t\r]/.test(text)) text = `'${text}`;
-      return `"${text.replaceAll('"', '""')}"`;
+      return `"${text.split('"').join('""')}"`;
     };
     return '\uFEFF' + rows.map(r => r.map(cell).join(';')).join('\r\n');
   }
@@ -967,15 +966,15 @@ export default function App() {
   async function compressPhoto(file: File): Promise<Blob> {
     // Фото с телефона уменьшаем до 1600 px по длинной стороне: журнал не раздувается.
     try {
-      const bitmap = await createImageBitmap(file);
+      const bitmap = await loadBitmap(file);
       const maxSide = 1600;
       const scale = Math.min(1, maxSide / Math.max(bitmap.width, bitmap.height));
       const canvas = document.createElement('canvas');
       canvas.width = Math.max(1, Math.round(bitmap.width * scale));
       canvas.height = Math.max(1, Math.round(bitmap.height * scale));
       const context = canvas.getContext('2d');
-      if (!context) return file;
-      context.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+      if (!context) { bitmap.close(); return file; }
+      bitmap.draw(context, canvas.width, canvas.height);
       const blob = await new Promise<Blob | null>(resolve => canvas.toBlob(resolve, 'image/jpeg', 0.82));
       bitmap.close();
       return blob || file;
@@ -996,7 +995,7 @@ export default function App() {
       context.fillRect(0, 0, width, height);
       if (floorItem.pdfId) {
         try {
-          const pdfjs = await import('pdfjs-dist');
+          const pdfjs = await import('pdfjs-dist/legacy/build/pdf.mjs');
           pdfjs.GlobalWorkerOptions.workerSrc = workerUrl;
           const stored = floorItem.pdfId.startsWith('idb:') ? await idbGet(floorItem.pdfId.slice(4)) : null;
           const loading = stored
@@ -1016,7 +1015,7 @@ export default function App() {
       }
       const image = new Image();
       image.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(buildPlanSvg(projectRef.current, floorItem));
-      await image.decode();
+      await decodeImage(image);
       context.drawImage(image, 0, 0, width, height);
       const blob = await new Promise<Blob | null>(resolve => target.toBlob(resolve, 'image/png'));
       if (!blob) return null;

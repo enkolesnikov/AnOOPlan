@@ -31,8 +31,25 @@ await build({
   outfile: bundleFile,
   logLevel: 'error',
   loader: { '.css': 'empty' },
-  external: ['pdfjs-dist', 'pdfjs-dist/*'],
   plugins: [{
+    // PDF.js в smoke не рендерим: подложка демо-проекта недоступна без WebView.
+    // Заглушка повторяет публичный API, чтобы динамический импорт не падал в Node.
+    name: 'pdfjs-stub',
+    setup(b) {
+      b.onResolve({ filter: /^pdfjs-dist(\/|$)/ }, () => ({ path: 'pdfjs-stub', namespace: 'pdfjs-stub' }));
+      b.onLoad({ filter: /.*/, namespace: 'pdfjs-stub' }, () => ({
+        contents: "export default '';\nexport const GlobalWorkerOptions = { workerSrc: '' };\nexport function getDocument() { return { promise: Promise.reject(new Error('PDF.js отключён в smoke-тесте')), destroy() { return Promise.resolve(); } }; }\n",
+        loader: 'js',
+      }));
+    },
+  }, {
+    // Vite-специфичный импорт `?worker&url` заменяем на путь ассета.
+    name: 'worker-url',
+    setup(b) {
+      b.onResolve({ filter: /\?worker&url$/ }, args => ({ path: args.path.replace(/\?worker&url$/, ''), namespace: 'worker-url' }));
+      b.onLoad({ filter: /.*/, namespace: 'worker-url' }, () => ({ contents: 'export default "/assets/pdf-worker.js";', loader: 'js' }));
+    },
+  }, {
     // Vite-специфичный импорт `?url` заменяем на путь ассета.
     name: 'url-suffix',
     setup(b) {

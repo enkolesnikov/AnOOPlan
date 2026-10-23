@@ -5,9 +5,39 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="theme-color" content="#122936" />
     <title>AnOOPlan — кабельный план</title>
+    <style>
+      #webview-warning { position: fixed; inset: 0; z-index: 10000; display: flex; align-items: center; justify-content: center; padding: 24px; background: #122936; color: #f2f7f8; font: 16px/1.5 sans-serif; }
+      #webview-warning[hidden] { display: none; }
+      #webview-warning .card { max-width: 460px; background: #1b3a48; border: 1px solid #2f5d6e; border-radius: 16px; padding: 24px; }
+      #webview-warning h1 { margin: 0 0 12px; font-size: 20px; }
+      #webview-warning p { margin: 0 0 16px; }
+      #webview-warning button { width: 100%; padding: 12px; border: 0; border-radius: 10px; background: #2ea043; color: #fff; font-size: 16px; }
+    </style>
   </head>
   <body>
+    <div id="webview-warning" hidden>
+      <div class="card">
+        <h1>Обновите системный WebView</h1>
+        <p>AnOOPlan работает в Android System WebView. Установленная версия слишком старая: нужен Chrome/WebView 98 или новее (Android 7+).</p>
+        <p>Откройте Google Play → «Android System WebView» → «Обновить». На некоторых устройствах WebView обновляется вместе с Chrome.</p>
+        <button type="button" onclick="document.getElementById('webview-warning').hidden = true">Продолжить всё равно</button>
+      </div>
+    </div>
     <div id="root"></div>
+    <script>
+      // ES5-проверка до загрузки модулей: если WebView старый, показываем понятный экран,
+      // даже когда современный бандл не может выполниться.
+      (function () {
+        var match = /Chrome\/(\d+)/.exec(navigator.userAgent || '');
+        var old = match && Number(match[1]) < 98;
+        var missing = false;
+        try {
+          missing = !window.indexedDB || typeof Promise === 'undefined' ||
+            typeof URL.createObjectURL !== 'function' || !('flatMap' in Array.prototype);
+        } catch (error) { missing = true; }
+        if (old || missing) document.getElementById('webview-warning').hidden = false;
+      })();
+    </script>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

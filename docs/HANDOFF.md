@@ -12,7 +12,7 @@
 - Репозиторий: <https://github.com/enkolesnikov/AnOOPlan>
 - Релизы с APK: <https://github.com/enkolesnikov/AnOOPlan/releases>
 - Веб-версия (GitHub Pages): <https://enkolesnikov.github.io/AnOOPlan/>
-- Текущая версия: **1.6.1**, versionCode 8, APK ~1,7 МБ, `com.anooplan.app`, minSdk 24, targetSdk 34
+- Текущая версия: **1.7.0**, versionCode 9, APK ~1,7 МБ, `com.anooplan.app`, minSdk 24, targetSdk 34
 
 ## Стек и устройство
 
@@ -26,11 +26,11 @@
 | Рендер больших листов | `src/render-plan.ts` | бюджет 12 Мпикс, рендер видимой области для A1/A0 |
 | Оболочка Android | `android/java/com/anooplan/app/` | `MainActivity`, `AssetServer`, `NativeBridge`, `PdfPrinter` |
 | Сборка APK | `scripts/build-apk.sh` + `scripts/fetch-tools.sh` | aapt + javac + d8 + zipalign + apksigner, **без Gradle** |
-| Тесты | `tests/*.test.ts`, `scripts/smoke-dom.mjs` | 57 юнит-тестов + смоук интерфейса в happy-dom |
+| Тесты | `tests/*.test.ts`, `scripts/smoke-dom.mjs` | 62 юнит-теста + смоук интерфейса в happy-dom |
 
 ### Ключевые решения (не пересматривать без причины)
 
-1. **WebView вместо Kotlin-переписывания.** Одна кодовая база для сайта и APK, 57 тестов, быстрые итерации.
+1. **WebView вместо Kotlin-переписывания.** Одна кодовая база для сайта и APK, 62 теста, быстрые итерации.
    Kotlin оправдан только при ежедневном рисовании пером и листах A1+ — тогда начинать с порта `engine.ts` в KMP.
 2. **Статика отдаётся по origin `https://appassets.local/`** через `AssetServer.shouldInterceptRequest`.
    На `file://` не работают IndexedDB и `crypto.randomUUID()`. Запросы `/api/*` получают 404 → приложение
@@ -44,7 +44,7 @@
 
 ```bash
 npm ci                     # зависимости (Node 22.5+, проверено на 24)
-npm test                   # 57 тестов
+npm test                   # 62 теста
 npm run smoke              # смоук интерфейса (happy-dom)
 npm run build              # tsc --noEmit + vite build
 npm run build:apk          # tools/android.jar + tools/r8.jar → build/AnOOPlan-<версия>.apk
@@ -70,16 +70,15 @@ bash scripts/fetch-tools.sh # скачать android.jar и r8.jar (если too
 - **1.6.0** — отмена/повтор вынесены в плавающие кнопки, нумерация сегментов Т1.1, план этажа в PDF,
   доменные проверки (витая пара >100 м, нет цены, пустая трасса), сжатие фото.
 - **1.6.1** — фото-блобы `photo:*` удаляются вместе с оборудованием и этажом, без сирот в IndexedDB.
+- **1.7.0** — совместимость WebView: `build.target: es2019`, фолбэки `structuredClone`/`crypto.randomUUID`/
+  `createImageBitmap`/`image.decode`, legacy-сборка PDF.js, полифилл `Promise.withResolvers` в воркере, экран «Обновите WebView» (Chrome 98+).
 
 ## Известные проблемы и техдолг (P0 → P2)
 
 **P0**
-1. Совместимость WebView: Vite собирает под современный baseline (Chrome 107+), код использует
-   `structuredClone`, `crypto.randomUUID`, `createImageBitmap`, `image.decode`. На старых WebView не запустится.
-   Вариант: `build.target: 'es2019'` + фолбэки, либо поднять minSdk и показывать экран «обновите WebView».
-2. targetSdk 34 → для Play нужен 35+ (параметризовать `fetch-tools.sh` на platform-35).
-3. В APK нет экрана «О программе / Лицензии» — по OFL уведомление о PT Sans обязательно.
-4. `npm audit`: `pdfjs-dist` (есть фикс, обновить), `xlsx` 0.18.5 (фикса нет; используется на запись и в тестах).
+1. targetSdk 34 → для Play нужен 35+ (параметризовать `fetch-tools.sh` на platform-35).
+2. В APK нет экрана «О программе / Лицензии» — по OFL уведомление о PT Sans обязательно.
+3. `npm audit`: `pdfjs-dist` (есть фикс, обновить), `xlsx` 0.18.5 (фикса нет; используется на запись и в тестах).
 
 **P1**
 - План в PDF — только `floor.page`; для многостраничных этажей выгружать все страницы.
