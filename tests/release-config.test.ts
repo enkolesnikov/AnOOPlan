@@ -9,6 +9,7 @@ const read = (path: string) => readFileSync(join(root, path), 'utf8');
 test('release: backup выключен, WebView debugging только в debug-сборке', () => {
   const manifest = read('android/AndroidManifest.xml');
   assert.match(manifest, /android:allowBackup="false"/);
+  assert.match(manifest, /android:debuggable="false"/);
   const activity = read('android/java/com/anooplan/app/MainActivity.java');
   assert.match(activity, /ApplicationInfo\.FLAG_DEBUGGABLE/);
   assert.match(activity, /setWebContentsDebuggingEnabled\(debuggable\)/);

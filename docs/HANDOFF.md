@@ -12,7 +12,7 @@
 - Репозиторий: <https://github.com/enkolesnikov/AnOOPlan>
 - Релизы с APK: <https://github.com/enkolesnikov/AnOOPlan/releases>
 - Веб-версия (GitHub Pages): <https://enkolesnikov.github.io/AnOOPlan/>
-- Текущая версия: **1.9.0**, versionCode 15, APK ~1,8 МБ, `com.anooplan.app`, minSdk 24, targetSdk 35
+- Текущая версия: **1.9.1**, versionCode 16, APK ~1,8 МБ, `com.anooplan.app`, minSdk 24, targetSdk 35
 
 ## Стек и устройство
 
@@ -95,6 +95,9 @@ bash scripts/fetch-tools.sh # скачать platform-35, build-tools 35.0.0 и 
 - **1.9.0** — фоновый GC осиротевших PDF/фото с учётом undo/redo и снимков, журнал диагностики
   с экспортом, отключены WebView debugging и autobackup в release, подписанный release-workflow
   на GitHub Secrets без генерации ключа в CI.
+- **1.9.1** — исправлен порядок отключения WebView debugging (до создания WebView) и добавлен
+  явный `android:debuggable="false"`; на userdebug-эмуляторе devtools всё равно доступен,
+  на пользовательских сборках Android отключён.
 
 ## Известные проблемы и техдолг (P0 → P2)
 

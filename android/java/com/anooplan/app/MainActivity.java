@@ -59,6 +59,11 @@ public class MainActivity extends Activity implements NativeBridge.Host {
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
 
+        // Отладка WebView нужна только в debug-сборке: в релизе она открывает
+        // удалённый доступ к странице и хранилищу проекта. Вызываем до создания WebView.
+        boolean debuggable = (getApplicationInfo().flags & ApplicationInfo.FLAG_DEBUGGABLE) != 0;
+        WebView.setWebContentsDebuggingEnabled(debuggable);
+
         Window window = getWindow();
         // Android 15 (targetSdk 35) принудительно рисует приложение под системными панелями.
         // Отключаем «вписывание» и сами добавляем отступы WebView по insets.
@@ -108,11 +113,6 @@ public class MainActivity extends Activity implements NativeBridge.Host {
             // Приложение офлайн: не отправляем запросы в сервис безопасного просмотра.
             settings.setSafeBrowsingEnabled(false);
         }
-        // Отладка WebView нужна только в debug-сборке: в релизе она открывает
-        // удалённый доступ к странице и хранилищу проекта.
-        boolean debuggable = (getApplicationInfo().flags & ApplicationInfo.FLAG_DEBUGGABLE) != 0;
-        WebView.setWebContentsDebuggingEnabled(debuggable);
-
         webView.setWebViewClient(new AssetServer(this));
         webView.setWebChromeClient(new FileChooserClient());
         webView.addJavascriptInterface(new NativeBridge(this, this), "AnOOPlanNative");
