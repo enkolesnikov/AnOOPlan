@@ -118,7 +118,8 @@ Android-инструменты; JDK на VPS уже установлен. Есл
   **неподписанный** APK (`AnOOPlan-apk-unsigned`). Ключ в раннере не создаётся.
 - `.github/workflows/deploy.yml` — GitHub Pages.
 - `.github/workflows/android-release.yml` — по тегу `v*`: тесты, смоук, E2E, подписанный APK
-  из GitHub Secrets, проверка SHA-256 сертификата, GitHub Release, удаление keystore с раннера.
+  из GitHub Secrets, проверка SHA-256 сертификата, GitHub Release (описание берётся из сообщения
+  аннотированного тега), удаление keystore с раннера.
 
 Порядок релиза:
 
@@ -126,7 +127,8 @@ Android-инструменты; JDK на VPS уже установлен. Есл
    и `scripts/build-apk.sh` (`VERSION_NAME`, `VERSION_CODE`).
 2. Обновить `README.md` и этот файл, прогнать `npm test`, `npm run smoke`, `npm run test:ui`, `npm run build`.
 3. Закоммитить и запушить `main`; дождаться зелёного CI.
-4. Поставить аннотированный тег `vX.Y.Z` и запушить его — релиз соберёт workflow.
+4. Поставить **аннотированный** тег `vX.Y.Z` с описанием изменений и запушить его — релиз соберёт
+   workflow, а сообщение тега станет описанием GitHub Release (поэтому не пустой `Full Changelog`).
 5. Проверить, что в GitHub Release приложен APK и сертификат совпал с `ANDROID_CERT_SHA256`.
 
 Локальная подпись: `KS_PASS=... bash scripts/build-apk.sh` или пароль из `keystore/pass.txt`.
