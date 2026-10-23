@@ -101,7 +101,8 @@ const globals = {
   requestAnimationFrame: window.requestAnimationFrame.bind(window),
   cancelAnimationFrame: window.cancelAnimationFrame.bind(window),
   fetch: fetchStub,
-  indexedDB: window.indexedDB ?? { open: async () => { throw new Error('offline'); } },
+  // В эмуляции IndexedDB нет: бросаем синхронно, как это делает браузер при запрете хранилища.
+  indexedDB: window.indexedDB ?? { open: () => { throw new Error('offline'); } },
   URL: window.URL,
   Blob: window.Blob,
   File: window.File,
@@ -341,6 +342,14 @@ check(Boolean(document.querySelector('input[capture]')), 'поле съёмки 
 const exportForPrint = buttons().find(button => (button.textContent || '').includes('Экспорт / копия'));
 if (exportForPrint) exportForPrint.click();
 await sleep(150);
+const compiledInput = document.querySelector('.sheet-fields input');
+check(Boolean(compiledInput), 'в панели экспорта есть поле «Составил»');
+if (compiledInput) {
+  const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
+  setter.call(compiledInput, 'Иванов И.И.');
+  compiledInput.dispatchEvent(new window.Event('input', { bubbles: true }));
+  await sleep(150);
+}
 const printButton = buttons().find(button => (button.textContent || '').trim() === 'Печать A4');
 check(Boolean(printButton), 'кнопка «Печать A4» доступна в приложении');
 if (printButton) {
@@ -351,7 +360,47 @@ if (printButton) {
     const bytes = Buffer.from(printCalls[0].base64, 'base64');
     check(bytes.subarray(0, 5).toString() === '%PDF-', 'в печать ушёл корректный PDF');
     check(printCalls[0].name.length > 0, `имя задания: ${printCalls[0].name}`);
+    const pdfjs = await import('pdfjs-dist/legacy/build/pdf.mjs');
+    const document = await pdfjs.getDocument({ data: new Uint8Array(bytes), useSystemFonts: false }).promise;
+    let text = '';
+    for (let index = 1; index <= document.numPages; index += 1) {
+      const page = await document.getPage(index);
+      const content = await page.getTextContent();
+      text += content.items.map(item => ('str' in item ? item.str : '')).join(' ') + '\n';
+    }
+    await document.destroy();
+    check(text.includes('Составил') && text.includes('Иванов И.И.'), 'подпись составителя попала в PDF');
+    check(text.includes('Итого кабеля по журналу'), 'итог по смете попал в PDF');
   }
+}
+
+console.log('\n7g. Смета, журнал и история версий');
+const cablesTab = Array.from(document.querySelectorAll('.structure-tabs button')).find(button => (button.textContent || '').includes('Кабели'));
+if (cablesTab) cablesTab.click();
+await sleep(200);
+const cableRow = document.querySelector('.object-row[data-kind="cable"]');
+if (cableRow) cableRow.click();
+await sleep(200);
+const priceField = Array.from(document.querySelectorAll('.properties label')).find(label => (label.textContent || '').includes('Цена за метр'));
+check(Boolean(priceField), 'в свойствах кабеля есть поле «Цена за метр»');
+const journalTab = Array.from(document.querySelectorAll('.view-tabs button')).find(button => (button.textContent || '').includes('Журнал'));
+if (journalTab) journalTab.click();
+await sleep(250);
+const journalText = document.querySelector('.main-area')?.textContent || '';
+check(journalText.includes('Стоимость'), 'в журнале есть колонка стоимости');
+check(Boolean(document.querySelector('.document-summary')), 'под журналом выводится итог по метражу и стоимости');
+const exportForHistory = buttons().find(button => (button.textContent || '').includes('Экспорт / копия'));
+if (exportForHistory) exportForHistory.click();
+await sleep(150);
+const historyButton = buttons().find(button => (button.textContent || '').trim() === 'История версий');
+check(Boolean(historyButton), 'кнопка «История версий» доступна');
+if (historyButton) {
+  historyButton.click();
+  await sleep(300);
+  const sheet = document.querySelector('.sheet');
+  check(Boolean(sheet) && (sheet.textContent || '').includes('История версий'), 'панель истории версий открылась');
+  const makeSnapshot = buttons().find(button => (button.textContent || '').includes('Сделать снимок'));
+  check(Boolean(makeSnapshot), 'в истории есть кнопка снимка');
 }
 
 console.log('\n8. Выход с сохранением (кнопка «Назад» в Android)');

@@ -6,6 +6,9 @@ import type { Project } from './model';
 import { calculateCable, specifications, validateProject } from './engine';
 import type { JournalFonts } from './export-fonts';
 
+export interface JournalPhoto { number: string; name: string; data: ArrayBuffer; mime: string }
+export interface JournalOptions { photos?: JournalPhoto[] }
+
 const PAGE = { width: 842, height: 595 };
 const MARGIN = 34;
 const CONTENT = PAGE.width - MARGIN * 2;
@@ -153,6 +156,88 @@ class Renderer {
     this.y -= 14;
   }
 
+  totals(project: Project): void {
+    let meters = 0;
+    let metersComplete = true;
+    let cost = 0;
+    let costComplete = true;
+    for (const cable of project.cables) {
+      const result = calculateCable(project, cable);
+      if (result.total === null) metersComplete = false;
+      else meters += result.total * cable.quantity;
+      if (result.cost === null) costComplete = false;
+      else cost += result.cost;
+    }
+    const parts = [
+      metersComplete ? `Итого кабеля по журналу: ${formatNumber(meters)} м` : 'Итого кабеля по журналу: рассчитано не полностью',
+      costComplete && project.cables.length ? `стоимость: ${formatNumber(cost)} ₽` : 'стоимость: цены заданы не для всех кабелей',
+    ];
+    this.ensure(40);
+    this.page.drawRectangle({ x: MARGIN, y: this.y - 22, width: CONTENT, height: 22, color: ZEBRA });
+    this.page.drawText(parts.join(' · '), { x: MARGIN + 8, y: this.y - 15, size: 8.6, font: this.bold, color: BRAND });
+    this.y -= 30;
+  }
+
+  signatures(project: Project): void {
+    const compiledBy = (project.document?.compiledBy || '').trim();
+    const checkedBy = (project.document?.checkedBy || '').trim();
+    const date = (project.document?.date || '').trim() || new Date().toLocaleDateString('ru-RU');
+    this.ensure(96);
+    this.y -= 6;
+    this.page.drawLine({ start: { x: MARGIN, y: this.y }, end: { x: MARGIN + CONTENT, y: this.y }, thickness: 0.8, color: BORDER });
+    this.y -= 22;
+    const rows: { label: string; value: string }[] = [
+      { label: 'Составил', value: compiledBy },
+      { label: 'Проверил', value: checkedBy },
+    ];
+    for (const row of rows) {
+      this.page.drawText(`${row.label}:`, { x: MARGIN, y: this.y, size: 9, font: this.bold, color: BRAND });
+      const lineStart = MARGIN + 70;
+      const lineEnd = MARGIN + CONTENT - 160;
+      this.page.drawLine({ start: { x: lineStart, y: this.y - 2 }, end: { x: lineEnd, y: this.y - 2 }, thickness: 0.6, color: MUTED });
+      if (row.value) this.page.drawText(row.value, { x: lineStart + 6, y: this.y, size: 9, font: this.regular, color: BRAND });
+      this.page.drawText('подпись', { x: lineEnd + 6, y: this.y, size: 7.5, font: this.regular, color: MUTED });
+      this.y -= 26;
+    }
+    this.page.drawText(`Дата: ${date}`, { x: MARGIN, y: this.y, size: 9, font: this.regular, color: BRAND });
+    this.page.drawText('Документ сформирован в AnOOPlan', { x: MARGIN + CONTENT - 170, y: this.y, size: 7.5, font: this.regular, color: MUTED });
+    this.y -= 18;
+  }
+
+  async photos(items: JournalPhoto[]): Promise<void> {
+    if (!items.length) return;
+    this.heading('Фотографии оборудования', `Снимков в проекте: ${items.length}. Форматы: JPEG и PNG.`);
+    const gap = 16;
+    const cellWidth = (CONTENT - gap) / 2;
+    const imageHeight = 200;
+    const captionHeight = 22;
+    for (let index = 0; index < items.length; index += 2) {
+      const row = items.slice(index, index + 2);
+      this.ensure(imageHeight + captionHeight + 12);
+      for (let column = 0; column < row.length; column += 1) {
+        const item = row[column];
+        const x = MARGIN + column * (cellWidth + gap);
+        const top = this.y;
+        try {
+          const bytes = new Uint8Array(item.data);
+          const isPng = bytes.length > 8 && bytes[0] === 0x89 && bytes[1] === 0x50 && bytes[2] === 0x4e && bytes[3] === 0x47;
+          const isJpeg = bytes.length > 3 && bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff;
+          if (!isPng && !isJpeg) throw new Error('формат не поддерживается');
+          const image = isPng ? await this.document.embedPng(bytes) : await this.document.embedJpg(bytes);
+          const scale = Math.min(cellWidth / image.width, imageHeight / image.height);
+          const width = image.width * scale;
+          const height = image.height * scale;
+          this.page.drawImage(image, { x: x + (cellWidth - width) / 2, y: top - height, width, height });
+        } catch {
+          this.page.drawText('Фото не встроено: нужен JPEG или PNG', { x: x + 4, y: top - 20, size: 8, font: this.regular, color: DANGER });
+        }
+        const caption = `${item.number} · ${item.name}`;
+        this.page.drawText(caption.length > 78 ? `${caption.slice(0, 75)}…` : caption, { x, y: top - imageHeight - 12, size: 8, font: this.regular, color: BRAND });
+      }
+      this.y -= imageHeight + captionHeight + 10;
+    }
+  }
+
   finish(): void {
     const total = this.pages.length;
     this.pages.forEach((page, index) => {
@@ -182,6 +267,8 @@ function buildSections(project: Project): Section[] {
       formatNumber(result.total),
       String(cable.quantity),
       formatNumber(result.total === null ? null : result.total * cable.quantity),
+      formatNumber(result.pricePerMeter),
+      formatNumber(result.cost),
       result.complete ? 'полный' : 'неполный',
     ];
   });
@@ -201,6 +288,8 @@ function buildSections(project: Project): Section[] {
         { title: 'Итог / шт, м', width: 56, align: 'right' },
         { title: 'Кол.', width: 26, align: 'right' },
         { title: 'Итого, м', width: 56, align: 'right' },
+        { title: 'Цена, ₽/м', width: 52, align: 'right' },
+        { title: 'Стоимость, ₽', width: 58, align: 'right' },
         { title: 'Статус', width: 52 },
       ],
       rows: journal,
@@ -238,7 +327,7 @@ function buildSections(project: Project): Section[] {
   ];
 }
 
-export async function buildJournalPdf(project: Project, fonts: JournalFonts): Promise<Uint8Array> {
+export async function buildJournalPdf(project: Project, fonts: JournalFonts, options: JournalOptions = {}): Promise<Uint8Array> {
   const document = await PDFDocument.create();
   document.registerFontkit(fontkit);
   const regular = await document.embedFont(new Uint8Array(fonts.regular), { subset: true });
@@ -263,6 +352,9 @@ export async function buildJournalPdf(project: Project, fonts: JournalFonts): Pr
     renderer.list(warnings);
   }
 
+  await renderer.photos(options.photos ?? []);
+  renderer.totals(project);
+  renderer.signatures(project);
   renderer.finish();
   return document.save();
 }

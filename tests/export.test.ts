@@ -7,6 +7,7 @@ import { buildWorkbook } from '../src/export-xlsx';
 import { buildJournalPdf } from '../src/export-pdf';
 import type { JournalFonts } from '../src/export-fonts';
 import { createDemoProject } from '../src/demo';
+import { calculateCable } from '../src/engine';
 import type { Project } from '../src/model';
 
 const toArrayBuffer = (path: string): ArrayBuffer => {
@@ -42,7 +43,7 @@ test('листы выгрузки совпадают по набору с сер
   const sheets = exportSheets(createDemoProject());
   assert.deepEqual(sheets.map(sheet => sheet.name), ['Кабельный журнал', 'Оборудование', 'Кабели', 'Инфраструктура', 'Предупреждения']);
   const [journal, equipment] = sheets;
-  assert.equal(journal.rows[0].length, 17);
+  assert.equal(journal.rows[0].length, 19);
   assert.equal(journal.rows.length, createDemoProject().cables.length + 1);
   assert.deepEqual(equipment.rows[0], ['Тип', 'Модель', 'Этаж', 'Количество']);
 });
@@ -75,6 +76,55 @@ test('PDF журнала собирается офлайн с кириллице
   assert.ok(text.includes('Итого, м'), 'нет колонки итога');
   assert.ok(text.includes('полный') || text.includes('неполный'), 'нет статуса расчёта');
   assert.ok(!text.includes('\uFFFD'), 'в тексте есть неизвестные глифы');
+});
+
+test('смета считается по цене за метр и не подменяется нулём', () => {
+  const project = createDemoProject();
+  const cable = project.cables[0];
+  cable.pricePerMeter = 50;
+  const calc = calculateCable(project, cable);
+  assert.equal(calc.pricePerMeter, 50);
+  assert.ok(calc.total !== null);
+  assert.ok(Math.abs((calc.cost ?? 0) - calc.total! * cable.quantity * 50) < 1e-6);
+
+  const noPrice = createDemoProject();
+  assert.equal(calculateCable(noPrice, noPrice.cables[0]).cost, null, 'без цены стоимость неизвестна, а не ноль');
+
+  const broken = createDemoProject();
+  broken.cables[0].pricePerMeter = 50;
+  broken.cables[0].quantity = 0;
+  assert.equal(calculateCable(broken, broken.cables[0]).cost, null, 'неполный расчёт не даёт стоимость');
+
+  const priceRow = exportSheets(project)[0].rows[1];
+  assert.equal(priceRow[14], 50);
+  assert.ok(typeof priceRow[15] === 'number');
+});
+
+test('PDF содержит подписи составителя и проверяющего', async () => {
+  const project = createDemoProject();
+  project.document = { compiledBy: 'Иванов И.И.', checkedBy: 'Петров П.П.' };
+  const bytes = await buildJournalPdf(project, fonts);
+  const { text } = await pdfText(bytes);
+  assert.ok(text.includes('Составил'));
+  assert.ok(text.includes('Проверил'));
+  assert.ok(text.includes('Иванов И.И.'));
+  assert.ok(text.includes('Петров П.П.'));
+  assert.ok(text.includes('Итого кабеля по журналу'));
+});
+
+test('PDF прикладывает фотографии оборудования с подписью', async () => {
+  const project = createDemoProject();
+  const png = Uint8Array.from(Buffer.from(
+    'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==',
+    'base64',
+  ));
+  const equipment = project.equipment[0];
+  const bytes = await buildJournalPdf(project, fonts, {
+    photos: [{ number: equipment.number, name: equipment.name, data: png.buffer.slice(png.byteOffset, png.byteOffset + png.byteLength), mime: 'image/png' }],
+  });
+  const { text } = await pdfText(bytes);
+  assert.ok(text.includes('Фотографии оборудования'));
+  assert.ok(text.includes(equipment.number));
 });
 
 test('PDF пустого проекта не падает и сообщает об отсутствии записей', async () => {

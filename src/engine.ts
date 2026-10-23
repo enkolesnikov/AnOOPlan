@@ -168,6 +168,8 @@ export interface CableCalculation {
   cableReserve: number;
   endReserve: number;
   total: number | null;
+  pricePerMeter: number | null;
+  cost: number | null;
   segments: { id: string; length: number | null }[];
 }
 
@@ -245,7 +247,12 @@ export function calculateCable(project: Project, cable: Cable): CableCalculation
   const endReserve = nonnegative(cable.startReserve) && nonnegative(cable.endReserve) ? cable.startReserve + cable.endReserve : 0;
   const total = geometry === null ? null : geometry + routeReserve + cableReserve + endReserve;
   if (total !== null && !finite(total)) errors.push(`Кабель ${cable.number}: итог не является конечным числом`);
-  return { complete: errors.length === 0, errors: [...new Set(errors)], geometry: errors.length ? null : geometry, routeReserve, cableReserve, endReserve, total: errors.length ? null : total, segments: results };
+  // Смета не подменяется нулём: без цены или без полного расчёта стоимость неизвестна.
+  const pricePerMeter = nonnegative(cable.pricePerMeter) ? cable.pricePerMeter : null;
+  const validQuantity = Number.isInteger(cable.quantity) && cable.quantity > 0;
+  const completeTotal = errors.length ? null : total;
+  const cost = completeTotal === null || pricePerMeter === null || !validQuantity ? null : completeTotal * cable.quantity * pricePerMeter;
+  return { complete: errors.length === 0, errors: [...new Set(errors)], geometry: errors.length ? null : geometry, routeReserve, cableReserve, endReserve, total: completeTotal, pricePerMeter, cost, segments: results };
 }
 
 export function specifications(project: Project) {

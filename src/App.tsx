@@ -5,11 +5,17 @@ import type { Project, Floor, Equipment, Route, Cable, Segment, Vertex, Point } 
 import { calculateCable, specifications, validateProject, chainEnds, findRoute } from './engine';
 import { createDemoProject } from './demo';
 import { exportSheets } from './sheets';
+import type { JournalPhoto } from './export-pdf';
+import { planRender, fallbackPlan, needsClipping, type PlanRender } from './render-plan';
 
 type PdfjsModule = typeof import('pdfjs-dist');
 type PdfLoadingTask = ReturnType<PdfjsModule['getDocument']>;
 type PdfRenderTask = ReturnType<import('pdfjs-dist').PDFPageProxy['render']>;
 const SNAP_PX = 12;
+const SNAPSHOT_LIMIT = 20;
+// Бюджет пикселей подложки: A4-A3 рисуются целиком, A1-A0 — по видимой области.
+const PLAN_MAX_PIXELS = 12_000_000;
+interface SnapshotEntry { key: string; createdAt: string; reason: string; project: Project }
 const SHEET_SIZES: Record<string, { landscape: number; portrait: number }> = {
   A4: { landscape: 297, portrait: 210 },
   A3: { landscape: 420, portrait: 297 },
@@ -38,8 +44,11 @@ function lsSave(project: Project) { const list = lsProjects(); const i = list.fi
 function lsDelete(id: string) { localStorage.setItem(LS_PROJECTS, JSON.stringify(lsProjects().filter(p => p.id !== id))); }
 function idbOpen(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
-    const req = indexedDB.open('cableplan', 1);
-    req.onupgradeneeded = () => { if (!req.result.objectStoreNames.contains('pdfs')) req.result.createObjectStore('pdfs'); };
+    const req = indexedDB.open('cableplan', 2);
+    req.onupgradeneeded = () => {
+      if (!req.result.objectStoreNames.contains('pdfs')) req.result.createObjectStore('pdfs');
+      if (!req.result.objectStoreNames.contains('snapshots')) req.result.createObjectStore('snapshots');
+    };
     req.onsuccess = () => resolve(req.result);
     req.onerror = () => reject(req.error);
   });
@@ -64,6 +73,42 @@ async function idbGet(key: string): Promise<Blob | undefined> {
 }
 function blobToBase64(blob: Blob): Promise<string> {
   return new Promise((resolve, reject) => { const reader = new FileReader(); reader.onload = () => resolve(String(reader.result).split(',')[1] ?? ''); reader.onerror = () => reject(reader.error); reader.readAsDataURL(blob); });
+}
+async function idbStorePut(store: string, key: string, value: unknown): Promise<void> {
+  const db = await idbOpen();
+  await new Promise<void>((resolve, reject) => {
+    const tx = db.transaction(store, 'readwrite');
+    tx.objectStore(store).put(value, key);
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+  });
+}
+async function idbStoreGet<T>(store: string, key: string): Promise<T | undefined> {
+  const db = await idbOpen();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(store, 'readonly');
+    const req = tx.objectStore(store).get(key);
+    req.onsuccess = () => resolve(req.result as T | undefined);
+    req.onerror = () => reject(req.error);
+  });
+}
+async function idbStoreDelete(store: string, key: string): Promise<void> {
+  const db = await idbOpen();
+  await new Promise<void>((resolve, reject) => {
+    const tx = db.transaction(store, 'readwrite');
+    tx.objectStore(store).delete(key);
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+  });
+}
+async function idbStoreKeys(store: string): Promise<string[]> {
+  const db = await idbOpen();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(store, 'readonly');
+    const req = tx.objectStore(store).getAllKeys();
+    req.onsuccess = () => resolve((req.result as IDBValidKey[]).map(String));
+    req.onerror = () => reject(req.error);
+  });
 }
 async function idbDelete(key: string): Promise<void> {
   const db = await idbOpen();
@@ -155,6 +200,8 @@ export default function App() {
   const [calibration, setCalibration] = useState<Point[]>([]);
   const [measure, setMeasure] = useState<Point[]>([]);
   const [measureMode, setMeasureMode] = useState<'length' | 'area'>('length');
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const [snapshots, setSnapshots] = useState<SnapshotEntry[] | null>(null);
   const [sheetFormat, setSheetFormat] = useState('A1');
   const [sheetScale, setSheetScale] = useState('100');
   const [cableSegments, setCableSegments] = useState<string[]>([]);
@@ -170,6 +217,8 @@ export default function App() {
   const [redo, setRedo] = useState<Project[]>([]);
   const [projects, setProjects] = useState<{ id: string; name: string; updatedAt: string }[] | null>(null);
   const [pdfPages, setPdfPages] = useState(0);
+  const [renderPlan, setRenderPlan] = useState<PlanRender | null>(null);
+  const [renderTick, setRenderTick] = useState(0);
   const [pdfError, setPdfError] = useState('');
   const [pointer, setPointer] = useState<Point | null>(null);
   const [staticMode, setStaticMode] = useState(false);
@@ -186,6 +235,8 @@ export default function App() {
   const drag = useRef<{ type: 'pan' | 'equipment' | 'vertex' | 'pinch'; id?: string; vertexId?: string; start: Point; pan: Point; before: Project; startDist?: number; startZoom?: number; startPan?: Point; startPdf?: Point } | null>(null);
   const pointers = useRef(new Map<number, Point>());
   const snapVibe = useRef(false);
+  const viewRef = useRef({ zoom, pan });
+  viewRef.current = { zoom, pan };
   const tap = useRef<{ pointerId: number; x: number; y: number; at: number; run: () => void } | null>(null);
   const pinching = useRef(false);
   const pressStart = useRef<Point | null>(null);
@@ -200,6 +251,15 @@ export default function App() {
   const calculation = cable ? calculateCable(project, cable) : null;
   const issues = useMemo(() => validateProject(project), [project]);
   const cableCalcs = useMemo(() => new Map(project.cables.map(c => [c.id, calculateCable(project, c)])), [project]);
+  const totals = useMemo(() => {
+    let meters = 0, metersComplete = true, cost = 0, costComplete = project.cables.length > 0;
+    for (const cable of project.cables) {
+      const calculation = calculateCable(project, cable);
+      if (calculation.total === null) metersComplete = false; else meters += calculation.total * cable.quantity;
+      if (calculation.cost === null) costComplete = false; else cost += calculation.cost;
+    }
+    return { meters, metersComplete, cost, costComplete };
+  }, [project]);
   const issueCount = Array.isArray(issues) ? issues.length : 0;
 
   function commit(next: Project | ((p: Project) => Project)) {
@@ -226,7 +286,10 @@ export default function App() {
     const snapshot = clone(projectRef.current);
     if (staticMode) {
       lsSave(snapshot); setPersisted(true); setSaved(JSON.stringify(snapshot));
-      if (!silent) setMessage(`Проект «${snapshot.name}» сохранён в браузере`);
+      if (!silent) {
+        setMessage(`Проект «${snapshot.name}» сохранён в браузере`);
+        void takeSnapshot('ручное сохранение').catch(() => { /* история недоступна */ });
+      }
       return snapshot;
     }
     const result = await api<Project>(persisted ? `/api/projects/${snapshot.id}` : '/api/projects', jsonOptions(persisted ? 'PUT' : 'POST', snapshot));
@@ -292,6 +355,11 @@ export default function App() {
     })();
     return () => { cancelled = true; created.forEach(url => URL.revokeObjectURL(url)); };
   }, [equipment?.id, equipment?.photos?.length]);
+  // Снимок версии: раз в пять минут при несохранённых изменениях и перед восстановлением.
+  useEffect(() => {
+    const timer = setInterval(() => { if (dirty) void takeSnapshot('автоснимок').catch(() => { /* хранилище недоступно */ }); }, 5 * 60 * 1000);
+    return () => clearInterval(timer);
+  }, [dirty]);
   // Нативная оболочка спрашивает, есть ли несохранённые изменения (кнопка/жест «Назад»).
   useEffect(() => { nativeBridge()?.setDirty?.(dirty); }, [dirty]);
   // Вызывается из Java: сохранить и только потом закрыть приложение.
@@ -326,12 +394,24 @@ export default function App() {
     if (!floor?.pdfId || view !== 'plan') return;
     const currentFloor = floor;
     const pdfId = floor.pdfId;
-    const key = `${currentFloor.id}:${pdfId}:${currentFloor.page}`;
+    const { zoom: currentZoom, pan: currentPan } = viewRef.current;
+    const stageElement = stage.current;
+    const viewWidth = stageElement?.clientWidth || currentFloor.width * currentZoom;
+    const viewHeight = stageElement?.clientHeight || currentFloor.height * currentZoom;
+    const plan = planRender({
+      sheetWidth: currentFloor.width, sheetHeight: currentFloor.height,
+      zoom: currentZoom, dpr: window.devicePixelRatio || 1,
+      viewWidth, viewHeight, panX: currentPan.x, panY: currentPan.y,
+      maxPixels: PLAN_MAX_PIXELS,
+    });
+    const key = `${currentFloor.id}:${pdfId}:${currentFloor.page}:${plan.clipped ? `${plan.scale.toFixed(2)}:${Math.round(plan.clipX)}:${Math.round(plan.clipY)}` : 'full'}`;
     const target = canvas.current; if (!target) return;
-    const ctx = target.getContext('2d'); if (!ctx) return;
-    if (pdfCache.current?.key === key) {
-      target.width = pdfCache.current.canvas.width; target.height = pdfCache.current.canvas.height;
-      ctx.drawImage(pdfCache.current.canvas, 0, 0);
+    if (!plan.clipped && pdfCache.current?.key === key) {
+      const cached = pdfCache.current.canvas;
+      target.width = cached.width; target.height = cached.height;
+      const cacheContext = target.getContext('2d');
+      if (cacheContext) cacheContext.drawImage(cached, 0, 0);
+      setRenderPlan(plan);
       return;
     }
     let cancelled = false;
@@ -355,20 +435,49 @@ export default function App() {
         const page = await document.getPage(Math.min(Math.max(1, currentFloor.page), document.numPages)); if (cancelled) return;
         const viewport = page.getViewport({ scale: 1 });
         if (Math.abs(viewport.width - currentFloor.width) > .01 || Math.abs(viewport.height - currentFloor.height) > .01) {
-          mutate(p => { const target = p.floors.find(f => f.id === currentFloor.id)!; target.width = viewport.width; target.height = viewport.height; });
+          mutate(p => { const floorTarget = p.floors.find(f => f.id === currentFloor.id)!; floorTarget.width = viewport.width; floorTarget.height = viewport.height; });
         }
-        const current = canvas.current; if (!current) return;
-        const scale = Math.min(2, window.devicePixelRatio || 1);
-        const renderViewport = page.getViewport({ scale }); current.width = renderViewport.width; current.height = renderViewport.height;
-        renderTask = page.render({ canvasContext: current.getContext('2d')!, viewport: renderViewport, canvas: current }); await renderTask.promise;
-        const cached = window.document.createElement('canvas');
-        cached.width = current.width; cached.height = current.height;
-        cached.getContext('2d')!.drawImage(current, 0, 0);
-        pdfCache.current = { key, canvas: cached };
+        const draw = async (renderPlanValue: PlanRender) => {
+          const offscreen = window.document.createElement('canvas');
+          offscreen.width = renderPlanValue.canvasWidth;
+          offscreen.height = renderPlanValue.canvasHeight;
+          const offscreenContext = offscreen.getContext('2d');
+          if (!offscreenContext) throw new Error('canvas недоступен');
+          renderTask = page.render({
+            canvasContext: offscreenContext,
+            viewport: page.getViewport({ scale: renderPlanValue.scale }),
+            canvas: offscreen,
+            transform: renderPlanValue.clipped
+              ? [1, 0, 0, 1, -renderPlanValue.clipX * renderPlanValue.scale, -renderPlanValue.clipY * renderPlanValue.scale]
+              : undefined,
+          });
+          await renderTask.promise;
+          const current = canvas.current;
+          if (!current) return;
+          current.width = offscreen.width;
+          current.height = offscreen.height;
+          const context = current.getContext('2d');
+          if (context) { context.clearRect(0, 0, current.width, current.height); context.drawImage(offscreen, 0, 0); }
+          setRenderPlan(renderPlanValue);
+          if (!renderPlanValue.clipped) pdfCache.current = { key, canvas: offscreen };
+        };
+        try {
+          await draw(plan);
+        } catch (error) {
+          // Большой лист не удалось нарисовать по частям — рисуем целиком с ограничением разрешения.
+          if (!plan.clipped) throw error;
+          await draw(fallbackPlan(currentFloor.width, currentFloor.height, PLAN_MAX_PIXELS));
+        }
       } catch (e) { if (!cancelled) setPdfError(`PDF не отображён: ${e instanceof Error ? e.message : String(e)}`); }
     })();
     return () => { cancelled = true; renderTask?.cancel(); loadingTask?.destroy(); };
-  }, [floor?.pdfId, floor?.page, floor?.id, view]);
+  }, [floor?.pdfId, floor?.page, floor?.id, view, renderTick]);
+  // Большие листы перерисовываются по видимой области после жеста (с задержкой).
+  useEffect(() => {
+    if (!floor?.pdfId || !needsClipping(floor.width, floor.height, window.devicePixelRatio || 1, PLAN_MAX_PIXELS)) return;
+    const timer = setTimeout(() => setRenderTick(value => value + 1), 260);
+    return () => clearTimeout(timer);
+  }, [pan, zoom, floor?.pdfId]);
 
   function position(e: { clientX: number; clientY: number }, useSnap = true): Point {
     const rect = stage.current!.getBoundingClientRect();
@@ -803,10 +912,70 @@ export default function App() {
     };
     return '\uFEFF' + rows.map(r => r.map(cell).join(';')).join('\r\n');
   }
+  async function takeSnapshot(reason: string): Promise<void> {
+    // История — вспомогательная функция: без IndexedDB проект всё равно сохраняется.
+    try {
+      const snapshot = clone(projectRef.current);
+      const key = `${snapshot.id}:${Date.now()}`;
+      await idbStorePut('snapshots', key, { key, createdAt: new Date().toISOString(), reason, project: snapshot });
+      const keys = (await idbStoreKeys('snapshots'))
+        .filter(item => item.startsWith(`${snapshot.id}:`))
+        .sort((a, b) => Number(b.split(':')[1]) - Number(a.split(':')[1]));
+      for (const stale of keys.slice(SNAPSHOT_LIMIT)) await idbStoreDelete('snapshots', stale);
+    } catch {
+      // хранилище недоступно — снимок просто не создаётся
+    }
+  }
+  async function openHistory(): Promise<void> {
+    setHistoryOpen(true);
+    setSnapshots(null);
+    try {
+      const projectId = projectRef.current.id;
+      const keys = (await idbStoreKeys('snapshots'))
+        .filter(item => item.startsWith(`${projectId}:`))
+        .sort((a, b) => Number(b.split(':')[1]) - Number(a.split(':')[1]));
+      const list: SnapshotEntry[] = [];
+      for (const key of keys) {
+        const entry = await idbStoreGet<SnapshotEntry>('snapshots', key);
+        if (entry) list.push(entry);
+      }
+      setSnapshots(list);
+    } catch {
+      setSnapshots([]);
+      setError('История версий недоступна: хранилище браузера закрыто.');
+    }
+  }
+  async function restoreSnapshot(key: string): Promise<void> {
+    const entry = snapshots?.find(item => item.key === key);
+    if (!entry) return;
+    if (!window.confirm(`Восстановить проект от ${new Date(entry.createdAt).toLocaleString('ru-RU')}? Текущее состояние сохранится как снимок.`)) return;
+    try { await takeSnapshot('перед восстановлением'); } catch { /* снимок не критичен */ }
+    load(clone(entry.project), true);
+    setHistoryOpen(false);
+    setSnapshots(null);
+    setMessage('Проект восстановлен из снимка.');
+  }
+  async function deleteSnapshot(key: string): Promise<void> {
+    try { await idbStoreDelete('snapshots', key); } catch { /* уже удалён */ }
+    setSnapshots(current => (current || []).filter(item => item.key !== key));
+  }
+  async function collectPhotos(): Promise<JournalPhoto[]> {
+    const assets: JournalPhoto[] = [];
+    for (const item of projectRef.current.equipment) {
+      for (const key of item.photos || []) {
+        try {
+          const blob = await idbGet('photo:' + key);
+          if (!blob) continue;
+          assets.push({ number: item.number, name: item.name, data: await blob.arrayBuffer(), mime: blob.type || 'image/jpeg' });
+        } catch { /* фото недоступно — журнал всё равно выгружается */ }
+      }
+    }
+    return assets;
+  }
   async function printJournal() {
     const current = projectRef.current;
     const [{ buildJournalPdf }, { loadJournalFonts }] = await Promise.all([import('./export-pdf'), import('./export-fonts')]);
-    const bytes = await buildJournalPdf(current, await loadJournalFonts());
+    const bytes = await buildJournalPdf(current, await loadJournalFonts(), { photos: await collectPhotos() });
     nativeBridge()?.printPdf?.(current.name, bytesToBase64(bytes));
     setMessage('Открыт системный диалог печати: выберите принтер или «Сохранить в PDF».');
   }
@@ -822,7 +991,7 @@ export default function App() {
       } else if (kind === 'pdf') {
         // Офлайн-PDF: pdf-lib + встроенный PT Sans, без сервера и системных шрифтов.
         const [{ buildJournalPdf }, { loadJournalFonts }] = await Promise.all([import('./export-pdf'), import('./export-fonts')]);
-        blob = new Blob([await buildJournalPdf(current, await loadJournalFonts()) as unknown as BlobPart], { type: 'application/pdf' });
+        blob = new Blob([await buildJournalPdf(current, await loadJournalFonts(), { photos: await collectPhotos() }) as unknown as BlobPart], { type: 'application/pdf' });
       } else if (kind === 'backup') {
         const ids = [...new Set(current.floors.flatMap(f => f.pdfId && f.pdfId.startsWith('idb:') ? [f.pdfId.slice(4)] : []))];
         const pdfs: { id: string; name: string; dataBase64: string }[] = [];
@@ -887,7 +1056,7 @@ export default function App() {
         onWheel={e => { e.preventDefault(); changeZoom(zoom * (e.deltaY < 0 ? 1.1 : 1 / 1.1)); }}
         onDoubleClick={e => { if ((e.target as Element).closest('[data-object]')) return; e.preventDefault(); if (zoom < 1.5) zoomAt(e.clientX, e.clientY, zoom * 2.4); else fit(); }}>
         {floor && <div className="drawing-sheet" style={{ width: floor.width, height: floor.height, transform: `translate(${pan.x}px,${pan.y}px) scale(${zoom})` }}>
-          {floor.pdfId ? <canvas ref={canvas} style={{ width: '100%', height: '100%' }} /> : <div className="no-pdf"><span>AnOOPlan / {floor.name.toUpperCase()}</span><p>Рабочее поле без PDF</p><small>{project.name.includes('Учеб') ? 'Синтетическая схема для проверки расчёта' : 'Загрузите план PDF и задайте масштаб по двум точкам'}</small></div>}
+          {floor.pdfId ? <canvas ref={canvas} style={renderPlan ? { position: 'absolute', left: renderPlan.clipX, top: renderPlan.clipY, width: renderPlan.clipWidth, height: renderPlan.clipHeight } : { width: '100%', height: '100%' }} /> : <div className="no-pdf"><span>AnOOPlan / {floor.name.toUpperCase()}</span><p>Рабочее поле без PDF</p><small>{project.name.includes('Учеб') ? 'Синтетическая схема для проверки расчёта' : 'Загрузите план PDF и задайте масштаб по двум точкам'}</small></div>}
           <svg className="plan-overlay" width={floor.width} height={floor.height} viewBox={`0 0 ${floor.width} ${floor.height}`}>
             <defs><pattern id="drawing-grid" width={gridSize} height={gridSize} patternUnits="userSpaceOnUse"><path d={`M ${gridSize} 0 L 0 0 0 ${gridSize}`} fill="none" stroke="#63828e" strokeOpacity=".19" strokeWidth={.5 / zoom} /></pattern></defs>
             {grid && <rect width="100%" height="100%" fill="url(#drawing-grid)" pointerEvents="none" />}
@@ -921,16 +1090,17 @@ export default function App() {
         </div>}
         <div className="plan-badge"><span className="dot calibrated" />{floor?.name || 'Нет этажей'}<span> / </span>{floor?.metersPerUnit ? `${number(floor.metersPerUnit)} м/ед.` : 'Масштаб не задан'}</div>
         <div className="plan-legend"><span className="legend-line" /> Трасса <span className="legend-equipment" /> Оборудование <span className="legend-cable" /> Выбранный кабель</div>
-      </div><div className="tool-hint"><span>{toolHints[tool]}</span><small>Координаты PDF: {pointer ? `${number(pointer.x)}; ${number(pointer.y)}` : '—'}</small></div></div> : view === 'journal' ? <section className="document-view"><div className="document-title"><div><span className="eyebrow">ДОКУМЕНТАЦИЯ</span><h1>Кабельный журнал</h1><p>Расчёт по выбранным сегментам, высотам и запасам. Единица измерения — метр.</p></div><button className="primary" onClick={() => { setView('plan'); setTool('cable'); }}>＋ Кабель</button></div><div className="table-scroll"><table><thead><tr><th>Кабель / марка</th><th>От → до</th><th>Геометрия</th><th>Запас трасс</th><th>Запас кабеля</th><th>Концы</th><th>Итог / шт.</th><th>Кол.</th><th>Статус</th></tr></thead><tbody>{project.cables.map(c => { const calc = cableCalcs.get(c.id)!; return <tr key={c.id} className={selection?.id === c.id ? 'selected' : ''} onClick={() => setSelection({ kind: 'cable', id: c.id })}><td><strong>{c.number}</strong><small>{c.brand || c.name}</small></td><td>{project.equipment.find(e => e.id === c.fromId)?.number || '?'} → {project.equipment.find(e => e.id === c.toId)?.number || '?'}</td><td>{number(calc.geometry)}</td><td>{number(calc.routeReserve)}</td><td>{number(calc.cableReserve)}</td><td>{number(calc.endReserve)}</td><td><strong>{number(calc.total)}</strong></td><td>{c.quantity}</td><td><span className={`badge ${calc.complete ? 'good' : 'warn'}`}>{calc.complete ? 'Рассчитан' : 'Неполный'}</span></td></tr>; })}</tbody></table>{!project.cables.length && <div className="document-empty">Создайте кабель: выберите оборудование и упорядоченную цепочку сегментов на плане.</div>}</div><div className="document-note">Итог указан для одного кабеля. Количество применяется в ведомости. Неполные значения не подменяются нулём.</div></section> : <section className="document-view"><div className="document-title"><div><span className="eyebrow">ДОКУМЕНТАЦИЯ</span><h1>Ведомости и проверка</h1><p>Кабельная продукция и инфраструктура. Общие сегменты инфраструктуры учитываются один раз.</p></div></div><SpecificationTables value={specifications(project)} /><h2>Замечания к проекту</h2><IssueList value={issues} /><div className="document-note">Расчёт не заменяет проверку проектировщиком. PDF может содержать разные масштабы: калибруйте каждый этаж и страницу отдельно. Совмещение осей этажей выполняется вручную.</div></section>}</main>
-      <aside className={`properties ${propsOpen ? 'open' : ''}`}><div className="properties-title">Свойства<span>{equipment ? 'ОБОРУДОВАНИЕ' : route ? 'ТРАССА' : cable ? 'КАБЕЛЬ' : 'ЭТАЖ'}</span><button className="properties-close" aria-label="Закрыть" onClick={() => setPropsOpen(false)}>×</button></div><div className="properties-content">{selection && (equipment || route || cable) ? <><div className="object-heading"><span className="eyebrow">{equipment ? 'ОБОРУДОВАНИЕ' : route ? 'КАБЕЛЬНАЯ ТРАССА' : 'КАБЕЛЬ'}</span><h2>{(equipment || route || cable)?.number}</h2></div>{itemField('Обозначение', 'number')}{!route && itemField('Наименование', 'name')}{(equipment || route) && itemField('Тип', 'type')}
+      </div><div className="tool-hint"><span>{toolHints[tool]}</span><small>Координаты PDF: {pointer ? `${number(pointer.x)}; ${number(pointer.y)}` : '—'}</small></div></div> : view === 'journal' ? <section className="document-view"><div className="document-title"><div><span className="eyebrow">ДОКУМЕНТАЦИЯ</span><h1>Кабельный журнал</h1><p>Расчёт по выбранным сегментам, высотам и запасам. Единица измерения — метр.</p></div><button className="primary" onClick={() => { setView('plan'); setTool('cable'); }}>＋ Кабель</button></div><div className="table-scroll"><table><thead><tr><th>Кабель / марка</th><th>От → до</th><th>Геометрия</th><th>Запас трасс</th><th>Запас кабеля</th><th>Концы</th><th>Итог / шт.</th><th>Кол.</th><th>Стоимость, ₽</th><th>Статус</th></tr></thead><tbody>{project.cables.map(c => { const calc = cableCalcs.get(c.id)!; return <tr key={c.id} className={selection?.id === c.id ? 'selected' : ''} onClick={() => setSelection({ kind: 'cable', id: c.id })}><td><strong>{c.number}</strong><small>{c.brand || c.name}</small></td><td>{project.equipment.find(e => e.id === c.fromId)?.number || '?'} → {project.equipment.find(e => e.id === c.toId)?.number || '?'}</td><td>{number(calc.geometry)}</td><td>{number(calc.routeReserve)}</td><td>{number(calc.cableReserve)}</td><td>{number(calc.endReserve)}</td><td><strong>{number(calc.total)}</strong></td><td>{c.quantity}</td><td>{calc.cost === null ? '—' : number(calc.cost)}</td><td><span className={`badge ${calc.complete ? 'good' : 'warn'}`}>{calc.complete ? 'Рассчитан' : 'Неполный'}</span></td></tr>; })}</tbody></table>{!project.cables.length && <div className="document-empty">Создайте кабель: выберите оборудование и упорядоченную цепочку сегментов на плане.</div>}</div><div className="document-summary"><strong>{totals.metersComplete ? `${number(totals.meters)} м` : "Метраж рассчитан не полностью"}</strong><span>{totals.costComplete ? `Стоимость: ${number(totals.cost)} ₽` : "Стоимость не рассчитана: задайте цены за метр"}</span></div><div className="document-note">Итог указан для одного кабеля. Количество применяется в ведомости. Неполные значения не подменяются нулём.</div></section> : <section className="document-view"><div className="document-title"><div><span className="eyebrow">ДОКУМЕНТАЦИЯ</span><h1>Ведомости и проверка</h1><p>Кабельная продукция и инфраструктура. Общие сегменты инфраструктуры учитываются один раз.</p></div></div><SpecificationTables value={specifications(project)} /><h2>Замечания к проекту</h2><IssueList value={issues} /><div className="document-note">Расчёт не заменяет проверку проектировщиком. PDF может содержать разные масштабы: калибруйте каждый этаж и страницу отдельно. Совмещение осей этажей выполняется вручную.</div></section>}</main>
+      <aside className={`properties ${propsOpen ? 'open' : ''}`}><div className="properties-title">Свойства<span>{equipment ? 'ОБОРУДОВАНИЕ' : route ? 'ТРАССА' : cable ? 'КАБЕЛЬ' : 'ЭТАЖ'}</span><button className="properties-close" aria-label="Закрыть" onClick={() => setPropsOpen(false)}>×</button></div><div className="properties-content">{selection && (equipment || route || cable) ? <><div className="object-heading"><span className="eyebrow">{equipment ? 'ОБОРУДОВАНИЕ' : route ? 'КАБЕЛЬНАЯ ТРАССА' : 'КАБЕЛЬ'}</span><h2>{(equipment || route || cable)?.number}</h2></div>{itemField('Обозначение', 'number')}{!route && itemField('Наименование', 'name')}{(equipment || route) && itemField('Тип', 'type')}{equipment && <div className="chip-row">{['Камера', 'Шкаф', 'Коммутатор', 'Считыватель', 'Лоток'].map(value => <button key={value} className="chip" onClick={() => setItem('type', value)}>{value}</button>)}</div>}
       {equipment && <><label className="field">Этаж{floorSelect(equipment.floorId, value => setItem('floorId', value))}</label><div className="field-pair">{itemField('X, ед. PDF', 'x', true)}{itemField('Y, ед. PDF', 'y', true)}</div>{itemField('Высота от пола, м', 'height', true)}<p className="help">Пустая высота означает неизвестное значение. Для подводов кабеля задайте высоту явно, в том числе 0.</p><div className="section-label">Фотографии <span>{equipment.photos?.length || 0}</span></div><div className="photo-strip">{(equipment.photos || []).map(key => photoUrls[key] ? <div className="photo-card" key={key}><img src={photoUrls[key]} alt={`Фото ${equipment.number}`} /><button aria-label="Удалить фото" onClick={() => removePhoto(key)}>×</button></div> : null)}<button className="photo-add" onClick={() => photoInput.current?.click()}>＋ Фото</button><button className="photo-add" onClick={() => cameraInput.current?.click()}>📷 Снять</button></div><p className="help">Снимок монтажа хранится в проекте и попадает в JSON-копию вместе с PDF-планами.</p><details><summary>Дополнительные свойства</summary>{Object.entries(equipment.properties).map(([key, value]) => field(key, value, v => setItem('properties', { ...equipment.properties, [key]: v })))}<button onClick={() => { const key = window.prompt('Название свойства'); if (key) setItem('properties', { ...equipment.properties, [key]: '' }); }}>＋ Свойство</button></details></>}
       {route && <><div className="section-label">Сегменты <span>{route.segments.length}</span></div><p className="help">Вершины тянутся на плане. Координаты и высоты можно задать точно ниже. При ручном изменении согласуйте соседние вершины.</p>{route.segments.map((s, index) => <details className="segment-editor" key={s.id}><summary>Сегмент {index + 1} {s.a.floorId !== s.b.floorId ? ' · стояк ↕' : ''}</summary><label className="field">Геометрия<select value={s.mode} onChange={e => mutate(p => { p.routes.find(r => r.id === route.id)!.segments.find(segment => segment.id === s.id)!.mode = e.target.value as Segment['mode']; })}><option value="orthogonal">Ортогональная</option><option value="spatial">Пространственная</option></select></label>{(['a', 'b'] as const).map(end => <div className="endpoint" key={end}><strong>{end === 'a' ? 'Начало' : 'Конец'}</strong><label className="field">Этаж{floorSelect(s[end].floorId, value => segmentField(s, end, 'floorId', value))}</label><div className="field-pair">{field('X', s[end].x, v => segmentField(s, end, 'x', Number(v)), true)}{field('Y', s[end].y, v => segmentField(s, end, 'y', Number(v)), true)}</div>{field('Высота, м', s[end].height, v => segmentField(s, end, 'height', v === '' ? null : Number(v)), true)}</div>)}<div className="field-pair">{field('Запас, %', s.reservePercent, v => mutate(p => { p.routes.find(r => r.id === route.id)!.segments.find(seg => seg.id === s.id)!.reservePercent = Number(v); }), true)}{field('Запас, м', s.reserveFixed, v => mutate(p => { p.routes.find(r => r.id === route.id)!.segments.find(seg => seg.id === s.id)!.reserveFixed = Number(v); }), true)}</div><button className="danger" onClick={() => { const linked = project.cables.filter(c => c.segmentIds.includes(s.id)); if (window.confirm(`Удалить сегмент? ${linked.length ? `Связанных кабелей: ${linked.length}. Они будут удалены.` : ''}`)) mutate(p => { p.routes.find(r => r.id === route.id)!.segments = p.routes.find(r => r.id === route.id)!.segments.filter(seg => seg.id !== s.id); p.cables = p.cables.filter(c => !c.segmentIds.includes(s.id)); }); }}>Удалить сегмент</button></details>)}<button className="wide" onClick={addRiser}>＋ Межэтажный стояк</button></>}
-      {cable && <>{itemField('Марка', 'brand')}{itemField('Назначение', 'purpose')}<label className="field">От{equipmentSelect(cable.fromId, value => setItem('fromId', value))}</label><label className="field">До{equipmentSelect(cable.toId, value => setItem('toId', value))}</label><div className="field-pair">{itemField('Запас, %', 'reservePercent', true)}{itemField('Запас, м', 'reserveFixed', true)}</div><div className="field-pair">{itemField('На начале, м', 'startReserve', true)}{itemField('На конце, м', 'endReserve', true)}</div>{itemField('Количество', 'quantity', true)}<div className="section-label">Порядок обхода</div><ol className="segment-order">{cable.segmentIds.map((id, i) => <li key={id}><span>{segmentName(id)}</span><button disabled={!i} title="Выше" onClick={() => { const next = [...cable.segmentIds]; [next[i - 1], next[i]] = [next[i], next[i - 1]]; setItem('segmentIds', next); }}>↑</button><button disabled={i === cable.segmentIds.length - 1} title="Ниже" onClick={() => { const next = [...cable.segmentIds]; [next[i + 1], next[i]] = [next[i], next[i + 1]]; setItem('segmentIds', next); }}>↓</button><button title="Удалить из цепочки" onClick={() => setItem('segmentIds', cable.segmentIds.filter(s => s !== id))}>×</button></li>)}</ol><button className="wide" onClick={() => { setCableSegments([...cable.segmentIds]); setCableFrom(cable.fromId); setCableTo(cable.toId); setTool('cable'); setView('plan'); setMessage('Измените цепочку кликами. Кнопка «Применить» в свойствах сохранит выбор.'); }}>Выбрать сегменты на плане</button>{tool === 'cable' && <button className="primary wide" onClick={() => { setItem('segmentIds', [...cableSegments]); setItem('fromId', cableFrom); setItem('toId', cableTo); setTool('select'); setCableSegments([]); }}>Применить цепочку к {cable.number}</button>}{calculation && <div className={`calculation-card ${calculation.complete ? '' : 'incomplete'}`}><span>ИТОГ / 1 КАБЕЛЬ</span><strong>{number(calculation.total)} <small>м</small></strong><dl><dt>Геометрия</dt><dd>{number(calculation.geometry)} м</dd><dt>Запас трассы</dt><dd>{number(calculation.routeReserve)} м</dd><dt>Запас кабеля</dt><dd>{number(calculation.cableReserve)} м</dd><dt>Запас концов</dt><dd>{number(calculation.endReserve)} м</dd></dl>{calculation.errors.map((e, i) => <p key={i}>{e}</p>)}</div>}</>}
+      {cable && <>{itemField('Марка', 'brand')}{itemField('Назначение', 'purpose')}<label className="field">От{equipmentSelect(cable.fromId, value => setItem('fromId', value))}</label><label className="field">До{equipmentSelect(cable.toId, value => setItem('toId', value))}</label><div className="field-pair">{itemField('Запас, %', 'reservePercent', true)}{itemField('Запас, м', 'reserveFixed', true)}</div><div className="field-pair">{itemField('На начале, м', 'startReserve', true)}{itemField('На конце, м', 'endReserve', true)}</div>{itemField('Количество', 'quantity', true)}{itemField('Цена за метр, ₽', 'pricePerMeter', true)}<div className="section-label">Порядок обхода</div><ol className="segment-order">{cable.segmentIds.map((id, i) => <li key={id}><span>{segmentName(id)}</span><button disabled={!i} title="Выше" onClick={() => { const next = [...cable.segmentIds]; [next[i - 1], next[i]] = [next[i], next[i - 1]]; setItem('segmentIds', next); }}>↑</button><button disabled={i === cable.segmentIds.length - 1} title="Ниже" onClick={() => { const next = [...cable.segmentIds]; [next[i + 1], next[i]] = [next[i], next[i + 1]]; setItem('segmentIds', next); }}>↓</button><button title="Удалить из цепочки" onClick={() => setItem('segmentIds', cable.segmentIds.filter(s => s !== id))}>×</button></li>)}</ol><button className="wide" onClick={() => { setCableSegments([...cable.segmentIds]); setCableFrom(cable.fromId); setCableTo(cable.toId); setTool('cable'); setView('plan'); setMessage('Измените цепочку кликами. Кнопка «Применить» в свойствах сохранит выбор.'); }}>Выбрать сегменты на плане</button>{tool === 'cable' && <button className="primary wide" onClick={() => { setItem('segmentIds', [...cableSegments]); setItem('fromId', cableFrom); setItem('toId', cableTo); setTool('select'); setCableSegments([]); }}>Применить цепочку к {cable.number}</button>}{calculation && <div className={`calculation-card ${calculation.complete ? '' : 'incomplete'}`}><span>ИТОГ / 1 КАБЕЛЬ</span><strong>{number(calculation.total)} <small>м</small></strong><dl><dt>Геометрия</dt><dd>{number(calculation.geometry)} м</dd><dt>Запас трассы</dt><dd>{number(calculation.routeReserve)} м</dd><dt>Запас кабеля</dt><dd>{number(calculation.cableReserve)} м</dd><dt>Запас концов</dt><dd>{number(calculation.endReserve)} м</dd></dl>{calculation.errors.map((e, i) => <p key={i}>{e}</p>)}</div>}</>}
       <label className="field">Примечание<textarea value={(equipment || route || cable)?.note || ''} onChange={e => setItem('note', e.target.value)} /></label><div className="property-actions"><button onClick={copySelection}>Копировать</button><button className="danger" onClick={removeSelection}>Удалить</button></div></> : floor ? <><div className="object-heading"><span className="eyebrow">ТЕКУЩИЙ ЭТАЖ</span><h2>{floor.name}</h2></div>{field('Название', floor.name, v => mutate(p => { p.floors.find(f => f.id === floor.id)!.name = v; }))}{field('Отметка пола, м', floor.elevation, v => mutate(p => { p.floors.find(f => f.id === floor.id)!.elevation = v === '' ? null : Number(v); }), true, 'Абсолютная отметка для расчёта межэтажных стояков.')}<div className="scale-card"><span className="eyebrow">МАСШТАБ ПОДЛОЖКИ</span><strong>{floor.metersPerUnit ? `${number(floor.metersPerUnit)} м/ед.` : 'Не откалиброван'}</strong><button onClick={() => { setTool('calibrate'); setView('plan'); setCalibration([]); }}>↔ Калибровка по 2 точкам</button></div><details className="scale-presets"><summary>Масштаб по формату листа</summary><div className="field-pair"><label className="field">Формат<select value={sheetFormat} onChange={e => setSheetFormat(e.target.value)}>{Object.keys(SHEET_SIZES).map(size => <option key={size} value={size}>{size}</option>)}</select></label><label className="field">Масштаб<select value={sheetScale} onChange={e => setSheetScale(e.target.value)}>{['50', '100', '200', '500'].map(value => <option key={value} value={value}>1:{value}</option>)}</select></label></div><button className="wide" onClick={applySheetScale}>Применить масштаб листа</button><p className="help">Если план — стандартный лист {sheetFormat} в масштабе 1:{sheetScale}, калибровка двумя точками не нужна.</p></details>{field('Метров в единице PDF', floor.metersPerUnit, v => mutate(p => { p.floors.find(f => f.id === floor.id)!.metersPerUnit = v === '' ? null : Number(v); }), true)}<div className="section-label">Подложка</div><p className="help">{floor.pdfId ? `Исходный PDF подключён. Страница ${floor.page}; ${number(floor.width)} × ${number(floor.height)} ед.` : 'PDF не загружен. Можно чертить на чистом листе; для метража необходим масштаб.'}</p>{floor.pdfId && pdfPages > 0 && <label className="field mobile-only">Страница PDF<input type="number" min="1" max={pdfPages} value={floor.page} onChange={e => { const page = Math.max(1, Math.min(pdfPages, Number(e.target.value) || 1)); if (page !== floor.page) mutate(p => { const f = p.floors.find(f => f.id === floor.id)!; f.page = page; f.metersPerUnit = null; }); }} /></label>}<button className="wide" disabled={busy} onClick={() => upload.current?.click()}>↑ {floor.pdfId ? 'Заменить PDF…' : 'Загрузить PDF…'}</button><p className="help">При замене PDF или страницы объекты остаются на прежних координатах. Проверьте положение и повторите калибровку.</p><div className="section-label">Система координат</div><p className="help">X/Y хранятся в единицах PDF. Зум не влияет на длины. Для стояка совпадающие X/Y на разных этажах должны соответствовать одной физической оси.</p><button className="danger wide" disabled={project.floors.length < 2} onClick={() => { const eqIds = project.equipment.filter(eq => eq.floorId === floor.id).map(eq => eq.id); const segmentIds = project.routes.flatMap(r => r.segments).filter(s => s.a.floorId === floor.id || s.b.floorId === floor.id).map(s => s.id); if (window.confirm('Удалить этаж, его оборудование, связанные сегменты и кабели?')) { mutate(p => { p.floors = p.floors.filter(f => f.id !== floor.id); p.equipment = p.equipment.filter(eq => eq.floorId !== floor.id); p.routes.forEach(r => { r.segments = r.segments.filter(s => !segmentIds.includes(s.id)); }); p.routes = p.routes.filter(r => r.segments.length); p.cables = p.cables.filter(c => !eqIds.includes(c.fromId) && !eqIds.includes(c.toId) && !c.segmentIds.some(id => segmentIds.includes(id))); }); setFloorId(''); } }}>Удалить этаж</button></> : <p className="help">Добавьте этаж для начала работы.</p>}</div></aside>
     </div><footer className="statusbar"><span><i className="dot calibrated" />{message}</span><span>{project.equipment.length} оборуд. · {project.routes.length} трасс · {project.cables.length} кабелей <b>{staticMode ? 'БРАУЗЕР' : 'СЕРВЕР'}</b></span></footer>
     {(menuOpen || propsOpen) && <div className="scrim" onClick={() => { setMenuOpen(false); setPropsOpen(false); }} />}
     <button className={`props-fab ${propsOpen ? 'active' : ''}`} aria-label="Свойства" onClick={() => setPropsOpen(v => !v)}>⚙</button>
-    {exportOpen && <div className="sheet-backdrop" onClick={() => setExportOpen(false)}><section className="sheet" role="dialog" aria-label="Экспорт и копия" onClick={event => event.stopPropagation()}><div className="sheet-grip" /><div className="sheet-head"><strong>Экспорт и копия</strong><button aria-label="Закрыть" onClick={() => setExportOpen(false)}>×</button></div><div className="sheet-list">{(['csv', 'xlsx', 'pdf', 'backup'] as const).map(format => <button key={format} disabled={busy} onClick={() => { setExportOpen(false); void run(() => download(format)); }}>{format === 'backup' ? 'JSON с исходными PDF' : format.toUpperCase()}</button>)}{typeof nativeBridge()?.printPdf === 'function' && <button onClick={() => { setExportOpen(false); void run(() => printJournal()); }}>Печать A4</button>}<button onClick={() => { setExportOpen(false); restoreInput.current?.click(); }}>Восстановить JSON…</button></div></section></div>}
+    {exportOpen && <div className="sheet-backdrop" onClick={() => setExportOpen(false)}><section className="sheet" role="dialog" aria-label="Экспорт и копия" onClick={event => event.stopPropagation()}><div className="sheet-grip" /><div className="sheet-head"><strong>Экспорт и копия</strong><button aria-label="Закрыть" onClick={() => setExportOpen(false)}>×</button></div><div className="sheet-list">{(['csv', 'xlsx', 'pdf', 'backup'] as const).map(format => <button key={format} disabled={busy} onClick={() => { setExportOpen(false); void run(() => download(format)); }}>{format === 'backup' ? 'JSON с исходными PDF' : format.toUpperCase()}</button>)}{typeof nativeBridge()?.printPdf === 'function' && <button onClick={() => { setExportOpen(false); void run(() => printJournal()); }}>Печать A4</button>}<div className="sheet-fields"><label className="field">Составил<input type="text" value={project.document?.compiledBy || ''} onChange={e => mutate(p => { p.document = { ...(p.document || {}), compiledBy: e.target.value }; })} /></label><label className="field">Проверил<input type="text" value={project.document?.checkedBy || ''} onChange={e => mutate(p => { p.document = { ...(p.document || {}), checkedBy: e.target.value }; })} /></label></div><button onClick={() => { setExportOpen(false); void openHistory(); }}>История версий</button><button onClick={() => { setExportOpen(false); restoreInput.current?.click(); }}>Восстановить JSON…</button></div></section></div>}
+    {historyOpen && <div className="sheet-backdrop" onClick={() => setHistoryOpen(false)}><section className="sheet" role="dialog" aria-label="История версий" onClick={event => event.stopPropagation()}><div className="sheet-grip" /><div className="sheet-head"><strong>История версий</strong><button aria-label="Закрыть" onClick={() => setHistoryOpen(false)}>×</button></div><div className="sheet-list"><button onClick={() => void takeSnapshot('вручную').then(() => openHistory()).catch(() => setError('Не удалось сделать снимок: хранилище недоступно.'))}>＋ Сделать снимок сейчас</button>{snapshots === null ? <p className="help">Загружаю…</p> : snapshots.length ? snapshots.map(entry => <div className="snapshot-row" key={entry.key}><button className="snapshot-open" onClick={() => void restoreSnapshot(entry.key)}><strong>{new Date(entry.createdAt).toLocaleString('ru-RU')}</strong><small>{entry.reason} · {entry.project.equipment.length} оборуд. · {entry.project.cables.length} кабелей</small></button><button className="snapshot-delete" aria-label="Удалить снимок" onClick={() => void deleteSnapshot(entry.key)}>🗑</button></div>) : <p className="help">Снимков пока нет. Они создаются автоматически раз в 5 минут при изменениях и при ручном сохранении.</p>}</div></section></div>}
     {sheet && <div className="sheet-backdrop" onClick={() => setSheet(null)}><section className="sheet" role="dialog" aria-label="Действия с объектом" onClick={event => event.stopPropagation()}><div className="sheet-grip" /><div className="sheet-head"><strong>{sheetTitle(sheet)}</strong><button aria-label="Закрыть" onClick={() => setSheet(null)}>×</button></div><div className="sheet-list"><button onClick={() => { setPropsOpen(true); setSheet(null); }}>⚙ Свойства</button><button onClick={() => { copyObject(sheet.kind, sheet.id); setSheet(null); }}>⧉ Копировать</button><button className="danger" onClick={() => removeObject(sheet.kind, sheet.id)}>🗑 Удалить</button></div></section></div>}
     <input hidden ref={photoInput} type="file" accept="image/*" onChange={e => { const file = e.target.files?.[0]; if (file) void run(() => addPhoto(file)); e.target.value = ''; }} />
     <input hidden ref={cameraInput} type="file" accept="image/*" capture="environment" onChange={e => { const file = e.target.files?.[0]; if (file) void run(() => addPhoto(file)); e.target.value = ''; }} />
