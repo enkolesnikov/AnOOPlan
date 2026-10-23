@@ -1,0 +1,46 @@
+name: Android APK
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  apk:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Инструменты упаковки APK
+        run: sudo apt-get update && sudo apt-get install -y aapt zipalign apksigner zip python3
+
+      - name: Зависимости
+        run: npm ci
+
+      - name: Android SDK platform и R8
+        run: bash scripts/fetch-tools.sh
+
+      - name: Тесты
+        run: npm test
+
+      - name: Дымовой тест интерфейса
+        run: npm run smoke
+
+      - name: Сборка APK
+        run: bash scripts/build-apk.sh
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: AnOOPlan-apk
+          path: build/AnOOPlan-*.apk
+          if-no-files-found: error
