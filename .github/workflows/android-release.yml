@@ -1,0 +1,111 @@
+name: Android Release
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Инструменты Android из образа раннера
+        run: |
+          set -euo pipefail
+          SDK="${ANDROID_HOME:-/usr/local/lib/android/sdk}"
+          BT="$SDK/build-tools/35.0.0"
+          PLATFORM="$SDK/platforms/android-35"
+          if [ ! -x "$BT/aapt" ] || [ ! -f "$PLATFORM/android.jar" ]; then
+            SDKMANAGER="$(find "$SDK/cmdline-tools" -name sdkmanager -type f | head -1)"
+            [ -n "$SDKMANAGER" ] || { echo "Нет sdkmanager для установки build-tools 35" >&2; exit 1; }
+            yes | "$SDKMANAGER" --licenses >/dev/null || true
+            "$SDKMANAGER" "build-tools;35.0.0" "platforms;android-35"
+          fi
+          {
+            echo "ANDROID_JAR=$PLATFORM/android.jar"
+            echo "AAPT=$BT/aapt"
+            echo "ZIPALIGN=$BT/zipalign"
+            echo "APKSIGNER=$BT/apksigner"
+            echo "D8_CMD=$BT/d8"
+          } >> "$GITHUB_ENV"
+          "$BT/aapt" version
+
+      - name: Зависимости
+        run: npm ci
+
+      - name: Тесты
+        run: npm test
+
+      - name: Дымовой тест интерфейса
+        run: npm run smoke
+
+      - name: Проверить наличие секретов
+        env:
+          KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          KS_PASS: ${{ secrets.ANDROID_KS_PASS }}
+        run: |
+          set -euo pipefail
+          [ -n "$KEYSTORE_BASE64" ] || { echo "Не задан секрет ANDROID_KEYSTORE_BASE64" >&2; exit 1; }
+          [ -n "$KS_PASS" ] || { echo "Не задан секрет ANDROID_KS_PASS" >&2; exit 1; }
+
+      - name: Восстановить keystore
+        env:
+          KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+        run: |
+          set -euo pipefail
+          mkdir -p keystore
+          printf '%s' "$KEYSTORE_BASE64" | base64 -d > keystore/anooplan.jks
+          chmod 600 keystore/anooplan.jks
+          test -s keystore/anooplan.jks
+
+      - name: Собрать подписанный APK
+        env:
+          KS_PASS: ${{ secrets.ANDROID_KS_PASS }}
+          KS_ALIAS: ${{ secrets.ANDROID_KS_ALIAS }}
+        run: bash scripts/build-apk.sh
+
+      - name: Проверить сертификат подписи
+        env:
+          EXPECTED_CERT: ${{ secrets.ANDROID_CERT_SHA256 }}
+        run: |
+          set -euo pipefail
+          APK="$(ls build/AnOOPlan-*.apk | grep -v unsigned | head -1)"
+          APKSIGNER="${APKSIGNER:-apksigner}"
+          CERT="$("$APKSIGNER" verify --print-certs "$APK" | sed -n 's/^Signer #1 certificate SHA-256 digest: //p' | head -1)"
+          echo "SHA-256 сертификата: $CERT"
+          if [ -n "$EXPECTED_CERT" ] && [ "$CERT" != "$EXPECTED_CERT" ]; then
+            echo "Сертификат не совпадает с ANDROID_CERT_SHA256" >&2
+            exit 1
+          fi
+          "$APKSIGNER" verify --verbose "$APK" | head -12
+
+      - name: Опубликовать GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          TAG="${GITHUB_REF_NAME}"
+          APK="$(ls build/AnOOPlan-*.apk | grep -v unsigned | head -1)"
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" "$APK" --clobber
+          else
+            gh release create "$TAG" "$APK" --title "AnOOPlan ${TAG#v}" --generate-notes
+          fi
+
+      - name: Удалить keystore с раннера
+        if: always()
+        run: rm -rf keystore

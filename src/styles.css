@@ -582,3 +582,12 @@ input[inputmode="decimal"] { text-align: left; }
 .component-list li { display: flex; justify-content: space-between; gap: 10px; font-size: 13px; border-bottom: 1px dashed var(--border-soft); padding-bottom: 4px; }
 .component-list i { color: var(--muted); font-style: normal; text-align: right; }
 @media (max-width: 1023px) { .about-sheet { max-height: 90vh; } }
+
+/* ── Диагностика в «О программе» ─────────────────────────────────────── */
+.diagnostics-actions { display: flex; gap: 8px; margin: 8px 0; flex-wrap: wrap; }
+.diagnostics-actions button { flex: 1; min-width: 140px; }
+.diagnostics-log {
+  max-height: 180px; overflow: auto; white-space: pre-wrap; word-break: break-word;
+  background: var(--surface-3); border: 1px solid var(--border-soft); border-radius: 8px;
+  padding: 8px; font-size: 11px; line-height: 1.35; color: var(--muted);
+}

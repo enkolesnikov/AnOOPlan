@@ -12,7 +12,7 @@
 - Репозиторий: <https://github.com/enkolesnikov/AnOOPlan>
 - Релизы с APK: <https://github.com/enkolesnikov/AnOOPlan/releases>
 - Веб-версия (GitHub Pages): <https://enkolesnikov.github.io/AnOOPlan/>
-- Текущая версия: **1.8.3**, versionCode 14, APK ~1,8 МБ, `com.anooplan.app`, minSdk 24, targetSdk 35
+- Текущая версия: **1.9.0**, versionCode 15, APK ~1,8 МБ, `com.anooplan.app`, minSdk 24, targetSdk 35
 
 ## Стек и устройство
 
@@ -26,11 +26,11 @@
 | Рендер больших листов | `src/render-plan.ts` | бюджет 12 Мпикс, рендер видимой области для A1/A0 |
 | Оболочка Android | `android/java/com/anooplan/app/` | `MainActivity`, `AssetServer`, `NativeBridge`, `PdfPrinter` |
 | Сборка APK | `scripts/build-apk.sh` + `scripts/fetch-tools.sh` | aapt + javac + d8 + zipalign + apksigner, **без Gradle** |
-| Тесты | `tests/*.test.ts`, `scripts/smoke-dom.mjs` | 70 юнит-тестов + смоук интерфейса в happy-dom |
+| Тесты | `tests/*.test.ts`, `scripts/smoke-dom.mjs` | 81 юнит-тест + смоук интерфейса в happy-dom |
 
 ### Ключевые решения (не пересматривать без причины)
 
-1. **WebView вместо Kotlin-переписывания.** Одна кодовая база для сайта и APK, 70 тестов, быстрые итерации.
+1. **WebView вместо Kotlin-переписывания.** Одна кодовая база для сайта и APK, 81 тест, быстрые итерации.
    Kotlin оправдан только при ежедневном рисовании пером и листах A1+ — тогда начинать с порта `engine.ts` в KMP.
 2. **Статика отдаётся по origin `https://appassets.local/`** через `AssetServer.shouldInterceptRequest`.
    На `file://` не работают IndexedDB и `crypto.randomUUID()`. Запросы `/api/*` получают 404 → приложение
@@ -38,7 +38,9 @@
 3. **Всё офлайн.** Разрешение `INTERNET` не запрашивается. Проекты — localStorage, PDF/фото/снимки — IndexedDB.
 4. **Экспорт на клиенте.** XLSX и PDF собираются в телефоне (ленивые чанки), печать — `PrintManager`
    с PDF-паспасом в спулер без растеризации.
-5. **Подпись.** `keystore/anooplan.jks` (в `.gitignore`), пароль в `keystore/README.txt`. Потеря = невозможность обновлений.
+5. **Подпись.** `keystore/anooplan.jks` (в `.gitignore`), пароль в `keystore/pass.txt` (права 0600, тоже вне git).
+   Пароль не хранится в скриптах; `scripts/build-apk.sh` читает `keystore/pass.txt` или `KS_PASS`.
+   GitHub Secrets: `ANDROID_KEYSTORE_BASE64`, `ANDROID_KS_PASS`, `ANDROID_KS_ALIAS`, `ANDROID_CERT_SHA256`.
    **Важно:** в сессии 2026-10 на VPS сгенерирован новый ключ (оригинальный в репозиторий не входит).
    APK с 1.6.1 подписаны им; обновление поверх 1.6.0 требует переустановки (сначала сохранить проект в JSON).
    Если появится оригинальный keystore — положить его в `keystore/anooplan.jks` и пересобрать релиз.
@@ -47,18 +49,23 @@
 
 ```bash
 npm ci                     # зависимости (Node 22.5+, проверено на 24)
-npm test                   # 70 тестов
+npm test                   # 81 тест
 npm run smoke              # смоук интерфейса (happy-dom)
 npm run build              # tsc --noEmit + vite build
 npm run build:apk          # tools/android.jar + build-tools/35.0.0 + r8.jar → build/AnOOPlan-<версия>.apk
+UNSIGNED_APK=1 npm run build:apk  # неподписанный APK для CI
 bash scripts/fetch-tools.sh # скачать platform-35, build-tools 35.0.0 и r8.jar
 ```
 
-Сборка APK в CI: `.github/workflows/android-apk.yml` — использует предустановленный Android SDK раннера,
-собирает артефакт `AnOOPlan-apk`, тесты и смоук идут до сборки. Деплой сайта — `deploy.yml` (GitHub Pages).
+Сборка APK в CI: `.github/workflows/android-apk.yml` — тесты, смоук и **неподписанный** APK
+(`AnOOPlan-apk-unsigned`), ключ в раннере не генерируется. Деплой сайта — `deploy.yml` (GitHub Pages).
 
-Релиз: поднять версию в `android/AndroidManifest.xml` и в `scripts/build-apk.sh` (`VERSION_NAME`, `VERSION_CODE`),
-собрать APK, создать GitHub Release и приложить APK, затем `git push`.
+Релиз: поднять версию в `android/AndroidManifest.xml`, `scripts/build-apk.sh` и `package.json`,
+закоммитить, поставить тег `vX.Y.Z` и запушить его. `.github/workflows/android-release.yml` соберёт
+подписанный APK из GitHub Secrets, проверит SHA-256 сертификата и создаст GitHub Release.
+Локальная подпись — `KS_PASS=... bash scripts/build-apk.sh` или пароль из `keystore/pass.txt`.
+Первый локальный запуск без keystore: `ALLOW_NEW_KEYSTORE=1 bash scripts/build-apk.sh` (создаст ключ
+и `keystore/pass.txt`).
 
 ## Что уже сделано (по версиям)
 
@@ -85,6 +92,9 @@ bash scripts/fetch-tools.sh # скачать platform-35, build-tools 35.0.0 и 
   потому что WebView игнорирует собственный padding. Проверено на эмуляторе Android 15.
 - **1.8.3** — в листе «План» PDF-журнала снова видна загруженная PDF-подложка: из SVG убрана
   белая заливка, перекрывавшая растр; добавлена поддержка `data:`-PDF.
+- **1.9.0** — фоновый GC осиротевших PDF/фото с учётом undo/redo и снимков, журнал диагностики
+  с экспортом, отключены WebView debugging и autobackup в release, подписанный release-workflow
+  на GitHub Secrets без генерации ключа в CI.
 
 ## Известные проблемы и техдолг (P0 → P2)
 
@@ -129,7 +139,7 @@ bash scripts/fetch-tools.sh # скачать platform-35, build-tools 35.0.0 и 
 - Начинать с чтения этого файла и `README.md`, затем `npm ci && npm test && npm run smoke`.
 - **Не коммитить**: `keystore/`, `tools/`, `build/`, `android/assets/`, ключи, токены, `.env`.
 - Перед пушем: тесты + смоук зелёные, версия поднята, README обновлён.
-- Релиз: собрать APK, создать GitHub Release с описанием изменений, приложить APK.
+- Релиз: тег `vX.Y.Z` → `android-release.yml`; проверить, что APK приложен и подпись совпала с `ANDROID_CERT_SHA256`.
 - Не менять политику устройства (DSHA) и не пытаться обойти блокировки доступа.
 - Секреты (токен GitHub, ключ DeepSeek) приходят отдельным сообщением; в файлы их не писать.
 

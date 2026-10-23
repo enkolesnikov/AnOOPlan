@@ -462,6 +462,20 @@ if (aboutButton) {
   check(aboutText.includes('SIL OPEN FONT LICENSE'), 'текст OFL для PT Sans показан');
   check(aboutText.includes('PT Sans'), 'шрифт PT Sans указан в лицензиях');
   check(/версия \d+\.\d+\.\d+/.test(aboutText), 'версия приложения показана');
+  check(aboutText.includes('Диагностика'), 'раздел диагностики показан');
+  const diagnosticsButton = buttons().find(button => (button.textContent || '').trim() === 'Скачать журнал');
+  check(Boolean(diagnosticsButton), 'кнопка «Скачать журнал» доступна');
+  if (diagnosticsButton) {
+    diagnosticsButton.click();
+    await sleep(400);
+    const diagnosticFile = saved.find(file => file.name.endsWith('.txt'));
+    check(Boolean(diagnosticFile), 'журнал диагностики сохранён через мост');
+    if (diagnosticFile) {
+      const text = Buffer.from(diagnosticFile.base64, 'base64').toString('utf8');
+      check(text.includes('AnOOPlan — диагностика'), 'в журнале есть заголовок');
+      check(text.includes('Версия приложения:'), 'в журнале есть версия');
+    }
+  }
   const closeAbout = aboutSheet?.querySelector('.sheet-head button');
   if (closeAbout) closeAbout.click();
   await sleep(150);

@@ -9,7 +9,9 @@ import type { JournalPhoto } from './export-pdf';
 import { planRender, fallbackPlan, needsClipping, type PlanRender } from './render-plan';
 import { buildPlanSvg } from './plan-svg';
 import { orphanPhotoKeys, purgePhotoBlobs } from './photos';
-import { AboutSheet } from './About';
+import { AboutSheet, APP_VERSION } from './About';
+import { clearDiagnostics, diagnosticsText, logDiagnostic, readDiagnostics, type DiagnosticEntry } from './diagnostics';
+import { unusedStorageKeys } from './storage-gc';
 import { createUuid as uid, cloneValue as clone, decodeImage, loadBitmap } from './compat';
 
 type PdfjsModule = typeof import('pdfjs-dist/legacy/build/pdf.mjs');
@@ -112,6 +114,16 @@ async function idbStoreKeys(store: string): Promise<string[]> {
     req.onerror = () => reject(req.error);
   });
 }
+
+async function idbStoreGetAll<T>(store: string): Promise<T[]> {
+  const db = await idbOpen();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(store, 'readonly');
+    const req = tx.objectStore(store).getAll();
+    req.onsuccess = () => resolve(req.result as T[]);
+    req.onerror = () => reject(req.error);
+  });
+}
 async function idbDelete(key: string): Promise<void> {
   const db = await idbOpen();
   await new Promise<void>((resolve, reject) => {
@@ -191,6 +203,7 @@ export default function App() {
   const [view, setView] = useState<View>('plan');
   const [menuOpen, setMenuOpen] = useState(false);
   const [aboutOpen, setAboutOpen] = useState(false);
+  const [diagnostics, setDiagnostics] = useState<DiagnosticEntry[]>([]);
   const [propsOpen, setPropsOpen] = useState(false);
   const [tab, setTab] = useState<'floors' | 'equipment' | 'routes' | 'cables'>('floors');
   const [zoom, setZoom] = useState(.8);
@@ -284,7 +297,7 @@ export default function App() {
     setProject(p); projectRef.current = p; setSaved(exists ? JSON.stringify(p) : ''); setPersisted(exists);
     setFloorId(p.floors[0]?.id || ''); setUndo([]); setRedo([]); setSelection(null); setDraft([]); setMeasure([]); setCalibration([]); setCableSegments([]); setView('plan'); setTool('select'); setError('');
   }
-  async function run(task: () => Promise<void>) { setBusy(true); setError(''); try { await task(); } catch (e) { setError(e instanceof Error ? e.message : String(e)); } finally { setBusy(false); } }
+  async function run(task: () => Promise<void>) { setBusy(true); setError(''); try { await task(); } catch (e) { logDiagnostic('error', e, 'run'); setError(e instanceof Error ? e.message : String(e)); } finally { setBusy(false); } }
   async function saveProject(silent = false): Promise<Project> {
     const snapshot = clone(projectRef.current);
     if (staticMode) {
@@ -304,6 +317,9 @@ export default function App() {
   async function deleteProject(id: string, name: string) {
     if (!window.confirm(`Удалить проект «${name}»? Это действие необратимо.`)) return;
     if (staticMode) {
+      // Снимки принадлежат проекту: без их удаления блобы PDF/фото останутся сиротами.
+      const snapshotKeys = (await idbStoreKeys('snapshots')).filter(key => key.startsWith(id + ':'));
+      for (const key of snapshotKeys) { try { await idbStoreDelete('snapshots', key); } catch { /* хранилище недоступно */ } }
       const target = lsProjects().find(p => p.id === id);
       if (target) for (const f of target.floors) if (f.pdfId?.startsWith('idb:')) { try { await idbDelete(f.pdfId.slice(4)); } catch { /* хранилище недоступно */ } }
       if (target) for (const item of target.equipment) for (const key of item.photos || []) { try { await idbDelete('photo:' + key); } catch { /* хранилище недоступно */ } }
@@ -333,7 +349,7 @@ export default function App() {
   // Проект, который уже лежит в списке, дописывается сам — «Сохранить» лишь для нового.
   useEffect(() => {
     if (!dirty || !persisted) return;
-    const timer = setTimeout(() => { void saveProject(true).catch(() => { /* повторим при следующем изменении */ }); }, 1500);
+    const timer = setTimeout(() => { void saveProject(true).catch(error => { logDiagnostic('error', error, 'autosave'); /* повторим при следующем изменении */ }); }, 1500);
     return () => clearTimeout(timer);
   }, [dirty, project]);
   // Миниатюры фотографий выбранного оборудования берём из IndexedDB.
@@ -363,12 +379,19 @@ export default function App() {
     const timer = setInterval(() => { if (dirty) void takeSnapshot('автоснимок').catch(() => { /* хранилище недоступно */ }); }, 5 * 60 * 1000);
     return () => clearInterval(timer);
   }, [dirty]);
+  // Фоновая уборка осиротевших PDF/фото. Учитывает историю и снимки, поэтому
+  // не ломает undo; запускается после затишья, чтобы не мешать правкам.
+  useEffect(() => {
+    if (!staticMode) return;
+    const timer = setTimeout(() => { void collectStorageGarbage([projectRef.current, ...undo, ...redo]); }, 3000);
+    return () => clearTimeout(timer);
+  }, [project, undo, redo, staticMode]);
   // Нативная оболочка спрашивает, есть ли несохранённые изменения (кнопка/жест «Назад»).
   useEffect(() => { nativeBridge()?.setDirty?.(dirty); }, [dirty]);
   // Вызывается из Java: сохранить и только потом закрыть приложение.
   useEffect(() => {
     (window as Window & { __anooplanSaveAndExit?: () => Promise<void> }).__anooplanSaveAndExit = async () => {
-      try { await saveProject(true); } catch { /* выходим в любом случае */ }
+      try { await saveProject(true); } catch (error) { logDiagnostic('error', error, 'saveAndExit'); /* выходим в любом случае */ }
       nativeBridge()?.exitNow?.();
     };
   });
@@ -471,7 +494,7 @@ export default function App() {
           if (!plan.clipped) throw error;
           await draw(fallbackPlan(currentFloor.width, currentFloor.height, PLAN_MAX_PIXELS));
         }
-      } catch (e) { if (!cancelled) setPdfError(`PDF не отображён: ${e instanceof Error ? e.message : String(e)}`); }
+      } catch (e) { logDiagnostic('error', e, 'renderPlan'); if (!cancelled) setPdfError(`PDF не отображён: ${e instanceof Error ? e.message : String(e)}`); }
     })();
     return () => { cancelled = true; renderTask?.cancel(); loadingTask?.destroy(); };
   }, [floor?.pdfId, floor?.page, floor?.id, view, renderTick]);
@@ -918,6 +941,30 @@ export default function App() {
     };
     return '\uFEFF' + rows.map(r => r.map(cell).join(';')).join('\r\n');
   }
+  /**
+   * Убирает блобы, на которые больше не ссылается ни проект, ни undo/redo,
+   * ни сохранённые проекты, ни снимки версий. Снимки удалённых проектов
+   * тоже вычищаются: иначе они держат PDF и фото вечно.
+   */
+  async function collectStorageGarbage(states: Project[]): Promise<void> {
+    if (!staticMode) return;
+    try {
+      const saved = lsProjects();
+      const projectIds = new Set([...states, ...saved].map(item => item.id));
+      const snapshotProjects: Project[] = [];
+      for (const entry of await idbStoreGetAll<SnapshotEntry>('snapshots')) {
+        if (!entry?.key) continue;
+        const projectId = entry.key.slice(0, entry.key.lastIndexOf(':'));
+        if (!projectIds.has(projectId)) {
+          await idbStoreDelete('snapshots', entry.key).catch(() => { /* уже удалён */ });
+          continue;
+        }
+        if (entry.project) snapshotProjects.push(entry.project);
+      }
+      const stale = unusedStorageKeys(await idbStoreKeys('pdfs'), [...states, ...saved, ...snapshotProjects]);
+      for (const key of stale) await idbDelete(key).catch(() => { /* хранилище недоступно */ });
+    } catch { /* хранилище недоступно — повторим при следующем изменении */ }
+  }
   async function takeSnapshot(reason: string): Promise<void> {
     // История — вспомогательная функция: без IndexedDB проект всё равно сохраняется.
     try {
@@ -964,6 +1011,7 @@ export default function App() {
   async function deleteSnapshot(key: string): Promise<void> {
     try { await idbStoreDelete('snapshots', key); } catch { /* уже удалён */ }
     setSnapshots(current => (current || []).filter(item => item.key !== key));
+    void collectStorageGarbage([projectRef.current, ...undo, ...redo]);
   }
   async function compressPhoto(file: File): Promise<Blob> {
     // Фото с телефона уменьшаем до 1600 px по длинной стороне: журнал не раздувается.
@@ -980,7 +1028,8 @@ export default function App() {
       const blob = await new Promise<Blob | null>(resolve => canvas.toBlob(resolve, 'image/jpeg', 0.82));
       bitmap.close();
       return blob || file;
-    } catch {
+    } catch (error) {
+      logDiagnostic('error', error, 'compressPhoto');
       return file;
     }
   }
@@ -1015,7 +1064,7 @@ export default function App() {
           if (layerContext) await page.render({ canvasContext: layerContext, viewport, canvas: layer }).promise;
           context.drawImage(layer, 0, 0, width, height);
           void loading.destroy();
-        } catch { /* план выгружается без подложки */ }
+        } catch (error) { logDiagnostic('error', error, 'capturePlan:pdf'); /* план выгружается без подложки */ }
       }
       const image = new Image();
       image.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(buildPlanSvg(projectRef.current, floorItem));
@@ -1024,7 +1073,8 @@ export default function App() {
       const blob = await new Promise<Blob | null>(resolve => target.toBlob(resolve, 'image/png'));
       if (!blob) return null;
       return { title: floorItem.name, png: new Uint8Array(await blob.arrayBuffer()) };
-    } catch {
+    } catch (error) {
+      logDiagnostic('error', error, 'capturePlan');
       return null;
     }
   }
@@ -1112,6 +1162,19 @@ export default function App() {
     const blob = await response.blob(); const link = document.createElement('a'); link.href = URL.createObjectURL(blob); link.download = `${current.name}.${kind === 'backup' ? 'json' : kind}`; link.click(); setTimeout(() => URL.revokeObjectURL(link.href), 1000);
     setMessage(kind === 'backup' ? 'Резервная копия с PDF выгружена.' : `Экспорт ${kind.toUpperCase()} готов.`);
   }
+  async function exportDiagnostics(): Promise<void> {
+    const blob = new Blob([diagnosticsText(APP_VERSION)], { type: 'text/plain;charset=utf-8' });
+    const name = `AnOOPlan-диагностика-${new Date().toISOString().slice(0, 10)}.txt`;
+    const savedPath = await saveBlobOnDevice(name, blob);
+    if (!savedPath) {
+      const link = document.createElement('a');
+      link.href = URL.createObjectURL(blob);
+      link.download = name;
+      link.click();
+      setTimeout(() => URL.revokeObjectURL(link.href), 1000);
+    }
+    setMessage(savedPath ? `Журнал диагностики сохранён: ${savedPath}` : 'Журнал диагностики сформирован.');
+  }
   const toolHints: Record<Tool, string> = { select: 'Выберите объект • тяните оборудование и узлы трассы', pan: 'Перетаскивайте план • колесо — масштаб', equipment: 'Клик на плане — добавить оборудование', route: 'Клики — вершины • Enter — завершить • Esc — отменить', calibrate: 'Укажите две точки известного размера на PDF', cable: 'Выбирайте сегменты по порядку от начала к концу', measure: 'Рулетка: две точки на плане → расстояние в метрах' };
 
   return <div className="app-shell">
@@ -1124,7 +1187,7 @@ export default function App() {
       <div className="sidebar-actions">{tab === 'floors' ? <><button onClick={() => { const f = freshFloor(`Этаж ${project.floors.length + 1}`); mutate(p => p.floors.push(f)); setFloorId(f.id); setSelection(null); }}>＋ Добавить этаж</button><button onClick={() => upload.current?.click()} disabled={!floor || busy}>↑ Загрузить PDF</button></> : <button onClick={() => { setView('plan'); setTool(tab === 'equipment' ? 'equipment' : tab === 'routes' ? 'route' : 'cable'); }}>＋ {tab === 'equipment' ? 'Оборудование на плане' : tab === 'routes' ? 'Начертить трассу' : 'Создать кабель'}</button>}</div>
       <div className="sidebar-project"><button onClick={() => { setMenuOpen(false); if (mayLeave()) load(freshProject(), false); }}>＋ Новый проект</button><button disabled={busy} onClick={() => { setMenuOpen(false); void run(async () => { setProjects(staticMode ? lsProjects().map(p => ({ id: p.id, name: p.name, updatedAt: p.updatedAt })) : await api('/api/projects')); }); }}>📂 Открыть проект</button><button disabled={busy} onClick={() => { setMenuOpen(false); restoreInput.current?.click(); }}>⬆ Загрузить JSON</button><button onClick={() => { setMenuOpen(false); if (mayLeave()) { load(createDemoProject(), false); setMessage('Учебный проект: синтетические данные, не рабочая документация.'); } }}>📘 Учебный проект</button></div>
       <div className="project-health"><span className="eyebrow">КОНТРОЛЬ ДАННЫХ</span><strong>{issueCount ? `${issueCount} замечаний` : 'Проверка проекта'}</strong><small>Неизвестные отметки, масштаб и разрывы исключают итоговый метраж.</small><button onClick={() => setView('specs')}>Показать проверку →</button></div>
-      <div className="sidebar-about"><button onClick={() => { setMenuOpen(false); setAboutOpen(true); }}>ℹ О программе / Лицензии</button></div></aside>
+      <div className="sidebar-about"><button onClick={() => { setMenuOpen(false); setDiagnostics(readDiagnostics()); setAboutOpen(true); }}>ℹ О программе / Лицензии</button></div></aside>
       <main className="main-area">{view === 'plan' ? <div className="plan-view"><div className="drawing-toolbar"><div className="tool-group">{([['select', '↖', 'Выбор'], ['pan', '✥', 'Панорама'], ['equipment', '▣', 'Оборудование'], ['route', '⌁', 'Трасса'], ['cable', '↝', 'Кабель'], ['calibrate', '↔', 'Масштаб'], ['measure', '📏', 'Рулетка']] as const).map(([id, icon, label]) => <button key={id} title={label} className={tool === id ? 'active' : ''} onClick={() => { setTool(id); setDraft([]); setCalibration([]); setMeasure([]); }}><b>{icon}</b><span>{label}</span></button>)}</div><div className="tool-group history"><button title="Отменить Ctrl+Z" disabled={!undo.length} onClick={() => history(true)}>↶</button><button title="Повторить Ctrl+Shift+Z" disabled={!redo.length} onClick={() => history(false)}>↷</button></div></div>
       <div className="drawing-options"><label><input type="checkbox" checked={grid} onChange={e => setGrid(e.target.checked)} />Сетка</label><label><input type="checkbox" checked={snap} onChange={e => setSnap(e.target.checked)} />Привязка</label><label><input type="checkbox" checked={ortho} onChange={e => setOrtho(e.target.checked)} />Ортогонально</label><label>Шаг<input className="mini-input" type="number" min="1" value={gridSize} onChange={e => setGridSize(Math.max(1, Number(e.target.value) || 1))} /></label><span className="grow" />{floor?.pdfId && <label>Страница <input className="mini-input" type="number" min="1" max={pdfPages || 9999} value={floor.page} onChange={e => { const page = Math.max(1, Math.min(pdfPages || 9999, Number(e.target.value) || 1)); if (page !== floor.page && window.confirm('Смена страницы сохраняет объекты и сбрасывает масштаб. Продолжить?')) mutate(p => { const f = p.floors.find(f => f.id === floor.id)!; f.page = page; f.metersPerUnit = null; }); }} /> / {pdfPages || '…'}</label>}<button onClick={fit}>Вписать</button><button onClick={() => changeZoom(zoom / 1.2)}>−</button><span>{Math.round(zoom * 100)}%</span><button onClick={() => changeZoom(zoom * 1.2)}>＋</button></div>
       {tool === 'route' && <div className="contextbar"><span>Трасса: {draft.length} вершин</span><label>Высота, м <input type="text" inputMode="decimal" value={routeHeight} onChange={e => setRouteHeight(e.target.value.replace(',', '.'))} /></label><button className="primary" disabled={draft.length < 2} onClick={finishRoute}>Завершить · Enter</button><button onClick={() => setDraft([])}>Сбросить</button></div>}
@@ -1178,7 +1241,12 @@ export default function App() {
       {cable && <>{itemField('Марка', 'brand')}{itemField('Назначение', 'purpose')}<label className="field">От{equipmentSelect(cable.fromId, value => setItem('fromId', value))}</label><label className="field">До{equipmentSelect(cable.toId, value => setItem('toId', value))}</label><div className="field-pair">{itemField('Запас, %', 'reservePercent', true)}{itemField('Запас, м', 'reserveFixed', true)}</div><div className="field-pair">{itemField('На начале, м', 'startReserve', true)}{itemField('На конце, м', 'endReserve', true)}</div>{itemField('Количество', 'quantity', true)}{itemField('Цена за метр, ₽', 'pricePerMeter', true)}<div className="section-label">Порядок обхода</div><ol className="segment-order">{cable.segmentIds.map((id, i) => <li key={id}><span>{segmentName(id)}</span><button disabled={!i} title="Выше" onClick={() => { const next = [...cable.segmentIds]; [next[i - 1], next[i]] = [next[i], next[i - 1]]; setItem('segmentIds', next); }}>↑</button><button disabled={i === cable.segmentIds.length - 1} title="Ниже" onClick={() => { const next = [...cable.segmentIds]; [next[i + 1], next[i]] = [next[i], next[i + 1]]; setItem('segmentIds', next); }}>↓</button><button title="Удалить из цепочки" onClick={() => setItem('segmentIds', cable.segmentIds.filter(s => s !== id))}>×</button></li>)}</ol><button className="wide" onClick={() => { setCableSegments([...cable.segmentIds]); setCableFrom(cable.fromId); setCableTo(cable.toId); setTool('cable'); setView('plan'); setMessage('Измените цепочку кликами. Кнопка «Применить» в свойствах сохранит выбор.'); }}>Выбрать сегменты на плане</button>{tool === 'cable' && <button className="primary wide" onClick={() => { setItem('segmentIds', [...cableSegments]); setItem('fromId', cableFrom); setItem('toId', cableTo); setTool('select'); setCableSegments([]); }}>Применить цепочку к {cable.number}</button>}{calculation && <div className={`calculation-card ${calculation.complete ? '' : 'incomplete'}`}><span>ИТОГ / 1 КАБЕЛЬ</span><strong>{number(calculation.total)} <small>м</small></strong><dl><dt>Геометрия</dt><dd>{number(calculation.geometry)} м</dd><dt>Запас трассы</dt><dd>{number(calculation.routeReserve)} м</dd><dt>Запас кабеля</dt><dd>{number(calculation.cableReserve)} м</dd><dt>Запас концов</dt><dd>{number(calculation.endReserve)} м</dd></dl>{calculation.errors.map((e, i) => <p key={i}>{e}</p>)}</div>}</>}
       <label className="field">Примечание<textarea value={(equipment || route || cable)?.note || ''} onChange={e => setItem('note', e.target.value)} /></label><div className="property-actions"><button onClick={copySelection}>Копировать</button><button className="danger" onClick={removeSelection}>Удалить</button></div></> : floor ? <><div className="object-heading"><span className="eyebrow">ТЕКУЩИЙ ЭТАЖ</span><h2>{floor.name}</h2></div>{field('Название', floor.name, v => mutate(p => { p.floors.find(f => f.id === floor.id)!.name = v; }))}{field('Отметка пола, м', floor.elevation, v => mutate(p => { p.floors.find(f => f.id === floor.id)!.elevation = v === '' ? null : Number(v); }), true, 'Абсолютная отметка для расчёта межэтажных стояков.')}<div className="scale-card"><span className="eyebrow">МАСШТАБ ПОДЛОЖКИ</span><strong>{floor.metersPerUnit ? `${number(floor.metersPerUnit)} м/ед.` : 'Не откалиброван'}</strong><button onClick={() => { setTool('calibrate'); setView('plan'); setCalibration([]); }}>↔ Калибровка по 2 точкам</button></div><details className="scale-presets"><summary>Масштаб по формату листа</summary><div className="field-pair"><label className="field">Формат<select value={sheetFormat} onChange={e => setSheetFormat(e.target.value)}>{Object.keys(SHEET_SIZES).map(size => <option key={size} value={size}>{size}</option>)}</select></label><label className="field">Масштаб<select value={sheetScale} onChange={e => setSheetScale(e.target.value)}>{['50', '100', '200', '500'].map(value => <option key={value} value={value}>1:{value}</option>)}</select></label></div><button className="wide" onClick={applySheetScale}>Применить масштаб листа</button><p className="help">Если план — стандартный лист {sheetFormat} в масштабе 1:{sheetScale}, калибровка двумя точками не нужна.</p></details>{field('Метров в единице PDF', floor.metersPerUnit, v => mutate(p => { p.floors.find(f => f.id === floor.id)!.metersPerUnit = v === '' ? null : Number(v); }), true)}<div className="section-label">Подложка</div><p className="help">{floor.pdfId ? `Исходный PDF подключён. Страница ${floor.page}; ${number(floor.width)} × ${number(floor.height)} ед.` : 'PDF не загружен. Можно чертить на чистом листе; для метража необходим масштаб.'}</p>{floor.pdfId && pdfPages > 0 && <label className="field mobile-only">Страница PDF<input type="number" min="1" max={pdfPages} value={floor.page} onChange={e => { const page = Math.max(1, Math.min(pdfPages, Number(e.target.value) || 1)); if (page !== floor.page) mutate(p => { const f = p.floors.find(f => f.id === floor.id)!; f.page = page; f.metersPerUnit = null; }); }} /></label>}<button className="wide" disabled={busy} onClick={() => upload.current?.click()}>↑ {floor.pdfId ? 'Заменить PDF…' : 'Загрузить PDF…'}</button><p className="help">При замене PDF или страницы объекты остаются на прежних координатах. Проверьте положение и повторите калибровку.</p><div className="section-label">Система координат</div><p className="help">X/Y хранятся в единицах PDF. Зум не влияет на длины. Для стояка совпадающие X/Y на разных этажах должны соответствовать одной физической оси.</p><button className="danger wide" disabled={project.floors.length < 2} onClick={() => { const eqIds = project.equipment.filter(eq => eq.floorId === floor.id).map(eq => eq.id); const segmentIds = project.routes.flatMap(r => r.segments).filter(s => s.a.floorId === floor.id || s.b.floorId === floor.id).map(s => s.id); if (window.confirm('Удалить этаж, его оборудование, связанные сегменты и кабели?')) { const photoKeys = orphanPhotoKeys(project, eqIds); mutate(p => { p.floors = p.floors.filter(f => f.id !== floor.id); p.equipment = p.equipment.filter(eq => eq.floorId !== floor.id); p.routes.forEach(r => { r.segments = r.segments.filter(s => !segmentIds.includes(s.id)); }); p.routes = p.routes.filter(r => r.segments.length); p.cables = p.cables.filter(c => !eqIds.includes(c.fromId) && !eqIds.includes(c.toId) && !c.segmentIds.some(id => segmentIds.includes(id))); }); void purgePhotoBlobs(photoKeys, idbDelete); setFloorId(''); } }}>Удалить этаж</button></> : <p className="help">Добавьте этаж для начала работы.</p>}</div></aside>
     </div><footer className="statusbar"><span><i className="dot calibrated" />{message}</span><span>{project.equipment.length} оборуд. · {project.routes.length} трасс · {project.cables.length} кабелей <b>{staticMode ? 'БРАУЗЕР' : 'СЕРВЕР'}</b></span></footer>
-    {aboutOpen && <AboutSheet onClose={() => setAboutOpen(false)} />}
+    {aboutOpen && <AboutSheet
+      onClose={() => setAboutOpen(false)}
+      diagnostics={diagnostics}
+      onExportDiagnostics={() => void run(exportDiagnostics)}
+      onClearDiagnostics={() => { clearDiagnostics(); setDiagnostics([]); }}
+    />}
     {(menuOpen || propsOpen) && <div className="scrim" onClick={() => { setMenuOpen(false); setPropsOpen(false); }} />}
     <button className={`props-fab ${propsOpen ? 'active' : ''}`} aria-label="Свойства" onClick={() => setPropsOpen(v => !v)}>⚙</button>
     <div className="history-fab">

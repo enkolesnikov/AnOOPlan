@@ -12,7 +12,7 @@
 
 [![Скачать APK](https://img.shields.io/badge/%D1%81%D0%BA%D0%B0%D1%87%D0%B0%D1%82%D1%8C-APK-2ea043?logo=android&logoColor=white)](https://github.com/enkolesnikov/AnOOPlan/releases/latest)
 
-- **APK:** [последний релиз](https://github.com/enkolesnikov/AnOOPlan/releases/latest) (`AnOOPlan-1.8.3.apk`) — 1,8 МБ со встроенными шрифтами, Android 7.0+ (minSdk 24, WebView 98+, targetSdk 35), без интернета;
+- **APK:** [последний релиз](https://github.com/enkolesnikov/AnOOPlan/releases/latest) (`AnOOPlan-1.9.0.apk`) — 1,8 МБ со встроенными шрифтами, Android 7.0+ (minSdk 24, WebView 98+, targetSdk 35), без интернета;
 - **Веб-версия:** [enkolesnikov.github.io/AnOOPlan](https://enkolesnikov.github.io/AnOOPlan/);
 - **Исходный проект:** [enkolesnikov/ooplan](https://github.com/enkolesnikov/ooplan).
 
@@ -85,12 +85,19 @@ npm run dev
 
 APK — это нативная оболочка (WebView) вокруг той же статической сборки, без Gradle и без сервера:
 
-- `com.anooplan.app`, minSdk 24, targetSdk 35, версия 1.8.3;
+- `com.anooplan.app`, minSdk 24, targetSdk 35, версия 1.9.0;
 - ассеты (`dist/`) упакованы в APK и отдаются WebView по origin `https://appassets.local/`, поэтому работают `localStorage`, `IndexedDB` (PDF-планы) и `crypto.randomUUID()`;
 - режим хранения — «Браузер»: проекты автосохраняются на устройстве, PDF читаются из памяти телефона через системный выбор файлов;
 - экспорт CSV и JSON-копии сохраняется в общую папку **Загрузки/AnOOPlan** без запроса опасных разрешений (MediaStore);
 - XLSX и PDF журнала собираются **на самом телефоне**: сервер для выгрузки не нужен;
 - разрешение `INTERNET` не запрашивается: приложение работает полностью офлайн.
+
+### Что нового в 1.9.0
+
+- **Уборка хранилища**: сироты PDF и фото теперь удаляются фоновым GC. Он учитывает текущий проект, undo/redo, сохранённые проекты и снимки версий, поэтому не ломает историю; снимки удалённых проектов тоже вычищаются.
+- **Диагностика**: приложение ведёт локальный журнал ошибок (до 50 записей) с версией и WebView. В «О программе / Лицензии» появились просмотр, очистка и выгрузка журнала — это поможет разбирать полевые проблемы без adb.
+- **Безопасность релиза**: отладка WebView включается только в debug-сборке, автобэкап приложения отключён, пароль keystore больше не хранится в скрипте. Обычный CI собирает неподписанный APK, а подписанный релиз — отдельный workflow по тегу `v*` из GitHub Secrets.
+- 81 юнит-тест, смоук и APK.
 
 ### Что нового в 1.8.3
 

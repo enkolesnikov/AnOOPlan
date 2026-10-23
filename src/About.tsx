@@ -1,5 +1,8 @@
 import oflText from './assets/fonts/OFL.txt?raw';
 import packageInfo from '../package.json';
+import type { DiagnosticEntry } from './diagnostics';
+
+export const APP_VERSION = packageInfo.version;
 
 const COMPONENTS = [
   ['React, React DOM', 'MIT'],
@@ -11,7 +14,12 @@ const COMPONENTS = [
   ['PT Sans', 'SIL Open Font License 1.1'],
 ];
 
-export function AboutSheet({ onClose }: { onClose: () => void }) {
+export function AboutSheet({ onClose, diagnostics, onExportDiagnostics, onClearDiagnostics }: {
+  onClose: () => void;
+  diagnostics: DiagnosticEntry[];
+  onExportDiagnostics: () => void;
+  onClearDiagnostics: () => void;
+}) {
   return (
     <div className="sheet-backdrop about-backdrop" onClick={onClose}>
       <section className="sheet about-sheet" role="dialog" aria-label="О программе и лицензии" onClick={event => event.stopPropagation()}>
@@ -23,10 +31,20 @@ export function AboutSheet({ onClose }: { onClose: () => void }) {
         <div className="about-body">
           <div className="about-title">
             <span className="brand-mark">A</span>
-            <div><strong>AnOOPlan</strong><small>кабельный план · версия {packageInfo.version}</small></div>
+            <div><strong>AnOOPlan</strong><small>кабельный план · версия {APP_VERSION}</small></div>
           </div>
           <p>Приложение для раскладки кабельных трасс по PDF-планам и расчёта кабельного журнала. Работает офлайн: проекты, планы и фотографии хранятся на устройстве.</p>
           <p className="about-copy">© 2026 enkolesnikov. Исходный код распространяется по лицензии MIT.</p>
+
+          <h3>Диагностика</h3>
+          <p className="about-help">Локальный журнал ошибок (до 50 записей) хранится только на устройстве. Если PDF не отрисовался или что-то пошло не так — скачайте журнал и пришлите разработчику.</p>
+          <div className="diagnostics-actions">
+            <button onClick={onExportDiagnostics}>Скачать журнал</button>
+            <button onClick={onClearDiagnostics} disabled={!diagnostics.length}>Очистить</button>
+          </div>
+          {diagnostics.length
+            ? <pre className="diagnostics-log">{diagnostics.slice(-5).map(entry => `${entry.at} [${entry.kind}]${entry.context ? ` (${entry.context})` : ''}\n${entry.message}`).join('\n\n')}</pre>
+            : <p className="about-help">Ошибок не зафиксировано.</p>}
 
           <h3>PT Sans</h3>
           <p>В приложение встроены шрифты PT Sans Regular и PT Sans Bold. Они используются для кириллицы в PDF и распространяются по SIL Open Font License 1.1. Полный текст лицензии приведён ниже, как требует OFL.</p>

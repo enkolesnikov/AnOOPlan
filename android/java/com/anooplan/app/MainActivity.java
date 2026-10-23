@@ -7,6 +7,7 @@ import android.content.ActivityNotFoundException;
 import android.content.ContentValues;
 import android.content.DialogInterface;
 import android.content.Intent;
+import android.content.pm.ApplicationInfo;
 import android.graphics.Color;
 import android.graphics.Insets;
 import android.print.PrintAttributes;
@@ -107,7 +108,10 @@ public class MainActivity extends Activity implements NativeBridge.Host {
             // Приложение офлайн: не отправляем запросы в сервис безопасного просмотра.
             settings.setSafeBrowsingEnabled(false);
         }
-        WebView.setWebContentsDebuggingEnabled(true);
+        // Отладка WebView нужна только в debug-сборке: в релизе она открывает
+        // удалённый доступ к странице и хранилищу проекта.
+        boolean debuggable = (getApplicationInfo().flags & ApplicationInfo.FLAG_DEBUGGABLE) != 0;
+        WebView.setWebContentsDebuggingEnabled(debuggable);
 
         webView.setWebViewClient(new AssetServer(this));
         webView.setWebChromeClient(new FileChooserClient());

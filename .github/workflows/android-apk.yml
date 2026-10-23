@@ -56,11 +56,15 @@ jobs:
       - name: Дымовой тест интерфейса
         run: npm run smoke
 
-      - name: Сборка APK
+      # CI не подписывает APK: ключ не должен генерироваться в раннере.
+      # Подписанный релиз собирает android-release.yml из секретов.
+      - name: Сборка APK (без подписи)
+        env:
+          UNSIGNED_APK: '1'
         run: bash scripts/build-apk.sh
 
       - uses: actions/upload-artifact@v4
         with:
-          name: AnOOPlan-apk
-          path: build/AnOOPlan-*.apk
+          name: AnOOPlan-apk-unsigned
+          path: build/AnOOPlan-*-unsigned.apk
           if-no-files-found: error
