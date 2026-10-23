@@ -55,6 +55,7 @@ const saved = [];
 const dirtyStates = [];
 let exitCalled = false;
 let vibrations = 0;
+const printCalls = [];
 window.AnOOPlanNative = {
   platform: () => 'android',
   saveFile: (name, base64, mime) => {
@@ -64,6 +65,7 @@ window.AnOOPlanNative = {
   setDirty: value => dirtyStates.push(value),
   exitNow: () => { exitCalled = true; },
   vibrate: () => { vibrations += 1; },
+  printPdf: (name, base64) => { printCalls.push({ name, base64 }); },
 };
 
 // Шрифты для PDF приложение тянет из собственных ассетов — отдаём их как статический сервер.
@@ -300,6 +302,56 @@ if (measureTool) {
   await sleep(150);
   const status = document.querySelector('.statusbar')?.textContent || '';
   check(/Рулетка: .+ (м|ед\.)/.test(status), `рулетка показала расстояние: ${status.slice(0, 140)}`);
+}
+
+console.log('\n7d. Площадь контура');
+const areaButton = buttons().find(button => (button.textContent || '').trim() === 'Площадь');
+check(Boolean(areaButton), 'переключатель «Площадь» доступен в режиме замера');
+if (areaButton) {
+  areaButton.click();
+  await sleep(120);
+  for (const [id, x, y] of [[6, 60, 60], [7, 160, 60], [8, 160, 160]]) {
+    pointer('pointerdown', id, x, y);
+    await sleep(30);
+    pointer('pointerup', id, x, y);
+    await sleep(60);
+  }
+  const status = document.querySelector('.statusbar')?.textContent || '';
+  check(/Площадь: .+ (м²|ед\.²)/.test(status), `площадь посчитана: ${status.slice(0, 140)}`);
+}
+
+console.log('\n7e. Масштаб по формату листа');
+const floorsTab = Array.from(document.querySelectorAll('.structure-tabs button')).find(button => (button.textContent || '').includes('Этажи'));
+if (floorsTab) floorsTab.click();
+await sleep(150);
+const floorRow = document.querySelector('.object-row');
+if (floorRow) floorRow.click();
+await sleep(150);
+const applyScale = buttons().find(button => (button.textContent || '').includes('Применить масштаб листа'));
+check(Boolean(applyScale), 'кнопка «Применить масштаб листа» есть в свойствах этажа');
+if (applyScale) {
+  applyScale.click();
+  await sleep(300);
+  const status = document.querySelector('.statusbar')?.textContent || '';
+  check(/Масштаб по листу A1 1:100/.test(status), `масштаб применён: ${status.slice(0, 140)}`);
+}
+
+console.log('\n7f. Печать A4 через системный диалог');
+check(Boolean(document.querySelector('input[capture]')), 'поле съёмки с камерой присутствует');
+const exportForPrint = buttons().find(button => (button.textContent || '').includes('Экспорт / копия'));
+if (exportForPrint) exportForPrint.click();
+await sleep(150);
+const printButton = buttons().find(button => (button.textContent || '').trim() === 'Печать A4');
+check(Boolean(printButton), 'кнопка «Печать A4» доступна в приложении');
+if (printButton) {
+  printButton.click();
+  await sleep(2500);
+  check(printCalls.length === 1, `мост печати вызван: ${printCalls.length}`);
+  if (printCalls.length) {
+    const bytes = Buffer.from(printCalls[0].base64, 'base64');
+    check(bytes.subarray(0, 5).toString() === '%PDF-', 'в печать ушёл корректный PDF');
+    check(printCalls[0].name.length > 0, `имя задания: ${printCalls[0].name}`);
+  }
 }
 
 console.log('\n8. Выход с сохранением (кнопка «Назад» в Android)');

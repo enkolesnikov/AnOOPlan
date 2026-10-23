@@ -4,12 +4,17 @@ import android.annotation.SuppressLint;
 import android.app.Activity;
 import android.app.AlertDialog;
 import android.content.ActivityNotFoundException;
+import android.content.ContentValues;
 import android.content.DialogInterface;
 import android.content.Intent;
 import android.graphics.Color;
+import android.print.PrintAttributes;
+import android.print.PrintManager;
 import android.net.Uri;
+import android.provider.MediaStore;
 import android.os.Build;
 import android.os.Bundle;
+import android.os.Environment;
 import android.text.InputType;
 import android.view.Window;
 import android.view.WindowManager;
@@ -42,6 +47,7 @@ public class MainActivity extends Activity implements NativeBridge.Host {
     private ValueCallback<Uri[]> fileChooserCallback;
     private volatile boolean pageDirty = false;
     private volatile boolean exiting = false;
+    private Uri pendingCameraUri = null;
 
     @SuppressLint("SetJavaScriptEnabled")
     @Override
@@ -128,6 +134,16 @@ public class MainActivity extends Activity implements NativeBridge.Host {
             Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
             intent.addCategory(Intent.CATEGORY_OPENABLE);
             intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+            if (wantsImage && !wantsJson && !wantsPdf && params.isCaptureEnabled()
+                    && Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                // «Снять» в приложении: системная камера пишет снимок в нашу запись MediaStore.
+                try {
+                    startActivityForResult(buildCameraIntent(), REQUEST_FILE_CHOOSER);
+                    return true;
+                } catch (ActivityNotFoundException ignored) {
+                    // камеры нет — покажем обычный выбор изображения
+                }
+            }
             if (wantsPdf && !wantsJson) {
                 intent.setType("application/pdf");
                 intent.putExtra(Intent.EXTRA_MIME_TYPES, new String[]{"application/pdf"});
@@ -236,13 +252,25 @@ public class MainActivity extends Activity implements NativeBridge.Host {
         if (requestCode == REQUEST_FILE_CHOOSER) {
             if (fileChooserCallback != null) {
                 Uri[] result = null;
-                if (resultCode == RESULT_OK && data != null) {
-                    result = WebChromeClient.FileChooserParams.parseResult(resultCode, data);
-                    if (result == null) {
-                        Uri single = data.getData();
-                        if (single != null) result = new Uri[]{single};
+                if (resultCode == RESULT_OK) {
+                    if (pendingCameraUri != null) {
+                        result = new Uri[]{pendingCameraUri};
+                    } else if (data != null) {
+                        result = WebChromeClient.FileChooserParams.parseResult(resultCode, data);
+                        if (result == null) {
+                            Uri single = data.getData();
+                            if (single != null) result = new Uri[]{single};
+                        }
                     }
                 }
+                if (result == null && pendingCameraUri != null) {
+                    try {
+                        getContentResolver().delete(pendingCameraUri, null, null);
+                    } catch (Exception ignored) {
+                        // пустая запись MediaStore не мешает работе
+                    }
+                }
+                pendingCameraUri = null;
                 fileChooserCallback.onReceiveValue(result);
                 fileChooserCallback = null;
             }
@@ -266,6 +294,44 @@ public class MainActivity extends Activity implements NativeBridge.Host {
                 finish();
             }
         });
+    }
+
+    @Override
+    public void onPrintRequested(final String name, final byte[] pdf) {
+        runOnUiThread(new Runnable() {
+            public void run() {
+                try {
+                    String jobName = name == null || name.trim().isEmpty() ? "AnOOPlan" : name.trim();
+                    java.io.File file = PdfPrinter.writeTempFile(MainActivity.this, "anooplan-print.pdf", pdf);
+                    PrintManager manager = (PrintManager) getSystemService(PRINT_SERVICE);
+                    if (manager == null) {
+                        Toast.makeText(MainActivity.this, "Печать недоступна на этом устройстве", Toast.LENGTH_LONG).show();
+                        return;
+                    }
+                    PrintAttributes attributes = new PrintAttributes.Builder()
+                            .setMediaSize(PrintAttributes.MediaSize.ISO_A4.asLandscape())
+                            .setResolution(new PrintAttributes.Resolution("300dpi", "300 dpi", 300, 300))
+                            .setMinMargins(PrintAttributes.Margins.NO_MARGINS)
+                            .build();
+                    manager.print(jobName, PdfPrinter.adapterFor(MainActivity.this, file), attributes);
+                } catch (Exception error) {
+                    Toast.makeText(MainActivity.this, "Не удалось открыть печать: " + error.getMessage(), Toast.LENGTH_LONG).show();
+                }
+            }
+        });
+    }
+
+    /** Системная камера пишет снимок в нашу запись MediaStore — FileProvider не нужен. */
+    private Intent buildCameraIntent() {
+        ContentValues values = new ContentValues();
+        values.put(MediaStore.Images.Media.DISPLAY_NAME, "anooplan-" + System.currentTimeMillis() + ".jpg");
+        values.put(MediaStore.Images.Media.MIME_TYPE, "image/jpeg");
+        values.put(MediaStore.Images.Media.RELATIVE_PATH, Environment.DIRECTORY_PICTURES + "/AnOOPlan");
+        pendingCameraUri = getContentResolver().insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, values);
+        Intent intent = new Intent(MediaStore.ACTION_IMAGE_CAPTURE);
+        if (pendingCameraUri != null) intent.putExtra(MediaStore.EXTRA_OUTPUT, pendingCameraUri);
+        intent.addFlags(Intent.FLAG_GRANT_WRITE_URI_PERMISSION | Intent.FLAG_GRANT_READ_URI_PERMISSION);
+        return intent;
     }
 
     // ── «Назад»: сохранить перед выходом ─────────────────────────────────────

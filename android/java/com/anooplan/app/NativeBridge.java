@@ -28,6 +28,8 @@ public class NativeBridge {
         void onDirtyChanged(boolean dirty);
 
         void onExitRequested();
+
+        void onPrintRequested(String name, byte[] pdf);
     }
 
     private final Context context;
@@ -116,6 +118,18 @@ public class NativeBridge {
     @JavascriptInterface
     public void exitNow() {
         if (host != null) host.onExitRequested();
+    }
+
+    /** Печать PDF журнала через системный диалог печати. */
+    @JavascriptInterface
+    public void printPdf(String name, String base64) {
+        try {
+            byte[] data = Base64.decode(base64, Base64.DEFAULT);
+            if (data.length == 0) return;
+            if (host != null) host.onPrintRequested(name, data);
+        } catch (Exception e) {
+            Toast.makeText(context, "Не удалось подготовить печать: " + e.getMessage(), Toast.LENGTH_LONG).show();
+        }
     }
 
     /** Короткая вибрация: попадание в привязку, долгое нажатие. */
