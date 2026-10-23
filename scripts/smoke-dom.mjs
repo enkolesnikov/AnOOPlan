@@ -416,3 +416,5 @@ if (failures.length) {
   failures.forEach(item => console.log(' - ' + item));
   process.exit(1);
 }
+// Приложение держит таймеры (автоснимки, автосохранение) — завершаем тест явно.
+process.exit(0);
