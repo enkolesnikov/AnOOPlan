@@ -99,7 +99,7 @@ export function normalizeEquipmentColor(value: unknown): string | null {
   if (typeof value !== 'string') return null;
   const text = value.trim().toLowerCase();
   if (/^#[0-9a-f]{6}$/.test(text)) return text;
-  if (/^#[0-9a-f]{3}$/.test(text)) return `#${[...text.slice(1)].map(c => c + c).join('')}`;
+  if (/^#[0-9a-f]{3}$/.test(text)) return `#${text.slice(1).replace(/./g, character => character + character)}`;
   return null;
 }
 

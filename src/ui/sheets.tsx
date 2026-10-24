@@ -29,7 +29,7 @@ export function ExportSheet({ ui }: { ui: AppUi }) {
     shareExport, shareAnoPlan, saveAnoPlan, openHistory, restoreInput, mutate,
   } = ui;
   function documentField(label: string, key: 'organization' | 'object' | 'documentCode' | 'city' | 'title') {
-    return <label className="field">{label}<input type="text" value={project.document?.[key] || ''} onChange={event => mutate(p => { p.document = { ...(p.document || {}), [key]: event.target.value }; })} /></label>;
+    return <label className="field">{label}<input type="text" value={project.document?.[key] || ''} onChange={event => mutate(p => { p.document = { ...p.document, [key]: event.target.value }; })} /></label>;
   }
   return (
 <div className="sheet-backdrop" onClick={() => setExportOpen(false)}><section className="sheet" role="dialog" aria-label="Экспорт и копия" onClick={event => event.stopPropagation()}>
@@ -46,11 +46,11 @@ export function ExportSheet({ ui }: { ui: AppUi }) {
         <div className="document-fields">{documentField('Организация', 'organization')}{documentField('Объект', 'object')}{documentField('Шифр документа', 'documentCode')}{documentField('Город', 'city')}{documentField('Заголовок документа', 'title')}</div>
         <ChangeLogEditor
           entries={project.document?.changeLog ?? []}
-          onChange={(index, key, value) => mutate(p => { const list = [...(p.document?.changeLog ?? [])]; if (!list[index]) return; list[index] = { ...list[index], [key]: value }; p.document = { ...(p.document || {}), changeLog: list }; })}
-          onAdd={() => mutate(p => { p.document = { ...(p.document || {}), changeLog: [...(p.document?.changeLog ?? []), { id: uid(), version: '', date: '', author: '', description: '' }] }; })}
-          onRemove={id => mutate(p => { p.document = { ...(p.document || {}), changeLog: (p.document?.changeLog ?? []).filter(entry => entry.id !== id) }; })}
+          onChange={(index, key, value) => mutate(p => { const list = [...(p.document?.changeLog ?? [])]; if (!list[index]) return; list[index] = { ...list[index], [key]: value }; p.document = { ...p.document, changeLog: list }; })}
+          onAdd={() => mutate(p => { p.document = { ...p.document, changeLog: [...(p.document?.changeLog ?? []), { id: uid(), version: '', date: '', author: '', description: '' }] }; })}
+          onRemove={id => mutate(p => { p.document = { ...p.document, changeLog: (p.document?.changeLog ?? []).filter(entry => entry.id !== id) }; })}
         />
-        <div className="sheet-fields"><label className="field">Составил<input type="text" value={project.document?.compiledBy || ''} onChange={e => mutate(p => { p.document = { ...(p.document || {}), compiledBy: e.target.value }; })} /></label><label className="field">Проверил<input type="text" value={project.document?.checkedBy || ''} onChange={e => mutate(p => { p.document = { ...(p.document || {}), checkedBy: e.target.value }; })} /></label></div>
+        <div className="sheet-fields"><label className="field">Составил<input type="text" value={project.document?.compiledBy || ''} onChange={e => mutate(p => { p.document = { ...p.document, compiledBy: e.target.value }; })} /></label><label className="field">Проверил<input type="text" value={project.document?.checkedBy || ''} onChange={e => mutate(p => { p.document = { ...p.document, checkedBy: e.target.value }; })} /></label></div>
         <button className="anooplan-save" disabled={busy} onClick={() => void run(() => saveAnoPlan())}>Сохранить проект .anooplan</button>
         <button onClick={() => { setExportOpen(false); void openHistory(); }}>История версий</button>
         <button onClick={() => { setExportOpen(false); restoreInput.current?.click(); }}>Восстановить JSON…</button>

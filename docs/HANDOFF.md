@@ -293,6 +293,7 @@ Android-инструменты; JDK на VPS уже установлен. Есл
 |---|---|---|
 | **GitHub CodeQL** | бесплатный SAST для публичных репозиториев, работает в Actions (`security-extended`) | включён workflow `.github/workflows/codeql.yml`; 2 находки: `js/missing-rate-limiting` в `server/app.ts` (локальный сервер, не публикуется — принято как ограничение) и `js/shell-command-injection-from-environment` в `scripts/status.mjs` — **исправлено** (`spawnSync` без shell) |
 | **Semgrep OSS** (community-правила) | бесплатный CLI, правила из реестра Semgrep | 23 предупреждения: 21 — mutable-теги GitHub Actions (**исправлено**: все `uses:` закреплены полными SHA), 1 — exported activity (намеренно: лаунчер и открытие `.anooplan`), 1 — Express direct-response-write (`res.json`, ложное для JSON; добавлены `X-Content-Type-Options: nosniff` и `Referrer-Policy: no-referrer`) |
+| **CodeFactor** | hosted-анализ, подключён владельцем: [отчёт](https://www.codefactor.io/repository/github/enkolesnikov/anooplan/issues) | рейтинг **A**; 25 issues: 18 Complex Method (1 Major — `assertProject`, сложность 69) и 7 Maintainability (лишние spread-фолбэки). **Исправлено:** 7 стилевых и `assertProject` (разбит на helpers); остальные сложные методы — в плане 2.3.0/2.4.0 |
 | **npm audit** | зависимости | 0 уязвимостей |
 
 - Запуск CodeQL: [workflow](https://github.com/enkolesnikov/AnOOPlan/blob/main/.github/workflows/codeql.yml),
