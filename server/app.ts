@@ -13,6 +13,13 @@ export function createApp(options?: { dataDir: string }) {
   app.locals.store = store;
   app.locals.close = () => store.close();
   app.disable('x-powered-by');
+  // Базовые защитные заголовки для всех ответов (SPA и API): запрет MIME-sniffing
+  // и утечки Referer. CSP для статики задаётся мета-тегом в index.html.
+  app.use((_req, res, next) => {
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.setHeader('Referrer-Policy', 'no-referrer');
+    next();
+  });
   app.use(express.json({ limit: '150mb' }));
   const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 30 * 1024 * 1024, files: 1, fields: 0 } });
   const getProject = (id: string) => { const p = store.project(id); if (!p) throw new ApiError(404, 'Проект не найден'); return p; };

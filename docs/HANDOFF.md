@@ -272,6 +272,28 @@ Android-инструменты; JDK на VPS уже установлен. Есл
   визуальная проверка раздела «Заполнение лотков» в PDF (текстовый слой проверен тестами) и иконок
   оборудования в листе «План».
 
+## Внешний аудит (2026-10-24)
+
+Проверено бесплатными инструментами; результаты и исправления:
+
+| Инструмент | Что это | Результат |
+|---|---|---|
+| **GitHub CodeQL** | бесплатный SAST для публичных репозиториев, работает в Actions (`security-extended`) | включён workflow `.github/workflows/codeql.yml`; 2 находки: `js/missing-rate-limiting` в `server/app.ts` (локальный сервер, не публикуется — принято как ограничение) и `js/shell-command-injection-from-environment` в `scripts/status.mjs` — **исправлено** (`spawnSync` без shell) |
+| **Semgrep OSS** (community-правила) | бесплатный CLI, правила из реестра Semgrep | 23 предупреждения: 21 — mutable-теги GitHub Actions (**исправлено**: все `uses:` закреплены полными SHA), 1 — exported activity (намеренно: лаунчер и открытие `.anooplan`), 1 — Express direct-response-write (`res.json`, ложное для JSON; добавлены `X-Content-Type-Options: nosniff` и `Referrer-Policy: no-referrer`) |
+| **npm audit** | зависимости | 0 уязвимостей |
+
+- Запуск CodeQL: [workflow](https://github.com/enkolesnikov/AnOOPlan/blob/main/.github/workflows/codeql.yml),
+  [последний прогон](https://github.com/enkolesnikov/AnOOPlan/actions/runs/40118150262); SARIF сохраняется
+  артефактом `codeql-sarif` (у токена нет scope `security-events`, чтобы читать alerts через API).
+- Semgrep OSS запускается локально (`semgrep scan --config p/security-audit …`), правила hosted, отчёта
+  в репозиторий не коммитим.
+- Сервисы, которые требуют входа/установки GitHub App (поэтому не подключены автоматически):
+  [SonarQube Cloud](https://sonarcloud.io), [Codacy](https://www.codacy.com/open-source) (публичные
+  репозитории бесплатно), [CodeFactor](https://www.codefactor.io), [Snyk](https://snyk.io),
+  [DeepSource](https://deepsource.com), [diffray](https://diffray.ai/open-source/) (OSS бесплатно),
+  [Qodana](https://www.jetbrains.com/qodana/), [Coverity Scan](https://scan.coverity.com).
+  Для подключения нужен вход владельца в сервис; после подключения отчёты можно разбирать и исправлять.
+
 ## Известные проблемы и техдолг
 
 **P0** — открытых нет.
