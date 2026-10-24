@@ -1,6 +1,7 @@
 {
   "name": "anooplan",
-  "version": "1.18.0",
+  "version": "2.0.0",
+  "androidVersionCode": 28,
   "private": true,
   "type": "module",
   "scripts": {
@@ -12,7 +13,6 @@
     "build:apk": "bash scripts/build-apk.sh",
     "icons": "python3 scripts/make-icons.py",
     "smoke": "node scripts/smoke-dom.mjs",
-    "smoke:browser": "node scripts/smoke-web.mjs",
     "preview": "vite preview"
   },
   "dependencies": {

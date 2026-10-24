@@ -12,8 +12,8 @@
 
 [![Скачать APK](https://img.shields.io/badge/%D1%81%D0%BA%D0%B0%D1%87%D0%B0%D1%82%D1%8C-APK-2ea043?logo=android&logoColor=white)](https://github.com/enkolesnikov/AnOOPlan/releases/latest)
 
-- **APK:** [последний релиз](https://github.com/enkolesnikov/AnOOPlan/releases/latest) (`AnOOPlan-1.18.0.apk`) — 1,8 МБ со встроенными шрифтами, Android 7.0+ (minSdk 24, WebView 98+, targetSdk 35), без интернета;
-- **Веб-версия:** [enkolesnikov.github.io/AnOOPlan](https://enkolesnikov.github.io/AnOOPlan/);
+- **APK:** [последний релиз](https://github.com/enkolesnikov/AnOOPlan/releases/latest) (`AnOOPlan-2.0.0.apk`) — около 1,8 МБ со встроенными шрифтами, Android 7.0+ (minSdk 24, WebView 98+, targetSdk 35), без интернета;
+- **Веб-версия:** [enkolesnikov.github.io/AnOOPlan](https://enkolesnikov.github.io/AnOOPlan/) — та же сборка, публикуется вручную по запросу (приоритет — Android);
 - **Исходный проект:** [enkolesnikov/ooplan](https://github.com/enkolesnikov/ooplan).
 
 Установка: скачайте APK на телефон → откройте файл → «Установить» (разрешите установку из этого источника для браузера или файлового менеджера).
@@ -94,18 +94,33 @@ npm run dev
 
 Онлайн-версия работает без бэкенда в режиме хранения «Браузер»: проекты автоматически сохраняются в localStorage, исходные PDF — в IndexedDB без лимита 5 МБ, поэтому доступны большие чертежи. На клиенте работают автопрокладка маршрута, проверка уникальности номеров и имён оборудования и экспорт CSV. Полный набор (XLSX/PDF-экспорт, хранение в SQLite на сервере) — в локальной версии выше.
 
-Перед публикацией GitHub Actions запускает `npm test`, затем собирает сайт; ошибка тестов останавливает деплой.
+Публикация сайта — отдельный ручной workflow: сначала CI (`ci.yml`) прогоняет типы, тесты, смоук и E2E,
+затем `deploy.yml` собирает сайт. Автоматического деплоя на каждый push больше нет: Android-приложению
+нужна та же сборка, а лишний прогон тратил время CI.
 
 ## Android-приложение AnOOPlan (APK)
 
 APK — это нативная оболочка (WebView) вокруг той же статической сборки, без Gradle и без сервера:
 
-- `com.anooplan.app`, minSdk 24, targetSdk 35, версия 1.18.0;
+- `com.anooplan.app`, minSdk 24, targetSdk 35, версия 2.0.0;
 - ассеты (`dist/`) упакованы в APK и отдаются WebView по origin `https://appassets.local/`, поэтому работают `localStorage`, `IndexedDB` (PDF-планы) и `crypto.randomUUID()`;
 - режим хранения — «Браузер»: проекты автосохраняются на устройстве, PDF читаются из памяти телефона через системный выбор файлов;
 - экспорт CSV и JSON-копии сохраняется в общую папку **Загрузки/AnOOPlan** без запроса опасных разрешений (MediaStore);
 - XLSX и PDF журнала собираются **на самом телефоне**: сервер для выгрузки не нужен;
 - разрешение `INTERNET` не запрашивается: приложение работает полностью офлайн.
+
+### Что нового в 2.0.0
+
+- **Android-first.** Версия посвящена эффективности Android-приложения и процесса разработки.
+  Облако остаётся в планах и в этой версии его нет: приложение полностью офлайн, разрешение
+  `INTERNET` не запрашивается, сетевых вызовов и облачной панели нет.
+- **Быстрее CI.** Один обязательный workflow на push: типы, юнит-тесты, смоук и E2E. Публикация
+  веб-версии на GitHub Pages и неподписанный APK теперь запускаются вручную — это убирает
+  ~2–3 минуты runner-времени с каждого push, не теряя проверок.
+- **Меньше ручной синхронизации при релизе.** Версия и `versionCode` берутся из `package.json`
+  (поля `version` и `androidVersionCode`), а `scripts/build-apk.sh` больше не хранит свои копии.
+- **Убран неиспользуемый `scripts/smoke-web.mjs`** — его сценарии дублировал E2E.
+- 190 тестов, смоук (200 проверок), 2 E2E и подписанный APK.
 
 ### Что нового в 1.18.0
 
@@ -278,7 +293,7 @@ APK — это нативная оболочка (WebView) вокруг той �
 
 ```bash
 bash scripts/fetch-tools.sh   # android.jar (SDK 35) + build-tools 35 + r8.jar с d8 в tools/
-bash scripts/build-apk.sh     # результат: build/AnOOPlan-1.18.0.apk
+bash scripts/build-apk.sh     # результат: build/AnOOPlan-2.0.0.apk
 ```
 
 Нужны `JDK 17+`, `aapt`, `zipalign`, `apksigner`, `zip`, Node.js и Python 3 (генерация иконок).
@@ -308,12 +323,13 @@ adb install -r build/AnOOPlan-1.0.0.apk
 
 ```bash
 npm test             # 190 юнит-тестов: расчёт длин и заполнения лотка, автопрокладка, валидация, миграции, API, экспорт, backup
-npm run smoke        # смоук интерфейса на happy-dom
+npm run smoke        # смоук интерфейса на happy-dom (200 проверок)
 npm run test:ui      # сборка + 2 Playwright E2E с реальным PDF
 npm run build        # tsc --noEmit + vite build
 ```
 
-Тесты запускаются в CI перед сборкой GitHub Pages (workflow `.github/workflows/deploy.yml`).
+Тесты, смоук и E2E запускаются на каждый push в `main` (workflow `.github/workflows/ci.yml`).
+Публикация GitHub Pages и неподписанный APK — ручные workflow (`deploy.yml`, `android-apk.yml`).
 
 ## Быстрый старт
 

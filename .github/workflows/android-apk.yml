@@ -1,8 +1,8 @@
 name: Android APK
 
+# Неподписанный APK нужен редко (проверка установки/артефакт), поэтому только вручную:
+# подписанный APK выпускает android-release.yml по тегу, локально — scripts/build-apk.sh.
 on:
-  push:
-    branches: [main]
   workflow_dispatch:
 
 jobs:

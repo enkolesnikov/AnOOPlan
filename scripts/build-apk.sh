@@ -33,8 +33,13 @@ fi
 KS_ALIAS="${KS_ALIAS:-anooplan}"
 
 PACKAGE="com.anooplan.app"
-VERSION_NAME="${VERSION_NAME:-1.18.0}"
-VERSION_CODE="${VERSION_CODE:-26}"
+# Версия и versionCode берутся из package.json (единый источник, см. HANDOFF):
+# androidVersionCode — целое, только растёт при каждом релизе.
+VERSION_NAME="${VERSION_NAME:-$(node -e "process.stdout.write(require('${ROOT}/package.json').version)")}"
+VERSION_CODE="${VERSION_CODE:-$(node -e "process.stdout.write(String(require('${ROOT}/package.json').androidVersionCode))")}"
+case "$VERSION_CODE" in
+    ''|*[!0-9]*) echo "androidVersionCode в package.json должен быть целым числом (получено: $VERSION_CODE)" >&2; exit 1 ;;
+esac
 OUT_APK="$BUILD_DIR/AnOOPlan-${VERSION_NAME}.apk"
 if [ "${UNSIGNED_APK:-0}" = "1" ]; then
     OUT_APK="$BUILD_DIR/AnOOPlan-${VERSION_NAME}-unsigned.apk"

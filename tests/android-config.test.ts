@@ -21,9 +21,16 @@ test('сборка APK использует targetSdk 35 и официальны
   assert.match(script, /TARGET_SDK="\$\{TARGET_SDK:-35\}"/);
   assert.match(script, /build-tools\/35\.0\.0/);
   assert.match(script, /--target-sdk-version "\$TARGET_SDK"/);
-  const version = JSON.parse(read('package.json')).version;
-  assert.ok(script.includes(`VERSION_NAME="\${VERSION_NAME:-${version}}"`));
-  assert.ok(script.includes(`VERSION_CODE="\${VERSION_CODE:-`));
+  // Версия и versionCode — из package.json (единый источник), манифест проверяется в первом тесте.
+  const pkg = JSON.parse(read('package.json'));
+  const manifest = read('android/AndroidManifest.xml');
+  const manifestCode = Number(/android:versionCode="(\d+)"/.exec(manifest)?.[1]);
+  const manifestName = /android:versionName="([^"]+)"/.exec(manifest)?.[1];
+  assert.ok(script.includes("require('${ROOT}/package.json').version"), 'build-apk берёт версию из package.json');
+  assert.ok(script.includes('androidVersionCode'), 'build-apk берёт versionCode из package.json');
+  assert.ok(Number.isInteger(pkg.androidVersionCode) && pkg.androidVersionCode > 0, 'package.json: androidVersionCode — целое > 0');
+  assert.equal(manifestCode, pkg.androidVersionCode, 'versionCode манифеста совпадает с package.json');
+  assert.equal(manifestName, pkg.version, 'versionName манифеста совпадает с package.json');
 });
 
 test('fetch-tools скачивает platform 35 и build-tools 35', () => {

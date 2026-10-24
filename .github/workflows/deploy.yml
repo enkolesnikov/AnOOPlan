@@ -1,8 +1,8 @@
 name: Deploy to GitHub Pages
 
+# Публикация веб-версии — только вручную: Android-приложение использует ту же сборку,
+# а автоматический деплой на каждый push тратил ~1 минуту runner-времени без пользы для APK.
 on:
-  push:
-    branches: [main]
   workflow_dispatch:
 
 permissions:

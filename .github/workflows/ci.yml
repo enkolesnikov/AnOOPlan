@@ -1,0 +1,43 @@
+name: CI
+
+# Быстрый обязательный прогон на каждый push/PR: типы, юнит-тесты, смоук и E2E.
+# Pages и неподписанный APK собираются отдельно и только вручную (workflow_dispatch) —
+# это убирает ~2–3 минуты runner-времени с каждого push, не теряя проверок.
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - name: Типы
+        run: npx tsc --noEmit
+      - name: Юнит-тесты
+        run: npm test
+      - name: Дымовой тест интерфейса
+        run: npm run smoke
+      - name: Кэш браузеров Playwright
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-v1
+      - name: Браузер для E2E
+        run: npx playwright install --with-deps chromium
+      - name: E2E с реальным PDF
+        run: npm run test:ui
