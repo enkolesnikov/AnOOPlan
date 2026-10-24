@@ -581,6 +581,11 @@ if (routesTab) routesTab.click();
 await sleep(200);
 const routeRow = document.querySelector('.object-row[data-kind="route"]');
 check(Boolean(routeRow), 'в списке есть трассы');
+check(Boolean(document.querySelector('.route-summary')), 'есть сводка метража по типам КНС');
+check((document.querySelector('.route-summary')?.textContent || '').includes('м'), 'в сводке показан метраж трасс');
+check((routeRow?.textContent || '').includes(' м · '), 'в строке трассы показана длина');
+const dimensionTool = Array.from(document.querySelectorAll('.drawing-toolbar button')).find(button => (button.textContent || '').includes('Размер'));
+check(Boolean(dimensionTool), 'инструмент «Размер» доступен');
 if (routeRow) {
   routeRow.click();
   await sleep(250);
@@ -810,7 +815,7 @@ const setInputValue = (input, value) => {
 };
 if (orgInput) { setInputValue(orgInput, 'ООО Кабель-Тест'); await sleep(220); }
 const sectionCheckboxes = Array.from(document.querySelectorAll('.section-checkbox'));
-check(sectionCheckboxes.length >= 13, `чекбоксов разделов не меньше 13: ${sectionCheckboxes.length}`);
+check(sectionCheckboxes.length >= 14, `чекбоксов разделов не меньше 14: ${sectionCheckboxes.length}`);
 check(sectionCheckboxes.length > 0 && sectionCheckboxes.every(input => input.checked), 'по умолчанию выбраны все разделы');
 check(Boolean(document.querySelector('.print-selected')), 'кнопка «Печать выбранных разделов» есть');
 check(Boolean(document.querySelector('.anooplan-save')), 'кнопка «Сохранить проект .anooplan» есть');
@@ -841,7 +846,7 @@ const freshCheckboxes = Array.from(document.querySelectorAll('.section-checkbox'
 check(freshCheckboxes.length >= 13 && freshCheckboxes.every(input => !input.checked), 'панель печати помнит снятый выбор');
 freshCheckboxes[0].click();
 await sleep(220);
-check((document.querySelector('.print-sections-count')?.textContent || '').includes('1 из 13'), `счётчик выбранных разделов: ${document.querySelector('.print-sections-count')?.textContent || '—'}`);
+check((document.querySelector('.print-sections-count')?.textContent || '').includes('1 из 14'), `счётчик выбранных разделов: ${document.querySelector('.print-sections-count')?.textContent || '—'}`);
 const printBeforeSubset = printCalls.length;
 document.querySelector('.print-selected')?.click();
 await sleep(2600);

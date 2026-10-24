@@ -15,6 +15,7 @@ export type JournalSectionId =
   | 'journal'
   | 'equipment'
   | 'cables'
+  | 'routeScheme'
   | 'infrastructure'
   | 'trayFill'
   | 'estimate'
@@ -31,6 +32,7 @@ export const DEFAULT_JOURNAL_SECTIONS: JournalSectionId[] = [
   'journal',
   'equipment',
   'cables',
+  'routeScheme',
   'infrastructure',
   'trayFill',
   'estimate',
@@ -83,7 +85,7 @@ const cableDiameter = (cable: Cable): number | null => {
 };
 
 interface Column { title: string; width: number; align?: 'left' | 'right' }
-interface Section { id: JournalSectionId; title: string; note?: string; columns: Column[]; rows: string[][]; emptyText?: string }
+interface Section { id: JournalSectionId; title: string; note?: string; columns: Column[]; rows: string[][]; emptyText?: string; footer?: string }
 interface TocEntry { title: string; page: number }
 
 function wrapText(text: string, font: PDFFont, size: number, maxWidth: number): string[] {
@@ -350,6 +352,9 @@ class Renderer {
   async plans(items: JournalPlan[]): Promise<TocEntry[]> {
     const entries: TocEntry[] = [];
     for (const item of items) {
+      // Заголовок и изображение должны попасть на один лист: иначе план уезжает на следующую
+      // страницу, а заголовок остаётся сиротой внизу предыдущей.
+      this.ensure(440);
       const title = `План: ${item.title}`;
       const page = this.heading(title, 'Подложка этажа и нанесённые трассы с оборудованием — лист для подписи.');
       entries.push({ title, page });
@@ -560,6 +565,29 @@ function buildSections(project: Project, estimateResult: EstimateResult): Sectio
       rows: specs.cables.map(row => [row.brand, String(row.lines), formatNumber(row.geometry), formatNumber(row.total)]),
     },
     {
+      id: 'routeScheme',
+      title: 'Схема трасс',
+      note: 'Метраж трасс по типам КНС (включая гофру) и количество углов кабельных каналов/коробов. Фитинги и крепления не считаются.',
+      columns: [
+        { title: 'Трасса', width: 50 },
+        { title: 'Тип КНС', width: 140 },
+        { title: 'Длина, м', width: 80, align: 'right' },
+        { title: 'Сегментов', width: 70, align: 'right' },
+        { title: 'Углы', width: 50, align: 'right' },
+      ],
+      rows: specs.routeSummary.routes.map(row => [
+        row.number,
+        row.type || '—',
+        formatNumber(row.length),
+        String(row.segments),
+        row.group === 'Кабель-канал' ? String(row.angles.total) : '—',
+      ]),
+      emptyText: 'Трасс нет.',
+      footer: specs.routeSummary.groups.length
+        ? `Итого по типам: ${specs.routeSummary.groups.map(group => `${group.group} — ${formatNumber(group.length)} м${group.group === 'Кабель-канал' ? `, углов ${group.angles.total}` : ''}`).join('; ')}.`
+        : undefined,
+    },
+    {
       id: 'infrastructure',
       title: 'Кабельная инфраструктура',
       columns: [
@@ -710,10 +738,14 @@ export async function buildJournalPdf(project: Project, fonts: JournalFonts, opt
   const include = new Set<JournalSectionId>(options.include ?? DEFAULT_JOURNAL_SECTIONS);
   for (const section of buildSections(project, estimateResult)) {
     if (!include.has(section.id)) continue;
+    // Заголовок раздела не должен оставаться один внизу страницы: оставляем место
+    // хотя бы под шапку таблицы и пару строк.
+    if (section.rows.length) renderer.ensure(120);
     const page = renderer.heading(section.title, section.note);
     toc.push({ title: section.title, page });
     if (section.rows.length) renderer.table(section.columns, section.rows);
     else renderer.paragraph(section.emptyText ?? 'Нет записей.', MUTED);
+    if (section.footer) renderer.paragraph(section.footer, MUTED);
   }
 
   if (include.has('plans') && options.plans?.length) toc.push(...await renderer.plans(options.plans));

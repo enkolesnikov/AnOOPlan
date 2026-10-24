@@ -1,4 +1,6 @@
-import { findRoute } from '../engine';
+import { useEffect, useState } from 'react';
+import { dimensionGeometry, dimensionText, findRoute } from '../engine';
+import { createUuid } from '../compat';
 import { equipmentColor, equipmentIcon } from '../equipment-icons';
 import { routeColor } from '../route-kinds';
 import { PlanAccessibilityList } from '../PlanAccessibilityList';
@@ -8,7 +10,7 @@ import { equipmentSelect } from './selects';
 import type { Tool } from './types';
 import type { AppUi } from './use-app-controller';
 
-const toolHints: Record<Tool, string> = { select: 'Выберите объект • тяните оборудование и узлы трассы', pan: 'Перетаскивайте план • колесо — масштаб', equipment: 'Клик на плане — добавить оборудование', route: 'Клики — вершины • Enter — завершить • Esc — отменить', calibrate: 'Укажите две точки известного размера на PDF', cable: 'Выбирайте сегменты по порядку от начала к концу', measure: 'Рулетка: две точки на плане → расстояние в метрах', pin: 'Клик на плане — добавить замечание' };
+const toolHints: Record<Tool, string> = { select: 'Выберите объект • тяните оборудование и узлы трассы', pan: 'Перетаскивайте план • колесо — масштаб', equipment: 'Клик на плане — добавить оборудование', route: 'Клики — вершины • Enter — завершить • Esc — отменить', calibrate: 'Укажите две точки известного размера на PDF', cable: 'Выбирайте сегменты по порядку от начала к концу', measure: 'Рулетка: две точки на плане → расстояние в метрах', pin: 'Клик на плане — добавить замечание', dimension: 'Размер: выберите два объекта оборудования — расстояние по прямой' };
 
 /** Экран плана: тулбар, сетка, SVG-оверлей, подсказки и панель доступности. */
 export function PlanScreen({ ui }: { ui: AppUi }) {
@@ -22,6 +24,8 @@ export function PlanScreen({ ui }: { ui: AppUi }) {
     moveLongPress, cancelLongPress, zoomAt, armTap, position, startDrag, pinching, selection, setSelection,
     setTab, setView, pointer, route, cable,
   } = ui;
+  const [dimensionFrom, setDimensionFrom] = useState<string | null>(null);
+  useEffect(() => { setDimensionFrom(null); }, [tool]);
   function measureLabel(): string {
     if (measureMode === 'area') return measure.length >= 3 ? areaLabel(measure, floor?.metersPerUnit) : '';
     if (measure.length < 2) return '';
@@ -31,9 +35,10 @@ export function PlanScreen({ ui }: { ui: AppUi }) {
   }
   return (
 <div className="plan-view">
-<div className="drawing-toolbar"><div className="tool-group">{([['select', '↖', 'Выбор'], ['pan', '✥', 'Панорама'], ['equipment', '▣', 'Оборудование'], ['route', '⌁', 'Трасса'], ['cable', '↝', 'Кабель'], ['calibrate', '↔', 'Масштаб'], ['measure', '📏', 'Рулетка']] as const).map(([id, icon, label]) => <button key={id} title={label} className={tool === id ? 'active' : ''} onClick={() => { setTool(id); setDraft([]); setCalibration([]); setMeasure([]); }}><b>{icon}</b><span>{label}</span></button>)}</div><div className="tool-group history"><button title="Отменить Ctrl+Z" aria-label="Отменить" disabled={!undo.length} onClick={() => history(true)}>↶</button><button title="Повторить Ctrl+Shift+Z" aria-label="Повторить" disabled={!redo.length} onClick={() => history(false)}>↷</button></div></div>
+<div className="drawing-toolbar"><div className="tool-group">{([['select', '↖', 'Выбор'], ['pan', '✥', 'Панорама'], ['equipment', '▣', 'Оборудование'], ['route', '⌁', 'Трасса'], ['dimension', '⟷', 'Размер'], ['cable', '↝', 'Кабель'], ['calibrate', '↔', 'Масштаб'], ['measure', '📏', 'Рулетка']] as const).map(([id, icon, label]) => <button key={id} title={label} className={tool === id ? 'active' : ''} onClick={() => { setTool(id); setDraft([]); setCalibration([]); setMeasure([]); }}><b>{icon}</b><span>{label}</span></button>)}</div><div className="tool-group history"><button title="Отменить Ctrl+Z" aria-label="Отменить" disabled={!undo.length} onClick={() => history(true)}>↶</button><button title="Повторить Ctrl+Shift+Z" aria-label="Повторить" disabled={!redo.length} onClick={() => history(false)}>↷</button></div></div>
       <div className="drawing-options"><label><input type="checkbox" checked={grid} onChange={e => setGrid(e.target.checked)} />Сетка</label><label><input type="checkbox" checked={snap} onChange={e => setSnap(e.target.checked)} />Привязка</label><label><input type="checkbox" checked={ortho} onChange={e => setOrtho(e.target.checked)} />Ортогонально</label><label>Шаг<input className="mini-input" type="number" min="1" value={gridSize} onChange={e => setGridSize(Math.max(1, Number(e.target.value) || 1))} /></label><span className="grow" />{floor?.pdfId && <label>Страница <input className="mini-input" type="number" min="1" max={pdfPages || 9999} value={floor.page} onChange={e => { const page = Math.max(1, Math.min(pdfPages || 9999, Number(e.target.value) || 1)); if (page !== floor.page && window.confirm('Смена страницы сохраняет объекты и сбрасывает масштаб. Продолжить?')) mutate(p => { const f = p.floors.find(f => f.id === floor.id)!; f.page = page; f.metersPerUnit = null; }); }} /> / {pdfPages || '…'}</label>}<button onClick={fit} aria-label="Вписать план">Вписать</button><button onClick={() => changeZoom(zoom / 1.2)} aria-label="Уменьшить масштаб">−</button><span>{Math.round(zoom * 100)}%</span><button onClick={() => changeZoom(zoom * 1.2)} aria-label="Увеличить масштаб">＋</button><button className={tool === 'pin' ? 'active' : ''} title="Замечание" onClick={() => setTool(tool === 'pin' ? 'select' : 'pin')}>📍 Замечание</button></div>
       {tool === 'route' && <div className="contextbar"><span>Трасса: {draft.length} вершин</span><label>Высота, м <input type="text" inputMode="decimal" value={routeHeight} onChange={e => setRouteHeight(e.target.value.replace(',', '.'))} /></label><button className="primary" disabled={draft.length < 2} onClick={finishRoute}>Завершить · Enter</button><button onClick={() => setDraft([])}>Сбросить</button></div>}
+      {tool === 'dimension' && <div className="contextbar"><span>{dimensionFrom ? `Размер: ${project.equipment.find(item => item.id === dimensionFrom)?.number ?? '?'} → выберите второе оборудование` : 'Размер между оборудованием: выберите первое'}</span><button onClick={() => setDimensionFrom(null)}>Сброс</button><small>{floor?.metersPerUnit ? 'Расстояние по прямой, в метрах.' : 'Масштаб не задан — расстояние в единицах PDF.'}</small></div>}
       {tool === 'measure' && <div className="contextbar"><span>{measureMode === 'length' ? `Рулетка: точек ${Math.min(measure.length, 2)} из 2` : `Площадь: вершин ${measure.length}`}</span><button className={measureMode === 'length' ? 'primary' : ''} onClick={() => { setMeasureMode('length'); setMeasure([]); setMessage('Рулетка: укажите две точки на плане.'); }}>Длина</button><button className={measureMode === 'area' ? 'primary' : ''} onClick={() => { setMeasureMode('area'); setMeasure([]); setMessage('Площадь: обведите контур по вершинам, минимум три.'); }}>Площадь</button><button onClick={() => setMeasure([])}>Сброс</button><small>{floor?.metersPerUnit ? 'Метры по масштабу листа.' : 'Масштаб не задан — результат в единицах PDF.'}</small></div>}
       {tool === 'cable' && <div className="contextbar cable-builder"><label>От {equipmentSelect(project, cableFrom, setCableFrom)}</label><span>→</span><label>До {equipmentSelect(project, cableTo, setCableTo)}</label><button onClick={() => { if (!cableFrom || !cableTo) { setError('Сначала выберите «От» и «До».'); return; } const res = findRoute(project, cableFrom, cableTo); if (res.error) setError(res.error); else { setCableSegments(res.segmentIds); setMessage(`Маршрут построен: ${res.segmentIds.length} сегм.`); } }}>Автомаршрут</button><span>{cableSegments.length} сегм.</span><button className="primary" onClick={finishCable}>Создать</button><button onClick={() => setCableSegments([])}>Сброс</button><small>Выберите «От» и «До» — маршрут строится сам. Можно скорректировать сегменты кликами.</small></div>}
       {pdfError && <div className="banner error">{pdfError}</div>}
@@ -58,7 +63,40 @@ export function PlanScreen({ ui }: { ui: AppUi }) {
               </g>;
             }))}
             {route && tool === 'select' && Array.from(new Map(route.segments.flatMap(s => [s.a, s.b]).filter(v => v.floorId === floor.id).map(v => [v.id, v])).values()).map(v => <circle data-object="vertex" data-route={route.id} key={v.id} cx={v.x} cy={v.y} r={5 / zoom} fill="white" stroke="#008e94" strokeWidth={2 / zoom} className="vertex-handle" onPointerDown={e => startDrag(e, 'vertex', route.id, v.id)} />)}
-            {project.equipment.filter(eq => eq.floorId === floor.id).map(eq => <g data-object="equipment" data-id={eq.id} data-icon={equipmentIcon(eq.type)} data-color={equipmentColor(eq)} key={eq.id} transform={`translate(${eq.x},${eq.y})`} className={`equipment-symbol ${selection?.id === eq.id ? 'is-selected' : ''}`} onPointerDown={e => { if (pinching.current) return; if (tool === 'select') { setSelection({ kind: 'equipment', id: eq.id }); startDrag(e, 'equipment', eq.id); } else if (tool === 'route') { e.stopPropagation(); armTap(e, () => setDraft(points => { const p = { x: eq.x, y: eq.y }; const last = points[points.length - 1]; return ortho && last && last.x !== p.x && last.y !== p.y ? [...points, { x: p.x, y: last.y }, p] : [...points, p]; })); } else if (tool === 'cable') { e.stopPropagation(); armTap(e, () => { if (!cableFrom) { setCableFrom(eq.id); setMessage(`Начало: ${eq.number}. Коснитесь конечного устройства.`); } else if (cableTo !== eq.id) { setCableTo(eq.id); const res = findRoute(project, cableFrom, eq.id); if (res.error) { setCableSegments([]); setError(res.error); } else { setCableSegments(res.segmentIds); setMessage(`Конец: ${eq.number}. Маршрут построен автоматически: ${res.segmentIds.length} сегм.`); } } }); } }}>
+            {(project.dimensions ?? []).map(dimension => {
+              const geometry = dimensionGeometry(project, dimension);
+              const from = project.equipment.find(item => item.id === dimension.fromId);
+              const to = project.equipment.find(item => item.id === dimension.toId);
+              if (geometry.floorId !== floor.id || geometry.units === null || !from || !to) return null;
+              const angle = Math.atan2(to.y - from.y, to.x - from.x);
+              const offset = 10 / zoom;
+              const normalX = -Math.sin(angle) * offset;
+              const normalY = Math.cos(angle) * offset;
+              const x1 = from.x + normalX;
+              const y1 = from.y + normalY;
+              const x2 = to.x + normalX;
+              const y2 = to.y + normalY;
+              const selected = selection?.kind === 'dimension' && selection.id === dimension.id;
+              return <g key={dimension.id} data-object="dimension" data-id={dimension.id} className={`plan-dimension ${selected ? 'is-selected' : ''}`} onPointerDown={event => { event.stopPropagation(); if (tool === 'select') armTap(event, () => setSelection({ kind: 'dimension', id: dimension.id })); }}>
+                <line x1={from.x} y1={from.y} x2={x1} y2={y1} stroke="#875ec5" strokeWidth={1 / zoom} strokeDasharray={`${3 / zoom} ${3 / zoom}`} />
+                <line x1={to.x} y1={to.y} x2={x2} y2={y2} stroke="#875ec5" strokeWidth={1 / zoom} strokeDasharray={`${3 / zoom} ${3 / zoom}`} />
+                <line x1={x1} y1={y1} x2={x2} y2={y2} stroke="#875ec5" strokeWidth={(selected ? 2.5 : 1.5) / zoom} />
+                <line x1={x1 - normalX / 2} y1={y1 - normalY / 2} x2={x1 + normalX / 2} y2={y1 + normalY / 2} stroke="#875ec5" strokeWidth={1.5 / zoom} />
+                <line x1={x2 - normalX / 2} y1={y2 - normalY / 2} x2={x2 + normalX / 2} y2={y2 + normalY / 2} stroke="#875ec5" strokeWidth={1.5 / zoom} />
+                <line x1={from.x} y1={from.y} x2={to.x} y2={to.y} stroke="transparent" strokeWidth={18 / zoom} />
+                <text x={(x1 + x2) / 2} y={(y1 + y2) / 2 - 6 / zoom} textAnchor="middle" fontSize={12 / zoom} fill="#875ec5" stroke="#fff" strokeWidth={3 / zoom} paintOrder="stroke" className="svg-label">{dimensionText(geometry)}</text>
+              </g>;
+            })}
+            {project.equipment.filter(eq => eq.floorId === floor.id).map(eq => <g data-object="equipment" data-id={eq.id} data-icon={equipmentIcon(eq.type)} data-color={equipmentColor(eq)} key={eq.id} transform={`translate(${eq.x},${eq.y})`} className={`equipment-symbol ${selection?.id === eq.id ? 'is-selected' : ''}`} onPointerDown={e => { if (pinching.current) return; if (tool === 'select') { setSelection({ kind: 'equipment', id: eq.id }); startDrag(e, 'equipment', eq.id); } else if (tool === 'route') { e.stopPropagation(); armTap(e, () => setDraft(points => { const p = { x: eq.x, y: eq.y }; const last = points[points.length - 1]; return ortho && last && last.x !== p.x && last.y !== p.y ? [...points, { x: p.x, y: last.y }, p] : [...points, p]; })); } else if (tool === 'cable') { e.stopPropagation(); armTap(e, () => { if (!cableFrom) { setCableFrom(eq.id); setMessage(`Начало: ${eq.number}. Коснитесь конечного устройства.`); } else if (cableTo !== eq.id) { setCableTo(eq.id); const res = findRoute(project, cableFrom, eq.id); if (res.error) { setCableSegments([]); setError(res.error); } else { setCableSegments(res.segmentIds); setMessage(`Конец: ${eq.number}. Маршрут построен автоматически: ${res.segmentIds.length} сегм.`); } } }); } else if (tool === 'dimension') { e.stopPropagation(); armTap(e, () => {
+                if (!dimensionFrom) { setDimensionFrom(eq.id); setMessage(`Размер: ${eq.number} — выберите второе оборудование.`); return; }
+                if (dimensionFrom === eq.id) { setMessage('Для размера выберите другое оборудование.'); return; }
+                const from = project.equipment.find(item => item.id === dimensionFrom);
+                if (!from) { setDimensionFrom(null); return; }
+                if (from.floorId !== eq.floorId) { setError('Размер между оборудованием разных этажей не поддерживается.'); setDimensionFrom(null); return; }
+                const id = createUuid();
+                mutate(p => { p.dimensions = [...(p.dimensions ?? []), { id, fromId: from.id, toId: eq.id }]; });
+                setDimensionFrom(null); setSelection({ kind: 'dimension', id }); setMessage(`Размер: ${from.number} — ${eq.number}.`);
+              }); } }}>
               <EquipmentSymbol item={eq} zoom={zoom} />
             </g>)}
             {project.pins.filter(pin => pin.floorId === floor.id).map(pin => <g data-object="pin" data-id={pin.id} key={pin.id} transform={`translate(${pin.x},${pin.y})`} className={`pin-symbol ${selection?.id === pin.id ? 'is-selected' : ''}`} onPointerDown={e => { e.stopPropagation(); if (pinching.current) return; if (tool === 'select') { setSelection({ kind: 'pin', id: pin.id }); setTab('pins'); setView('plan'); } }}>

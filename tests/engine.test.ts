@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { calculateCable, findRoute, segmentLength, specifications, validateProject } from '../src/engine';
+import { calculateCable, dimensionGeometry, dimensionText, findRoute, routeAngleStats, routeLength, routeSummary, segmentLength, specifications, validateProject } from '../src/engine';
 import type { Equipment, Project, Segment, Vertex } from '../src/model';
 
 const vertex = (id: string, x: number, y = 0, height: number | null = 3, floorId = 'f1'): Vertex => ({ id, x, y, height, floorId });
@@ -222,4 +222,37 @@ test('findRoute выбирает маршрут по длине, а не по ч
     segment('s5', c2, b),
   ];
   assert.deepEqual(findRoute(p, 'a', 'b').segmentIds, ['s3', 's4', 's5']);
+});
+
+
+test('длина трассы, углы и сводка по типам КНС', () => {
+  const p = fixture();
+  const v2 = vertex('v2', 100, 0);
+  const v3 = vertex('v3', 100, 50);
+  p.routes = [
+    { id: 'r1', number: 'Г1', type: 'Гофра', note: '', segments: [segment('s1', vertex('a1', 0), v2)] },
+    { id: 'r2', number: 'К1', type: 'Кабель-канал', note: '', segments: [segment('s2', vertex('a2', 0), v2), segment('s3', v2, v3)] },
+  ];
+  assert.equal(routeLength(p, p.routes[0]), 10);
+  assert.equal(routeAngleStats(p.routes[0]).total, 0);
+  const angles = routeAngleStats(p.routes[1]);
+  assert.deepEqual(angles, { total: 1, angles90: 1, angles45: 0, other: 0 });
+  assert.equal(routeLength(p, p.routes[1]), 15);
+  const summary = routeSummary(p);
+  assert.deepEqual(summary.groups.map(group => [group.group, group.length]), [['Гофра', 10], ['Кабель-канал', 15]]);
+  assert.equal(summary.groups[1].angles.total, 1);
+});
+
+test('относительный размер между оборудованием считается по прямой', () => {
+  const p = fixture();
+  p.equipment.push(device('c', 0, 1, 'f2'));
+  const flat = dimensionGeometry(p, { id: 'd1', fromId: 'a', toId: 'b' });
+  assert.deepEqual(flat.units, 100);
+  assert.deepEqual(flat.meters, 10);
+  assert.equal(dimensionText(flat), '10,00 м');
+  const small = dimensionGeometry(p, { id: 'd2', fromId: 'a', toId: 'b' });
+  assert.equal(dimensionText({ ...small, meters: 0.5 }), '500 мм');
+  const across = dimensionGeometry(p, { id: 'd3', fromId: 'a', toId: 'c' });
+  assert.equal(across.problem, 'Оборудование на разных этажах');
+  assert.equal(across.meters, null);
 });

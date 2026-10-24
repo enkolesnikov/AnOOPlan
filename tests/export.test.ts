@@ -22,7 +22,7 @@ const fonts: JournalFonts = {
   bold: toArrayBuffer('../src/assets/fonts/AnOOPlanSans-Bold.ttf'),
 };
 
-const SHEETS = ['Кабельный журнал', 'Оборудование', 'Кабели', 'Инфраструктура', 'Заполнение КНС', 'Смета', 'Коммерческое предложение', 'Справочник цен', 'Замечания', 'Предупреждения'];
+const SHEETS = ['Кабельный журнал', 'Оборудование', 'Кабели', 'Схема трасс', 'Инфраструктура', 'Заполнение КНС', 'Смета', 'Коммерческое предложение', 'Справочник цен', 'Замечания', 'Предупреждения'];
 const ESTIMATE_HEADER = ['Раздел', 'Позиция', 'Ед.', 'Количество', 'Цена, ₽', 'Сумма, ₽', 'Источник цены', 'Примечание'];
 const COMMERCIAL_HEADER = ['Раздел', 'Сумма, ₽'];
 const CATALOG_HEADER = ['Вид', 'Наименование', 'Ед.', 'Цена, ₽', 'Примечание'];
@@ -77,18 +77,20 @@ async function pdfText(bytes: Uint8Array): Promise<{ text: string; pages: number
 test('листы выгрузки совпадают по набору с серверными', () => {
   const sheets = exportSheets(createDemoProject());
   assert.deepEqual(sheets.map(sheet => sheet.name), SHEETS);
-  const [journal, equipment, , infrastructure, fill] = sheets;
+  const [journal, equipment, , routeScheme, infrastructure, fill] = sheets;
   assert.deepEqual(journal.rows[0], JOURNAL_HEADER);
   assert.equal(journal.rows[0].length, 21);
   assert.equal(journal.rows.length, createDemoProject().cables.length + 1);
   assert.deepEqual(equipment.rows[0], ['Тип', 'Модель', 'Этаж', 'Количество']);
   assert.deepEqual(infrastructure.rows[0], ['Тип', 'Длина, м', 'Сегментов', 'Кабелей', 'Макс. заполнение, %', 'Сегментов с превышением']);
+  assert.equal(routeScheme.name, 'Схема трасс');
+  assert.deepEqual(routeScheme.rows[0], ['Трасса', 'Тип КНС', 'Длина, м', 'Сегментов', 'Углы']);
   assert.equal(fill.name, 'Заполнение КНС');
   assert.deepEqual(fill.rows[0], FILL_HEADER);
   const segments = createDemoProject().routes.reduce((sum, route) => sum + route.segments.length, 0);
   assert.equal(segments, 7, 'демо-проект должен содержать 7 сегментов');
   assert.equal(fill.rows.length, segments + 1);
-  const [, , , , , smeta, commercial, catalog] = sheets;
+  const [, , , , , , smeta, commercial, catalog] = sheets;
   assert.deepEqual(smeta.rows[0], ESTIMATE_HEADER);
   assert.deepEqual(commercial.rows[0], ['Проект', 'Учебный проект']);
   assert.deepEqual(commercial.rows[4], COMMERCIAL_HEADER);
@@ -536,7 +538,7 @@ test('PDF: оглавление с названиями разделов и фа
   const { pageTexts } = await pdfText(await buildJournalPdf(project, fonts));
   const contents = pageTexts[1];
   assert.ok(contents.includes('Оглавление'), 'нет страницы оглавления');
-  const expected = ['Кабельный журнал', 'Оборудование', 'Кабельная продукция', 'Кабельная инфраструктура', 'Заполнение КНС', 'Смета', 'Коммерческое предложение', 'Замечания', 'Лист регистрации изменений'];
+  const expected = ['Кабельный журнал', 'Оборудование', 'Кабельная продукция', 'Схема трасс', 'Кабельная инфраструктура', 'Заполнение КНС', 'Смета', 'Коммерческое предложение', 'Замечания', 'Лист регистрации изменений'];
   for (const title of expected) {
     assert.ok(contents.includes(title), `в оглавлении нет «${title}»`);
     const after = contents.slice(contents.indexOf(title) + title.length);
@@ -605,4 +607,15 @@ test('PDF: include:[] — титул, оглавление и страница �
   }
   assert.ok(text.includes('Итого кабеля по журналу'), 'итоги печатаются всегда');
   assert.ok(text.includes('Составил'), 'подписи печатаются всегда');
+});
+
+
+test('PDF: схема трасс показывает метраж гофры и углы кабельных каналов', async () => {
+  const project = createDemoProject();
+  project.routes[0].type = 'Гофра';
+  project.routes[2].type = 'Кабель-канал';
+  const { text } = await pdfText(await buildJournalPdf(project, fonts));
+  assert.ok(text.includes('Схема трасс'), 'нет раздела «Схема трасс»');
+  assert.ok(text.includes('Гофра — 37,5 м'), 'нет суммарной длины гофры');
+  assert.ok(text.includes('Кабель-канал — 17,5 м, углов 1'), 'нет углов кабельного канала');
 });

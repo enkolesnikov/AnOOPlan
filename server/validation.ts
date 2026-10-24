@@ -259,6 +259,19 @@ export function assertProject(input: unknown, pdfExists: (id: string) => boolean
   for (const item of equipment) assertEquipment(item, context);
   for (const route of routes) assertRoute(route, context);
   for (const cable of cables) assertCable(cable, context);
+  // Размеры между оборудованием необязательны; ссылки должны существовать и не совпадать.
+  if (project.dimensions !== undefined) {
+    for (const raw of array(project.dimensions, 'project.dimensions')) {
+      const dimension = object(raw, 'dimension');
+      context.claim(dimension.id, 'dimension.id');
+      for (const key of ['fromId', 'toId']) {
+        text(dimension[key], `dimension.${key}`, true);
+        if (!context.equipmentIds.has(dimension[key])) fail(`Оборудование не найдено: ${dimension[key]}`);
+      }
+      if (dimension.fromId === dimension.toId) fail('dimension: оборудование не должно совпадать');
+      if (dimension.note !== undefined) text(dimension.note, 'dimension.note');
+    }
+  }
 
   // Справочник цен и смета необязательны; заданные поля проверяются структурно (иначе 422).
   if (project.catalog !== undefined) assertCatalogField(project.catalog);

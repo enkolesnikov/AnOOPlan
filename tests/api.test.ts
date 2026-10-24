@@ -179,6 +179,27 @@ test('цвет трассы КНС сохраняется и валидируе�
   } finally { await h.close(); }
 });
 
+test('API: размеры между оборудованием валидируются', async () => {
+  const h = await harness();
+  try {
+    const valid = fixture();
+    valid.dimensions = [{ id: 'dimension-1', fromId: 'equipment-1', toId: 'equipment-2', note: 'по прямой' }];
+    assert.equal((await h.request('/api/projects', 'POST', valid)).status, 201);
+    const stored = await (await h.request('/api/projects/project-1')).json() as Project;
+    assert.equal(stored.dimensions?.[0]?.fromId, 'equipment-1');
+
+    const invalid: Array<(project: Project) => void> = [
+      project => { project.dimensions = [{ id: 'd', fromId: 'equipment-1', toId: 'missing' }]; },
+      project => { project.dimensions = [{ id: 'd', fromId: 'equipment-1', toId: 'equipment-1' }]; },
+      project => { project.dimensions = [{ id: '', fromId: 'equipment-1', toId: 'equipment-2' }]; },
+    ];
+    for (const mutate of invalid) {
+      const bad = fixture(); mutate(bad);
+      assert.equal((await h.request('/api/projects/project-1', 'PUT', bad)).status, 422);
+    }
+  } finally { await h.close(); }
+});
+
 test('PDF multipart and portable backup restore preserve original bytes; restore is atomic', async () => {
   const a = await harness(); const b = await harness();
   try {

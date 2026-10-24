@@ -82,6 +82,7 @@ export function useWorkspaceState() {
   const route = selection?.kind === 'route' ? project.routes.find(r => r.id === selection.id) : undefined;
   const cable = selection?.kind === 'cable' ? project.cables.find(c => c.id === selection.id) : undefined;
   const pin = selection?.kind === 'pin' ? project.pins.find(p => p.id === selection.id) : undefined;
+  const dimension = selection?.kind === 'dimension' ? (project.dimensions ?? []).find(d => d.id === selection.id) : undefined;
   const photoOwner = equipment ?? pin;
   const cableSectionResult = cable ? cableSection(cable) : null;
   const calculation = cable ? calculateCable(project, cable) : null;
@@ -151,7 +152,7 @@ export function useWorkspaceState() {
     sheet, setSheet, printSections, setPrintSections,
     canvas, stage, upload, restoreInput, photoInput, cameraInput,
     drag, pointers, snapVibe, tap, pinching, pressStart, longPressTimer,
-    projectRef, floor, dirty, dirtyRef, equipment, route, cable, pin, photoOwner,
+    projectRef, floor, dirty, dirtyRef, equipment, route, cable, pin, dimension, photoOwner,
     cableSectionResult, calculation, issues, cableCalcs, fill, cableFill, routeFillWorst, totals, issueCount,
     undo, redo, commit, mutate, history, resetHistory, recordHistory,
     pdfPages, renderPlan, pdfError,

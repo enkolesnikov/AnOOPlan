@@ -16,6 +16,7 @@ interface Floor { id:string; name:string; elevation:number|null; metersPerUnit:n
 interface Equipment { id:string; number:string; name:string; type:string; floorId:string; x:number; y:number; height:number|null; note:string; properties:Record<string,string>; color?:string|null }
 interface Vertex { id:string; floorId:string; x:number; y:number; height:number|null }
 interface Segment { id:string; a:Vertex; b:Vertex; mode:'orthogonal'|'spatial'; reservePercent:number; reserveFixed:number }
+interface Dimension { id:string; fromId:string; toId:string; note?:string }
 interface Route { id:string; number:string; type:string; segments:Segment[]; note:string; color?:string|null; trayWidthMm?:number|null; trayHeightMm?:number|null; trayAreaMm2?:number|null }
 interface Cable { id:string; number:string; name:string; brand:string; purpose:string; fromId:string; toId:string; segmentIds:string[]; reservePercent:number; reserveFixed:number; startReserve:number; endReserve:number; quantity:number; note:string; outerDiameterMm?:number|null; crossSectionMm2?:number|null }
 interface Pin { id:string; number:string; floorId:string; x:number; y:number; comment:string; status:'open'|'closed'; photos?:string[]; createdAt:string; updatedAt:string }
@@ -23,7 +24,7 @@ interface PriceItem { id:string; kind:'equipment'|'cable'|'tray'; name:string; u
 interface ProjectEstimate { laborPercent:number|null; note?:string }
 interface ChangeEntry { id:string; version:string; date:string; author:string; description:string }
 interface ProjectDocument { compiledBy?:string; checkedBy?:string; date?:string; organization?:string; object?:string; documentCode?:string; city?:string; title?:string; changeLog?:ChangeEntry[] }
-interface Project { schemaVersion:1|2; id:string; name:string; floors:Floor[]; equipment:Equipment[]; routes:Route[]; cables:Cable[]; pins:Pin[]; updatedAt:string; document?:ProjectDocument; catalog?:PriceItem[]; catalogDate?:string|null; estimate?:ProjectEstimate }
+interface Project { schemaVersion:1|2; id:string; name:string; floors:Floor[]; equipment:Equipment[]; routes:Route[]; cables:Cable[]; pins:Pin[]; dimensions?:Dimension[]; updatedAt:string; document?:ProjectDocument; catalog?:PriceItem[]; catalogDate?:string|null; estimate?:ProjectEstimate }
 ```
 
 Сегменты связаны совпадающими координатами и этажом с допуском 1e-6; height также совпадает. Кабель содержит упорядоченный список ID сегментов, каждый физический сегмент допускается один раз. Направление сегмента определяется обходом цепочки. Концы кабеля должны совпадать в плане с началом/концом цепочки на соответствующем этаже; вертикальные подводы от высоты оборудования до высоты трассы учитываются отдельно. Межэтажный сегмент разрешён только при совпадающих x,y (общая система координат этажей), учитывает отметки полов. Неизвестные высоты/масштаб и разрывы означают неполный расчёт; итог null.
@@ -41,6 +42,19 @@ interface Project { schemaVersion:1|2; id:string; name:string; floors:Floor[]; e
 цвет типа; цвет используется на плане (CSS-переменная `--route-color` у SVG-группы), в списке трасс,
 легенде и `plan-svg.ts` для PDF-листа «План», поэтому выбранный/подсвеченный сегмент по-прежнему
 отличается цветом выделения. Валидация API отклоняет некорректный `route.color` (422).
+
+## Схема трасс, углы и размеры
+
+`routeSummary(project)` в `src/engine.ts` даёт строки по трассам (длина, число сегментов, углы) и
+итоги по типам КНС: лоток, гофра, труба, кабель-канал, свой тип. Длина — сумма `segmentLength`;
+`routeAngleStats` считает изменения направления на стыках соседних сегментов (90°/45°), для коробов
+это количество углов. Лист «Схема трасс» в PDF/XLSX/CSV строится по этой сводке; фитинги и крепления
+не считаются по решению владельца.
+
+`Dimension` — размер между двумя объектами оборудования: `dimensionGeometry` считает расстояние
+по прямой на одном этаже (единицы PDF и метры по `metersPerUnit`), `dimensionText` форматирует
+мм/м. Размеры хранятся в проекте, рисуются на плане (SVG) и в PDF-плане; при перемещении
+оборудования пересчитываются. Это не длина маршрута кабеля.
 
 `cableSection(cable)` принимает площадь внешнего сечения: `crossSectionMm2`, если задана и положительна, иначе `π·d²/4` от `outerDiameterMm`. Заданное некорректное значение (0, отрицательное, NaN/Infinity) даёт ошибку и `null` — второй источник не подставляется, чтобы неверные данные не выглядели расчётом; если не задано ничего, площадь тоже `null` (данных нет).
 

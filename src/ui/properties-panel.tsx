@@ -4,6 +4,7 @@ import { idbDelete } from '../idb';
 import type { Segment } from '../model';
 import { orphanPhotoKeys, purgePhotoBlobs } from '../photos';
 import { PinProperties } from '../PinProperties';
+import { dimensionGeometry, dimensionText } from '../engine';
 import { SHEET_SIZES } from './constants';
 import { EquipmentIcon } from './equipment-icon';
 import { field } from './fields';
@@ -14,7 +15,7 @@ import type { AppUi } from './use-app-controller';
 /** Панель свойств: оборудование, трасса, кабель, замечание или этаж. */
 export function PropertiesPanel({ ui }: { ui: AppUi }) {
   const {
-    equipment, route, cable, pin, selection, propsOpen, setPropsOpen, project, photoUrls,
+    equipment, route, cable, pin, dimension, selection, propsOpen, setPropsOpen, project, photoUrls,
     mutate, removeObject, removeSelection, copySelection, photoInput, cameraInput, removePhoto, setItem,
     floor, applySheetScale, setTool, setView, setCalibration, sheetFormat, setSheetFormat, sheetScale, setSheetScale,
     pdfPages, upload, busy, addRiser, segmentField, routeFillWorst, fill, cableSegments, setCableSegments,
@@ -34,7 +35,12 @@ export function PropertiesPanel({ ui }: { ui: AppUi }) {
     return owner ? `${owner.number} / ${(index ?? 0) + 1}` : `Отсутствует: ${id.slice(0, 8)}`;
   }
   return (
-      <aside className={`properties ${propsOpen ? 'open' : ''}`}><div className="properties-title">Свойства<span>{equipment ? 'ОБОРУДОВАНИЕ' : route ? 'ТРАССА' : cable ? 'КАБЕЛЬ' : pin ? 'ЗАМЕЧАНИЕ' : 'ЭТАЖ'}</span><button className="properties-close" aria-label="Закрыть" onClick={() => setPropsOpen(false)}>×</button></div><div className="properties-content">{selection && pin ? <PinProperties
+      <aside className={`properties ${propsOpen ? 'open' : ''}`}><div className="properties-title">Свойства<span>{dimension ? 'РАЗМЕР' : equipment ? 'ОБОРУДОВАНИЕ' : route ? 'ТРАССА' : cable ? 'КАБЕЛЬ' : pin ? 'ЗАМЕЧАНИЕ' : 'ЭТАЖ'}</span><button className="properties-close" aria-label="Закрыть" onClick={() => setPropsOpen(false)}>×</button></div><div className="properties-content">{selection && dimension ? (() => {
+        const geometry = dimensionGeometry(project, dimension);
+        const from = project.equipment.find(item => item.id === dimension.fromId);
+        const to = project.equipment.find(item => item.id === dimension.toId);
+        return <><div className="object-heading"><span className="eyebrow">РАЗМЕР МЕЖДУ ОБОРУДОВАНИЕМ</span><h2>{dimensionText(geometry)}</h2></div><p className="help">Расстояние по прямой между центрами оборудования, а не длина кабельной трассы. Размер пересчитывается при перемещении оборудования.</p><div className="field-pair"><label className="field">От<input value={from?.number ?? '—'} readOnly /></label><label className="field">До<input value={to?.number ?? '—'} readOnly /></label></div>{geometry.problem ? <p className="help">{geometry.problem}</p> : null}<label className="field">Примечание<textarea value={dimension.note ?? ''} onChange={event => mutate(p => { const item = (p.dimensions ?? []).find(entry => entry.id === dimension.id); if (item) item.note = event.target.value; })} /></label><div className="property-actions"><button className="danger" onClick={removeSelection}>Удалить размер</button></div></>;
+      })() : selection && pin ? <PinProperties
         pin={pin}
         floors={project.floors}
         photoUrls={photoUrls}

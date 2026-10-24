@@ -1,4 +1,4 @@
-import type { ChangeEntry, Project } from './model';
+import type { ChangeEntry, Dimension, Project } from './model';
 import { normalizeEquipmentColor } from './equipment-icons';
 import { isCatalogDate, normalizeCatalog } from './estimate';
 import { normalizeRouteColor } from './route-kinds';
@@ -120,6 +120,16 @@ function normalizePin(value: unknown): Project['pins'][number] {
 
 const stringValue = (value: unknown): string => (typeof value === 'string' ? value.trim() : '');
 
+/** Размер между оборудованием: нечисловые id отбрасываются, полностью пустые записи не сохраняются. */
+function normalizeDimension(value: unknown): Dimension | null {
+  if (!isRecord(value)) return null;
+  const id = stringValue(value.id);
+  const fromId = stringValue(value.fromId);
+  const toId = stringValue(value.toId);
+  if (!id || !fromId || !toId || fromId === toId) return null;
+  return { id, fromId, toId, note: typeof value.note === 'string' ? value.note : '' };
+}
+
 /** Запись листа регистрации изменений: мусорные и полностью пустые записи отбрасываются. */
 function normalizeChangeEntry(value: unknown, index: number): ChangeEntry | null {
   if (!isRecord(value)) return null;
@@ -238,6 +248,12 @@ export function migrateProject(input: unknown): Project {
     pins: Array.isArray(raw.pins) ? raw.pins.map(normalizePin) : [],
     updatedAt: typeof raw.updatedAt === 'string' ? raw.updatedAt : new Date().toISOString(),
   };
+  if (Array.isArray(raw.dimensions)) {
+    const dimensions = raw.dimensions
+      .map(normalizeDimension)
+      .filter((item): item is Dimension => item !== null);
+    if (dimensions.length) project.dimensions = dimensions;
+  }
   // Справочник цен и дата прайса необязательны; повреждённые/отсутствующие поля
   // нормализуются, а старые проекты грузятся как раньше.
   project.catalog = normalizeCatalog(raw.catalog);

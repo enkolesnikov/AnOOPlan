@@ -20,6 +20,8 @@ export interface Route {
   trayAreaMm2?: number | null;
 }
 export interface Pin { id:string; number:string; floorId:string; x:number; y:number; comment:string; status:'open'|'closed'; photos?:string[]; createdAt:string; updatedAt:string }
+/** Размер между двумя объектами оборудования: показывается на плане и в PDF. */
+export interface Dimension { id:string; fromId:string; toId:string; note?:string }
 export interface Cable {
   id:string; number:string; name:string; brand:string; purpose:string;
   fromId:string; toId:string; segmentIds:string[];
@@ -76,7 +78,7 @@ export interface ProjectDocument {
 }
 export interface Project {
   schemaVersion:1|2; id:string; name:string; floors:Floor[]; equipment:Equipment[];
-  routes:Route[]; cables:Cable[]; pins:Pin[]; updatedAt:string; document?:ProjectDocument;
+  routes:Route[]; cables:Cable[]; pins:Pin[]; dimensions?:Dimension[]; updatedAt:string; document?:ProjectDocument;
   /** Справочник цен проекта. Отсутствие трактуется как пустой справочник. */
   catalog?: PriceItem[];
   /** Дата актуальности прайса (YYYY-MM-DD), показывается в смете и КП. */

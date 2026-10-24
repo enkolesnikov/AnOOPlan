@@ -112,3 +112,14 @@ test('SVG плана этажа 1 рисует оборудование икон
   assert.ok(customSvg.includes('fill="#aabbcc"'), 'сохранённый цвет должен краситься в нормализованный #aabbcc');
   assert.ok(!customSvg.includes('fill="#abc"'), 'трёхзначный цвет должен приводиться к #rrggbb');
 });
+
+
+test('SVG плана рисует относительный размер между оборудованием', () => {
+  const project = createDemoProject();
+  const floor = project.floors[0];
+  const onFloor = project.equipment.filter(item => item.floorId === floor.id).slice(0, 2);
+  project.dimensions = [{ id: 'd1', fromId: onFloor[0].id, toId: onFloor[1].id }];
+  const svg = buildPlanSvg(project, floor);
+  assert.ok(svg.includes('stroke="#875ec5"'), 'нет линии размера');
+  assert.ok(/\d[\d,.]* (мм|м)/.test(svg), 'нет подписи расстояния');
+});

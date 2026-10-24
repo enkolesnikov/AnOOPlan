@@ -398,3 +398,16 @@ test('changeLog разводит дубли id, включая fallback change-N
   assert.equal(entries[0].id, 'change-2');
   assert.equal(entries[2].description, 'Третья (дубль)');
 });
+
+
+test('размеры между оборудованием нормализуются, мусор отбрасывается', () => {
+  const source = project() as unknown as Record<string, unknown>;
+  source.dimensions = [
+    { id: 'd1', fromId: 'e1', toId: 'e2' },
+    { id: '', fromId: 'e1', toId: 'e2' },
+    { id: 'd2', fromId: 'e1', toId: 'e1' },
+    { id: 'd3', fromId: 42, toId: 'e2' },
+  ];
+  const migrated = migrateProject(source);
+  assert.deepEqual(migrated.dimensions, [{ id: 'd1', fromId: 'e1', toId: 'e2', note: '' }]);
+});

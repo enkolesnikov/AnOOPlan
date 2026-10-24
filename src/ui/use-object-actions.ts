@@ -71,8 +71,22 @@ export function useObjectActions(s: WorkspaceState) {
     setSelection(null); setSheet(null); setPropsOpen(false);
   }
 
-  function copySelection() { if (selection) copyObject(selection.kind, selection.id); }
-  function removeSelection() { if (selection) removeObject(selection.kind, selection.id); }
+  function copySelection() {
+    if (!selection) return;
+    if (selection.kind === 'dimension') { setMessage('Размер между оборудованием нельзя копировать — создайте новый на плане.'); return; }
+    copyObject(selection.kind, selection.id);
+  }
+  function removeSelection() {
+    if (!selection) return;
+    if (selection.kind === 'dimension') {
+      const dimension = (projectRef.current.dimensions ?? []).find(d => d.id === selection.id);
+      if (!dimension) return;
+      mutate(p => { p.dimensions = (p.dimensions ?? []).filter(d => d.id !== dimension.id); });
+      setSelection(null); setPropsOpen(false); setMessage('Размер удалён.');
+      return;
+    }
+    removeObject(selection.kind, selection.id);
+  }
 
   async function addPhoto(file: File) {
     const target = photoOwner;

@@ -27,6 +27,10 @@ export function clientCsv(project: Project): string {
   for (const group of specs.cables) rows.push([group.brand, group.lines, group.geometry, group.total]);
   rows.push([]); rows.push(['Замечания']); rows.push(['Номер', 'Этаж', 'X', 'Y', 'Замечание', 'Статус']);
   for (const pin of project.pins ?? []) rows.push([pin.number, project.floors.find(floor => floor.id === pin.floorId)?.name || '', pin.x, pin.y, pin.comment, pin.status === 'closed' ? 'закрыто' : 'открыто']);
+  rows.push([]); rows.push(['Схема трасс']); rows.push(['Трасса', 'Тип КНС', 'Длина, м', 'Сегментов', 'Углы']);
+  for (const route of specs.routeSummary.routes) rows.push([route.number, route.type, route.length, route.segments, route.group === 'Кабель-канал' ? route.angles.total : null]);
+  rows.push([]); rows.push(['Итого по типам', 'Длина, м', 'Трасс', 'Углы']);
+  for (const group of specs.routeSummary.groups) rows.push([group.group, group.length, group.routes, group.group === 'Кабель-канал' ? group.angles.total : null]);
   rows.push([]); rows.push(['Инфраструктура']); rows.push(['Тип', 'Длина, м', 'Сегментов', 'Кабелей', 'Макс. заполнение, %', 'Сегментов с превышением']);
   for (const group of specs.infrastructure) rows.push([group.type, group.length, group.segments, group.cables, group.maxFillPercent, group.overSegments]);
   rows.push([]); rows.push(['Заполнение КНС']); rows.push(['Трасса', 'Сегмент', 'КНС, мм', 'Линий', 'Площадь кабелей, мм²', 'Заполнение, %', 'Статус']);

@@ -1,5 +1,5 @@
-import type { Cable, Equipment, Project, Route, Segment, Vertex } from './model';
-import { isDiameterRoute } from './route-kinds';
+import type { Cable, Dimension, Equipment, Project, Route, Segment, Vertex } from './model';
+import { isDiameterRoute, routeKindOf } from './route-kinds';
 
 const EPS = 1e-6;
 const finite = (value: unknown): value is number => typeof value === 'number' && Number.isFinite(value);
@@ -376,6 +376,145 @@ function sectionLabel(route: Route): string {
 
 const validQuantity = (cable: Cable): boolean => Number.isInteger(cable.quantity) && cable.quantity > 0;
 
+/** Длина трассы в метрах: сумма физических длин сегментов; null, если геометрия неполная. */
+export function routeLength(project: Project, route: Route): number | null {
+  let total = 0;
+  for (const segment of route.segments) {
+    const length = segmentLength(project, segment);
+    if (length === null) return null;
+    total += length;
+  }
+  return total;
+}
+
+export interface RouteAngleStats { total: number; angles90: number; angles45: number; other: number }
+
+/**
+ * Углы поворота трассы: количество изменений направления и разбивка на 90°/45°.
+ * Считаются только стыки соседних сегментов; для коробов это количество углов
+ * (без фитингов и креплений).
+ */
+export function routeAngleStats(route: Route): RouteAngleStats {
+  const stats: RouteAngleStats = { total: 0, angles90: 0, angles45: 0, other: 0 };
+  const remaining = [...route.segments];
+  if (remaining.length < 2) return stats;
+  const same = (a: Vertex, b: Vertex) => a.floorId === b.floorId && near(a.x, b.x) && near(a.y, b.y);
+  const first = remaining.shift()!;
+  const path: { x: number; y: number }[] = [{ x: first.a.x, y: first.a.y }, { x: first.b.x, y: first.b.y }];
+  let extended = true;
+  while (remaining.length && extended) {
+    extended = false;
+    for (let index = 0; index < remaining.length; index += 1) {
+      const segment = remaining[index];
+      const end = path[path.length - 1];
+      const endVertex: Vertex = { id: '', floorId: first.a.floorId, x: end.x, y: end.y, height: null };
+      if (same(segment.a, endVertex)) {
+        path.push({ x: segment.b.x, y: segment.b.y });
+        remaining.splice(index, 1);
+        extended = true;
+        break;
+      }
+      if (same(segment.b, endVertex)) {
+        path.push({ x: segment.a.x, y: segment.a.y });
+        remaining.splice(index, 1);
+        extended = true;
+        break;
+      }
+    }
+  }
+  for (let index = 1; index < path.length - 1; index += 1) {
+    const ax = path[index].x - path[index - 1].x;
+    const ay = path[index].y - path[index - 1].y;
+    const bx = path[index + 1].x - path[index].x;
+    const by = path[index + 1].y - path[index].y;
+    const lengthA = Math.hypot(ax, ay);
+    const lengthB = Math.hypot(bx, by);
+    if (lengthA < EPS || lengthB < EPS) continue;
+    const cosine = Math.max(-1, Math.min(1, (ax * bx + ay * by) / (lengthA * lengthB)));
+    const angle = Math.acos(cosine) * 180 / Math.PI;
+    if (angle < 1) continue;
+    stats.total += 1;
+    if (Math.abs(angle - 90) <= 10) stats.angles90 += 1;
+    else if (Math.abs(angle - 45) <= 10 || Math.abs(angle - 135) <= 10) stats.angles45 += 1;
+    else stats.other += 1;
+  }
+  return stats;
+}
+
+export interface DimensionGeometry {
+  /** Расстояние по прямой в единицах PDF. */
+  units: number | null;
+  /** Расстояние по прямой в метрах; null, если масштаб этажа неизвестен. */
+  meters: number | null;
+  floorId: string | null;
+  problem: string | null;
+}
+
+/**
+ * «Относительный» размер между двумя объектами оборудования: расстояние по прямой,
+ * а не длина кабельной трассы. Оборудование должно быть на одном этаже.
+ */
+export function dimensionGeometry(project: Project, dimension: Dimension): DimensionGeometry {
+  const from = project.equipment.find(item => item.id === dimension.fromId);
+  const to = project.equipment.find(item => item.id === dimension.toId);
+  if (!from || !to) return { units: null, meters: null, floorId: null, problem: 'Оборудование не найдено' };
+  if (from.floorId !== to.floorId) return { units: null, meters: null, floorId: from.floorId, problem: 'Оборудование на разных этажах' };
+  const units = Math.hypot(to.x - from.x, to.y - from.y);
+  if (!finite(units)) return { units: null, meters: null, floorId: from.floorId, problem: 'Неверные координаты оборудования' };
+  const floor = project.floors.find(item => item.id === from.floorId);
+  const scale = floor?.metersPerUnit;
+  const meters = finite(scale) && scale > 0 ? units * scale : null;
+  return { units, meters, floorId: from.floorId, problem: null };
+}
+
+/** Подпись относительного размера: миллиметры до 1 м, иначе метры; без масштаба — единицы PDF. */
+export function dimensionText(distance: DimensionGeometry): string {
+  if (distance.meters !== null) {
+    return distance.meters < 1
+      ? `${Math.round(distance.meters * 1000)} мм`
+      : `${distance.meters.toFixed(2).replace('.', ',')} м`;
+  }
+  return distance.units !== null ? `${Math.round(distance.units)} ед.` : '—';
+}
+
+/** Группа сводки по типу КНС: лоток, гофра, труба, кабель-канал или свой тип. */
+const ROUTE_GROUP_LABELS: Record<string, string> = {
+  tray: 'Лоток', corrugated: 'Гофра', pipe: 'Труба', trunking: 'Кабель-канал',
+};
+export interface RouteSummaryRow {
+  number: string; type: string; group: string; kind: string | null;
+  length: number | null; segments: number; angles: RouteAngleStats;
+}
+export interface RouteSummaryGroup {
+  group: string; length: number | null; routes: number; angles: RouteAngleStats;
+}
+export interface RouteSummaryResult { routes: RouteSummaryRow[]; groups: RouteSummaryGroup[] }
+
+/**
+ * Сводка трасс для листа «Схема трасс»: метраж по каждой трассе и по типам КНС
+ * (включая суммарную гофру) плюс количество углов у коробов.
+ */
+export function routeSummary(project: Project): RouteSummaryResult {
+  const routes: RouteSummaryRow[] = [];
+  const groups: RouteSummaryGroup[] = [];
+  for (const route of project.routes) {
+    const kind = routeKindOf(route.type);
+    const group = kind ? ROUTE_GROUP_LABELS[kind] : (route.type || 'Своя КНС');
+    const length = routeLength(project, route);
+    const angles = routeAngleStats(route);
+    routes.push({ number: route.number, type: route.type, group, kind, length, segments: route.segments.length, angles });
+    let totals = groups.find(item => item.group === group);
+    if (!totals) { totals = { group, length: 0, routes: 0, angles: { total: 0, angles90: 0, angles45: 0, other: 0 } }; groups.push(totals); }
+    totals.routes += 1;
+    totals.length = totals.length === null || length === null ? null : totals.length + length;
+    totals.angles.total += angles.total;
+    totals.angles.angles90 += angles.angles90;
+    totals.angles.angles45 += angles.angles45;
+    totals.angles.other += angles.other;
+  }
+  return { routes, groups };
+}
+
 /** Заполнение лотка по каждому сегменту всех трасс проекта. */
 export function trayFill(project: Project): TrayFillResult {
   const warnings: string[] = [];
@@ -564,7 +703,7 @@ export function specifications(project: Project) {
     group.maxFillPercent = known.length ? Math.max(...known) : null;
     group.overSegments = typeSegments.filter(segment => segment.status === 'over').length;
   }
-  return { equipment, cables, infrastructure, trayFill: trayFillRows, errors: [...new Set(errors)] };
+  return { equipment, cables, infrastructure, trayFill: trayFillRows, routeSummary: routeSummary(project), errors: [...new Set(errors)] };
 }
 
 /** Доменные предупреждения: не мешают расчёту, но важны для сдачи документации. */

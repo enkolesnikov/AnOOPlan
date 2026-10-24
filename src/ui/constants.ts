@@ -17,6 +17,7 @@ export const JOURNAL_SECTIONS: { id: JournalSectionId; label: string }[] = [
   { id: 'journal', label: 'Журнал' },
   { id: 'equipment', label: 'Оборудование' },
   { id: 'cables', label: 'Кабели' },
+  { id: 'routeScheme', label: 'Схема трасс' },
   { id: 'infrastructure', label: 'Инфраструктура' },
   { id: 'trayFill', label: 'Заполнение лотков' },
   { id: 'estimate', label: 'Смета' },
