@@ -81,7 +81,9 @@ export function demoPlanPdf(): string {
 export function createDemoProject(): Project {
   const plan = demoPlanPdf();
   const f1: Floor = { ...floor(uid(), 'Этаж 1', 0, 1), pdfId: plan };
-  const f2: Floor = { ...floor(uid(), 'Этаж 2', 4, 2), pdfId: plan };
+  // Демо-PDF одностраничный: оба этажа ссылаются на страницу 1, иначе оверлей
+  // второго этажа не наносится (в реальном проекте страницы могут различаться).
+  const f2: Floor = { ...floor(uid(), 'Этаж 2', 4, 1), pdfId: plan };
 
   const equipmentList: Equipment[] = [
     equipment(uid(), 'Ш1', 'Шкаф питания', 'Шкаф', f1.id, 100, 350, 0),

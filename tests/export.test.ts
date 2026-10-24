@@ -521,6 +521,16 @@ test('PDF: титульный лист с реквизитами докумен�
   assert.ok(pageTexts.length > 3, 'титул, оглавление и разделы должны занимать больше страниц');
 });
 
+test('PDF: лист плана показывает предупреждение, если оверлей не нанесён', async () => {
+  const project = createDemoProject();
+  const png = new Uint8Array(Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==', 'base64'));
+  const { text } = await pdfText(await buildJournalPdf(project, fonts, {
+    plans: [{ title: 'Этаж 2', png, note: 'Этаж «Этаж 2»: выбранная страница 2 вне диапазона, оверлей не нанесён.' }],
+  }));
+  assert.ok(text.includes('План: Этаж 2'), 'нет листа плана');
+  assert.ok(text.includes('оверлей не нанесён'), 'нет пояснения, почему лист без оверлея');
+});
+
 test('PDF: оглавление с названиями разделов и фактическими номерами страниц', async () => {
   const project = createDemoProject();
   const { pageTexts } = await pdfText(await buildJournalPdf(project, fonts));

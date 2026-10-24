@@ -12,7 +12,7 @@
 
 [![Скачать APK](https://img.shields.io/badge/%D1%81%D0%BA%D0%B0%D1%87%D0%B0%D1%82%D1%8C-APK-2ea043?logo=android&logoColor=white)](https://github.com/enkolesnikov/AnOOPlan/releases/latest)
 
-- **APK:** [последний релиз](https://github.com/enkolesnikov/AnOOPlan/releases/latest) (`AnOOPlan-2.2.0.apk`) — около 1,5 МБ со встроенными сабсетами шрифтов, Android 7.0+ (minSdk 24, WebView 98+, targetSdk 35), без интернета;
+- **APK:** [последний релиз](https://github.com/enkolesnikov/AnOOPlan/releases/latest) (`AnOOPlan-2.2.1.apk`) — около 1,5 МБ со встроенными сабсетами шрифтов, Android 7.0+ (minSdk 24, WebView 98+, targetSdk 35), без интернета;
 - **Веб-версия:** [enkolesnikov.github.io/AnOOPlan](https://enkolesnikov.github.io/AnOOPlan/) — та же сборка, публикуется вручную по запросу (приоритет — Android);
 - **Исходный проект:** [enkolesnikov/ooplan](https://github.com/enkolesnikov/ooplan).
 
@@ -104,12 +104,21 @@ npm run dev
 
 APK — это нативная оболочка (WebView) вокруг той же статической сборки, без Gradle и без сервера:
 
-- `com.anooplan.app`, minSdk 24, targetSdk 35, версия 2.2.0;
+- `com.anooplan.app`, minSdk 24, targetSdk 35, версия 2.2.1;
 - ассеты (`dist/`) упакованы в APK и отдаются WebView по origin `https://appassets.local/`, поэтому работают `localStorage`, `IndexedDB` (PDF-планы) и `crypto.randomUUID()`;
 - режим хранения — «Браузер»: проекты автосохраняются на устройстве, PDF читаются из памяти телефона через системный выбор файлов;
 - экспорт CSV и JSON-копии сохраняется в общую папку **Загрузки/AnOOPlan** без запроса опасных разрешений (MediaStore);
 - XLSX и PDF журнала собираются **на самом телефоне**: сервер для выгрузки не нужен;
 - разрешение `INTERNET` не запрашивается: приложение работает полностью офлайн.
+
+### Что нового в 2.2.1
+
+- **Исправлен второй этаж в PDF-плане.** Демо-проект ссылался на вторую страницу одностраничного демо-PDF,
+  из-за чего оверлей не наносился и лист «План: Этаж 2» выглядел пустым. Теперь оба демо-этажа используют
+  страницу 1 и на листе видны трассы и оборудование.
+- **Понятное предупреждение вместо тихой подложки.** Если у этажа выбрана страница вне PDF (например,
+  после замены плана), на листе «План» печатается пояснение «оверлей не нанесён», а не пустой лист.
+- 205 юнит-тестов, смоук (210 проверок), 2 E2E; APK 2.2.1 подписан тем же сертификатом.
 
 ### Что нового в 2.2.0
 
@@ -319,7 +328,7 @@ APK — это нативная оболочка (WebView) вокруг той �
 
 ```bash
 bash scripts/fetch-tools.sh   # android.jar (SDK 35) + build-tools 35 + r8.jar с d8 в tools/
-bash scripts/build-apk.sh     # результат: build/AnOOPlan-2.2.0.apk
+bash scripts/build-apk.sh     # результат: build/AnOOPlan-2.2.1.apk
 ```
 
 Нужны `JDK 17+`, `aapt`, `zipalign`, `apksigner`, `zip`, Node.js и Python 3 (генерация иконок).
@@ -351,7 +360,7 @@ adb install -r build/AnOOPlan-1.0.0.apk
 
 
 ```bash
-npm test             # 202 юнит-теста: расчёт длин и заполнения лотка, автопрокладка, валидация, миграции, API, экспорт, backup
+npm test             # 205 юнит-тестов: расчёт длин и заполнения лотка, автопрокладка, валидация, миграции, API, экспорт, backup
 npm run coverage     # тесты с покрытием и порогами (в CI)
 npm run size         # бюджет стартового бандла (после npm run build)
 npm run status       # версии, размеры, аудит и ориентировочные счётчики

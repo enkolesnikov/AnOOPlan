@@ -10,3 +10,17 @@ export function planPageTitle(floorName: string, page: number, pageCount: number
 export function planPagesToCapture(pageCount: number): number {
   return Math.max(0, Math.min(Math.floor(pageCount), MAX_PLAN_PAGES));
 }
+
+/**
+ * Почему оверлей этажа не попал на лист (или null, если всё в порядке):
+ * выбранная страница может отсутствовать в PDF или не попасть в лимит выгрузки.
+ */
+export function planOverlayWarning(floorName: string, floorPage: number, pageCount: number, capturedPages: number): string | null {
+  if (floorPage > pageCount) {
+    return `Этаж «${floorName}»: выбранная страница ${floorPage} вне диапазона, оверлей не нанесён.`;
+  }
+  if (floorPage > capturedPages) {
+    return `Этаж «${floorName}»: страница ${floorPage} не выгружена из-за лимита ${MAX_PLAN_PAGES}; оверлей не нанесён.`;
+  }
+  return null;
+}

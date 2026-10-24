@@ -5,7 +5,7 @@ import { buildPlanSvg } from './plan-svg';
 import { decodeImage } from './compat';
 import { logDiagnostic } from './diagnostics';
 import { idbGet } from './idb';
-import { MAX_PLAN_PAGES, planPageTitle, planPagesToCapture } from './plan-pages';
+import { MAX_PLAN_PAGES, planOverlayWarning, planPageTitle, planPagesToCapture } from './plan-pages';
 
 type PdfjsModule = typeof import('pdfjs-dist/legacy/build/pdf.mjs');
 type PdfLoadingTask = ReturnType<PdfjsModule['getDocument']>;
@@ -14,6 +14,8 @@ type PdfDocument = Awaited<PdfLoadingTask['promise']>;
 export interface CapturedPlan {
   title: string;
   png: Uint8Array;
+  /** Пояснение на листе PDF (например, почему не нанесён оверлей этажа). */
+  note?: string;
 }
 
 export interface PlanCaptureResult {
@@ -119,16 +121,16 @@ export async function capturePlanPages(project: Project, floor: Floor): Promise<
     if (pageCount > MAX_PLAN_PAGES) {
       warnings.push(`Этаж «${floor.name}»: показаны первые ${MAX_PLAN_PAGES} страниц из ${pageCount}.`);
     }
-    if (floor.page > pageCount) {
-      warnings.push(`Этаж «${floor.name}»: выбранная страница ${floor.page} вне диапазона, оверлей не нанесён.`);
-    } else if (floor.page > total) {
-      warnings.push(`Этаж «${floor.name}»: страница ${floor.page} не выгружена из-за лимита ${MAX_PLAN_PAGES}; оверлей не нанесён.`);
-    }
+    const overlayWarning = planOverlayWarning(floor.name, floor.page, pageCount, total);
+    if (overlayWarning) warnings.push(overlayWarning);
     const plans: CapturedPlan[] = [];
     for (let pageNumber = 1; pageNumber <= total; pageNumber += 1) {
       try {
         const plan = await capturePage(project, floor, pdf.document, pageNumber);
-        if (plan) plans.push(plan);
+        if (plan) {
+          if (overlayWarning) plan.note = overlayWarning;
+          plans.push(plan);
+        }
       } catch (error) {
         logDiagnostic('error', error, `capturePlan:page:${pageNumber}`);
         warnings.push(`Этаж «${floor.name}»: не удалось отрисовать страницу ${pageNumber}.`);

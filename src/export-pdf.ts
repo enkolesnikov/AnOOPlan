@@ -8,7 +8,7 @@ import { estimate } from './estimate';
 import type { JournalFonts } from './export-fonts';
 
 export interface JournalPhoto { number: string; name: string; data: ArrayBuffer; mime: string }
-export interface JournalPlan { title: string; png: Uint8Array }
+export interface JournalPlan { title: string; png: Uint8Array; note?: string }
 
 /** Раздел печатной формы; `include` в {@link JournalOptions} фильтрует их набор. */
 export type JournalSectionId =
@@ -353,6 +353,7 @@ class Renderer {
       const title = `План: ${item.title}`;
       const page = this.heading(title, 'Подложка этажа и нанесённые трассы с оборудованием — лист для подписи.');
       entries.push({ title, page });
+      if (item.note) this.paragraph(item.note, DANGER);
       try {
         const image = await this.document.embedPng(item.png);
         const maxHeight = 380;
