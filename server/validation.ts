@@ -229,8 +229,9 @@ export function assertProject(input: unknown, pdfExists: (id: string) => boolean
   const ids = new Set<string>();
   const claim: Claim = (id, at) => {
     text(id, at, true);
-    if (ids.has(id as string)) fail(`Повтор ID: ${id}`);
-    ids.add(id as string);
+    const value = id as string;
+    if (ids.has(value)) fail(`Повтор ID: ${value}`);
+    ids.add(value);
   };
   claim(project.id, 'project.id');
 

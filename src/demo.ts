@@ -1,7 +1,8 @@
 import type { Project, Floor, Equipment, Route, Cable, Segment, Vertex, Pin, PriceItem, PriceKind } from './model';
+import { createUuid } from './compat';
 
-let counter = 0;
-const uid = (): string => `demo-${(++counter)}-${Math.random().toString(36).slice(2, 8)}`;
+/** Идентификаторы демо-проекта уникальны и не используют слабый Math.random. */
+const uid = (): string => `demo-${createUuid()}`;
 
 const floor = (id: string, name: string, elevation: number, page: number): Floor => ({
   id, name, elevation, metersPerUnit: 0.05, page, width: 1000, height: 700,

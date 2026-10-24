@@ -347,6 +347,9 @@ adb install -r build/AnOOPlan-1.0.0.apk
 
 ## Проверки
 
+[![CodeFactor](https://www.codefactor.io/repository/github/enkolesnikov/anooplan/badge)](https://www.codefactor.io/repository/github/enkolesnikov/anooplan)
+
+
 ```bash
 npm test             # 202 юнит-теста: расчёт длин и заполнения лотка, автопрокладка, валидация, миграции, API, экспорт, backup
 npm run coverage     # тесты с покрытием и порогами (в CI)

@@ -127,7 +127,8 @@ export function findRoute(project: Project, fromId: string, toId: string): { seg
   const shortest = new Map<string, number>([[start, 0]]);
   const prev = new Map<string, { node: string; segmentId: string } | null>([[start, null]]);
   const visited = new Set<string>();
-  while (true) {
+  // Пока есть непосещённые достижимые узлы: Дейкстра завершится, когда все они обработаны.
+  while (visited.size < shortest.size) {
     let current: string | null = null;
     let best = Infinity;
     for (const [node, distance] of shortest) if (!visited.has(node) && distance < best) { best = distance; current = node; }

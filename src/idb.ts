@@ -14,7 +14,7 @@ export function idbOpen(): Promise<IDBDatabase> {
       if (!request.result.objectStoreNames.contains(SNAPSHOT_STORE)) request.result.createObjectStore(SNAPSHOT_STORE);
     };
     request.onsuccess = () => resolve(request.result);
-    request.onerror = () => reject(request.error);
+    request.onerror = () => reject(request.error ?? new Error('IndexedDB: ошибка запроса'));
   });
 }
 
@@ -24,7 +24,7 @@ export async function idbPut(key: string, value: Blob): Promise<void> {
     const tx = db.transaction(BLOB_STORE, 'readwrite');
     tx.objectStore(BLOB_STORE).put(value, key);
     tx.oncomplete = () => resolve();
-    tx.onerror = () => reject(tx.error);
+    tx.onerror = () => reject(tx.error ?? new Error('IndexedDB: ошибка транзакции'));
   });
 }
 
@@ -34,7 +34,7 @@ export async function idbGet(key: string): Promise<Blob | undefined> {
     const tx = db.transaction(BLOB_STORE, 'readonly');
     const request = tx.objectStore(BLOB_STORE).get(key);
     request.onsuccess = () => resolve(request.result as Blob | undefined);
-    request.onerror = () => reject(request.error);
+    request.onerror = () => reject(request.error ?? new Error('IndexedDB: ошибка запроса'));
   });
 }
 
@@ -44,7 +44,7 @@ export async function idbDelete(key: string): Promise<void> {
     const tx = db.transaction(BLOB_STORE, 'readwrite');
     tx.objectStore(BLOB_STORE).delete(key);
     tx.oncomplete = () => resolve();
-    tx.onerror = () => reject(tx.error);
+    tx.onerror = () => reject(tx.error ?? new Error('IndexedDB: ошибка транзакции'));
   });
 }
 
@@ -54,7 +54,7 @@ export async function idbStorePut(store: string, key: string, value: unknown): P
     const tx = db.transaction(store, 'readwrite');
     tx.objectStore(store).put(value, key);
     tx.oncomplete = () => resolve();
-    tx.onerror = () => reject(tx.error);
+    tx.onerror = () => reject(tx.error ?? new Error('IndexedDB: ошибка транзакции'));
   });
 }
 
@@ -64,7 +64,7 @@ export async function idbStoreGet<T>(store: string, key: string): Promise<T | un
     const tx = db.transaction(store, 'readonly');
     const request = tx.objectStore(store).get(key);
     request.onsuccess = () => resolve(request.result as T | undefined);
-    request.onerror = () => reject(request.error);
+    request.onerror = () => reject(request.error ?? new Error('IndexedDB: ошибка запроса'));
   });
 }
 
@@ -74,7 +74,7 @@ export async function idbStoreDelete(store: string, key: string): Promise<void> 
     const tx = db.transaction(store, 'readwrite');
     tx.objectStore(store).delete(key);
     tx.oncomplete = () => resolve();
-    tx.onerror = () => reject(tx.error);
+    tx.onerror = () => reject(tx.error ?? new Error('IndexedDB: ошибка транзакции'));
   });
 }
 
@@ -84,7 +84,7 @@ export async function idbStoreKeys(store: string): Promise<string[]> {
     const tx = db.transaction(store, 'readonly');
     const request = tx.objectStore(store).getAllKeys();
     request.onsuccess = () => resolve((request.result as IDBValidKey[]).map(String));
-    request.onerror = () => reject(request.error);
+    request.onerror = () => reject(request.error ?? new Error('IndexedDB: ошибка запроса'));
   });
 }
 
@@ -94,6 +94,6 @@ export async function idbStoreGetAll<T>(store: string): Promise<T[]> {
     const tx = db.transaction(store, 'readonly');
     const request = tx.objectStore(store).getAll();
     request.onsuccess = () => resolve(request.result as T[]);
-    request.onerror = () => reject(request.error);
+    request.onerror = () => reject(request.error ?? new Error('IndexedDB: ошибка запроса'));
   });
 }
