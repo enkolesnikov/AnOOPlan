@@ -1,4 +1,4 @@
-import type { Route } from './model';
+import type { Route, Segment } from './model';
 
 /**
  * Типы кабеленесущих систем (КНС): лоток, гофра, труба, кабель-канал.
@@ -79,18 +79,58 @@ export function routeColor(route: Pick<Route, 'type' | 'color'>): string {
   return normalizeRouteColor(route.color) ?? defaultRouteColor(route.type);
 }
 
-/** Человекочитаемое обозначение сечения КНС для подписей и ведомостей. */
-export function routeSectionLabel(route: Route): string {
-  if (typeof route.trayAreaMm2 === 'number' && Number.isFinite(route.trayAreaMm2) && route.trayAreaMm2 > 0) {
-    return `S=${route.trayAreaMm2} мм²`;
+/** Поля сечения КНС: одинаковый набор у трассы и у сегмента. */
+export interface SectionDimensions {
+  trayWidthMm?: number | null;
+  trayHeightMm?: number | null;
+  trayAreaMm2?: number | null;
+}
+
+/** Поля сечения в порядке приоритета: площадь, затем ширина/диаметр и высота. */
+export const SECTION_DIM_KEYS = ['trayAreaMm2', 'trayWidthMm', 'trayHeightMm'] as const;
+
+const isGiven = (value: unknown): boolean => value !== undefined && value !== null;
+
+/** Есть ли у сегмента собственное сечение (хотя бы одно заданное поле). */
+export function hasSectionOverride(segment: SectionDimensions): boolean {
+  return SECTION_DIM_KEYS.some(key => isGiven(segment[key]));
+}
+
+/**
+ * Эффективные размеры участка КНС: заданное поле сегмента переопределяет поле трассы,
+ * незаданное — наследуется от трассы (поле в поле, а не «сечение целиком»).
+ */
+export function effectiveSectionDims(route: SectionDimensions, segment?: SectionDimensions): SectionDimensions {
+  const dims: SectionDimensions = {};
+  for (const key of SECTION_DIM_KEYS) {
+    const value = segment && isGiven(segment[key]) ? segment[key] : route[key];
+    if (isGiven(value)) dims[key] = value;
   }
-  const width = route.trayWidthMm;
-  const height = route.trayHeightMm;
-  if (isDiameterRoute(route)) {
+  return dims;
+}
+
+/** Человекочитаемое обозначение сечения КНС для подписей и ведомостей. */
+export function sectionLabel(type: string, dims: SectionDimensions): string {
+  if (typeof dims.trayAreaMm2 === 'number' && Number.isFinite(dims.trayAreaMm2) && dims.trayAreaMm2 > 0) {
+    return `S=${dims.trayAreaMm2} мм²`;
+  }
+  const width = dims.trayWidthMm;
+  const height = dims.trayHeightMm;
+  if (isDiameterRoute({ type })) {
     return typeof width === 'number' && Number.isFinite(width) && width > 0 ? `Ø${width}` : '—';
   }
   if (typeof width === 'number' && Number.isFinite(width) && width > 0 && typeof height === 'number' && Number.isFinite(height) && height > 0) {
     return `${width}×${height}`;
   }
   return '—';
+}
+
+/** Сечение трассы (без учёта переопределений сегментов). */
+export function routeSectionLabel(route: Route): string {
+  return sectionLabel(route.type, route);
+}
+
+/** Эффективное сечение сегмента: своё, если задано, иначе сечение трассы. */
+export function segmentSectionLabel(route: Route, segment: Segment): string {
+  return sectionLabel(route.type, effectiveSectionDims(route, segment));
 }

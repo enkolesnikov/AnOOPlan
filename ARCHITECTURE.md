@@ -15,7 +15,7 @@ interface Point { x:number; y:number }
 interface Floor { id:string; name:string; elevation:number|null; metersPerUnit:number|null; pdfId?:string; page:number; width:number; height:number }
 interface Equipment { id:string; number:string; name:string; type:string; floorId:string; x:number; y:number; height:number|null; note:string; properties:Record<string,string>; color?:string|null }
 interface Vertex { id:string; floorId:string; x:number; y:number; height:number|null }
-interface Segment { id:string; a:Vertex; b:Vertex; mode:'orthogonal'|'spatial'; reservePercent:number; reserveFixed:number }
+interface Segment { id:string; a:Vertex; b:Vertex; mode:'orthogonal'|'spatial'; reservePercent:number; reserveFixed:number; trayWidthMm?:number|null; trayHeightMm?:number|null; trayAreaMm2?:number|null }
 interface Dimension { id:string; fromId:string; toId:string; note?:string }
 interface Route { id:string; number:string; type:string; segments:Segment[]; note:string; color?:string|null; trayWidthMm?:number|null; trayHeightMm?:number|null; trayAreaMm2?:number|null }
 interface Cable { id:string; number:string; name:string; brand:string; purpose:string; fromId:string; toId:string; segmentIds:string[]; reservePercent:number; reserveFixed:number; startReserve:number; endReserve:number; quantity:number; note:string; outerDiameterMm?:number|null; crossSectionMm2?:number|null }
@@ -45,17 +45,23 @@ interface Project { schemaVersion:1|2; id:string; name:string; floors:Floor[]; e
 
 ## Схема трасс, углы и размеры
 
-`routeSummary(project)` в `src/engine.ts` даёт строки по трассам (длина, число сегментов, углы) и
-итоги по типам КНС: лоток, гофра, труба, кабель-канал, свой тип. Длина — сумма `segmentLength`;
+`routeSummary(project)` в `src/engine.ts` даёт строки по трассам (длина, число сегментов, углы,
+метраж по эффективным сечениям — `sections`) и итоги по типам КНС: лоток, гофра, труба, кабель-канал,
+свой тип. Длина — сумма `segmentLength`; `routeSectionLengths` группирует сегменты по эффективному
+сечению (`segmentSectionLabel`), `routeSectionsText` печатает «100×50 — 12,4 м; Ø25 — 3,1 м».
 `routeAngleStats` считает изменения направления на стыках соседних сегментов (90°/45°), для коробов
-это количество углов. Лист «Схема трасс» в PDF/XLSX/CSV строится по этой сводке; фитинги и крепления
-не считаются по решению владельца.
+это количество углов. Лист «Схема трасс» (PDF/XLSX/CSV) и раздел «Схема трасс» в «Ведомостях» строятся
+по этой сводке; фитинги и крепления не считаются по решению владельца.
 
 `Route.subsystem` (горизонтальная / магистральная / рабочее место) — необязательная подсистема СКС;
-`specificationKnS(project)` агрегирует трассы по подсистеме, типу и сечению, добавляет углы коробов
-и артикулы/производителей из справочника цен (`PriceItem.article/manufacturer/series/size`).
+`specificationKnS(project)` агрегирует **каждое эффективное сечение** по подсистеме и типу, добавляет
+углы коробов и артикулы/производителей из справочника цен (`PriceItem.article/manufacturer/series/size`).
+Если в одной трассе разные лотки/трубы, её метраж входит отдельными строками по сечениям; углы коробов
+считаются один раз и относятся к основному сечению (наибольший метраж), чтобы не задваиваться.
 `suggestRouteSection(project, route)` подбирает минимальное стандартное сечение по фактическому
-заполнению (≤40 %) и диаметру кабелей; фитинги/крепления не считаются.
+заполнению (≤40 %) и диаметру кабелей, но учитывает только сегменты **без** собственного сечения;
+для сегмента с переопределением есть `suggestSegmentSection(project, route, segment)`. Фитинги и
+крепления не считаются.
 
 `Dimension` — размер между двумя объектами оборудования: `dimensionGeometry` считает расстояние
 по прямой на одном этаже (единицы PDF и метры по `metersPerUnit`), `dimensionText` форматирует
@@ -64,7 +70,22 @@ interface Project { schemaVersion:1|2; id:string; name:string; floors:Floor[]; e
 
 `cableSection(cable)` принимает площадь внешнего сечения: `crossSectionMm2`, если задана и положительна, иначе `π·d²/4` от `outerDiameterMm`. Заданное некорректное значение (0, отрицательное, NaN/Infinity) даёт ошибку и `null` — второй источник не подставляется, чтобы неверные данные не выглядели расчётом; если не задано ничего, площадь тоже `null` (данных нет).
 
-`trayFill(project)` идёт по всем сегментам всех трасс в порядке проекта. Площадь сечения КНС: `trayAreaMm2` (приоритетно), иначе для гофры/трубы — `π·d²/4` по внутреннему диаметру в `trayWidthMm`, а для лотка/короба — `trayWidthMm·trayHeightMm`; некорректные заданные размеры дают `null`, а не 0. Для круглых КНС высота борта не используется и в ведомость не попадает. Занятая площадь сегмента — сумма `площадь кабеля · quantity` по кабелям, чей `segmentIds` содержит сегмент. Заполнение = занятая площадь / площадь лотка · 100 %. Статусы: `ok` (≤ 40 %), `warning` (> 40 %), `over` (> 50 %), `empty` (кабелей нет), `incomplete` (неизвестен лоток, сечение или количество). Неизвестные значения не заменяются нулём; `complete` ложно, если есть `incomplete`, а `maxFillPercent`/`overSegments` дают сводку. Предупреждения вида «Трасса Т1, сегмент Т1.1: заполнение 63 % — превышен предел 50 %» попадают в `domainWarnings` и PDF. `specifications(project).trayFill` — строки по сегментам для ведомости/PDF/XLSX/CSV, в `infrastructure` — `maxFillPercent` и `overSegments` по типу трассы. Размеры КНС задаются на трассу: все её сегменты используют одну КНС; сегментный override — в планах.
+`trayFill(project)` идёт по всем сегментам всех трасс в порядке проекта. **Эффективное сечение участка**
+считается по полям: заданное поле сегмента (`Segment.trayWidthMm/trayHeightMm/trayAreaMm2`) переопределяет
+одноимённое поле трассы, незаданное наследуется. Поэтому в одной трассе допустимы разные лотки/трубы:
+`segmentSectionLabel(route, segment)` показывает «100×50», «Ø20» или «S=500 мм²», а `overridden` отмечает
+сегмент со своим сечением. Площадь сечения: `trayAreaMm2` (приоритетно), иначе для гофры/трубы —
+`π·d²/4` по внутреннему диаметру в `trayWidthMm`, для лотка/короба — `trayWidthMm·trayHeightMm`;
+некорректные заданные размеры дают `null`, а не 0. Для круглых КНС высота борта не используется и в
+ведомость не попадает. Занятая площадь сегмента — сумма `площадь кабеля · quantity` по кабелям, чей
+`segmentIds` содержит сегмент. Заполнение = занятая площадь / площадь лотка · 100 %. Статусы: `ok` (≤ 40 %),
+`warning` (> 40 %), `over` (> 50 %), `empty` (кабелей нет), `incomplete` (неизвестен лоток, сечение или
+количество). Неизвестные значения не заменяются нулём; `complete` ложно, если есть `incomplete`, а
+`maxFillPercent`/`overSegments` дают сводку. Предупреждения вида «Трасса Т1, сегмент Т1.1: заполнение
+63 % — превышен предел 50 %» попадают в `domainWarnings` и PDF. Неверное сечение трассы предупреждает
+один раз на трассу, неверное сечение сегмента — на сегмент; если все сегменты переопределены, размеры
+трассы на заполнение не влияют. `specifications(project).trayFill` — строки по сегментам с эффективным
+сечением для ведомости/PDF/XLSX/CSV, в `infrastructure` — `maxFillPercent` и `overSegments` по типу трассы.
 
 Трассы печатаются в PDF цветом типа/своим цветом: SVG-оверлей плана и экран используют один и тот же `routeColor`, поэтому документ совпадает с экраном. Порог 40 % — рекомендуемый, 50 % — предел; сравнение с границами идёт с допуском 1e-9, чтобы ровно 40 % не становилось вниманием из-за погрешности double, а ровно 50 % — превышением.
 
@@ -130,16 +151,40 @@ interface Project { schemaVersion:1|2; id:string; name:string; floors:Floor[]; e
 
 При ширине до 1023 px панели становятся off-canvas: «Структура» выезжает слева, «Свойства» открываются снизу как шторка; фон затемняется, закрытие — кнопкой или касанием вне панели. Инструменты плана вынесены в нижнюю панель с крупными кнопками, шапка компактная, для свойств есть плавающая кнопка. На десктопе те же панели показаны постоянно по бокам рабочей области.
 
+## Доступность и память рендера
+
+**Системный размер шрифта.** Android WebView не применяет настройку «Размер шрифта» сам, поэтому
+`MainActivity` читает `Configuration.fontScale`, округляет до процента и зажимает в 85–160 %
+(`textZoomPercent`, зеркало `resolveTextZoom` из `src/a11y.ts`), затем вызывает `WebSettings.setTextZoom`.
+Некорректный `fontScale` даёт 100 %. В CSS зафиксировано `text-size-adjust: 100%` (чтобы WebView не
+складывал автоувеличение с textZoom), интерактивные элементы используют `min-height` вместо жёсткой
+высоты, а длинные подписи переносятся (`overflow-wrap: anywhere`), поэтому крупный шрифт не обрезается.
+
+**Тема и контраст.** Светлая тема — значения `:root`. При `prefers-color-scheme: dark` переменные
+поверхностей, текста, границ и теней переопределяются (основной текст на поверхностях — 12,6–16:1),
+`color-scheme: dark` включает тёмные системные контролы; план остаётся «бумагой» (белый лист и тёмные
+подписи), фон вокруг него тёмный. `prefers-contrast: more` усиливает границы и убирает тени,
+`forced-colors: active` не навязывает свои цвета, `prefers-reduced-motion: reduce` отключает анимации.
+`<meta name="theme-color">` задан для light/dark по значениям `THEME_COLOR_LIGHT/DARK`.
+
+**Память рендера.** Бюджет подложки — `PLAN_MAX_PIXELS = 8_000_000` (≈32 МБ RGBA) вместо 12 Мпикс:
+A4–A3 рисуются целиком, A1/A0 — по видимой области с понижением разрешения; `canvasWidth·canvasHeight`
+гарантированно не превышает бюджет (`floor` при округлении). Если полный лист при текущем DPR не
+влезает, `planMemoryWarning` формирует предупреждение (лист, мегапиксели, совет «Вписать»), и оно
+показывается баннером над планом, а не теряется молча.
+
 ## Владение модулями
 `src/model.ts` — модель данных (общая для клиента и сервера); схема версионируется, менять осторожно.
 `src/engine.ts` — расчёты: длины, запасы, автопрокладка, заполнение лотка, спецификации, валидация.
 `src/estimate.ts` — справочник цен, смета по разделам и нормализация каталога.
 `src/equipment-icons.ts` — иконки и цвета оборудования (общий набор для плана, PDF и списка).
-`src/route-kinds.ts` — типы КНС, цвета по типу/свои, распознавание типа и подписи сечения (план, список, PDF).
+`src/route-kinds.ts` — типы КНС, цвета по типу/свои, распознавание типа, эффективное сечение участка и подписи сечения (план, список, PDF).
+`src/a11y.ts` — эталонные правила доступности (textZoom из системного fontScale, цвета темы) для тестов и нативной оболочки.
+`src/ui/segment-editor.tsx` — свойства сегмента: геометрия, запасы и необязательное сечение КНС участка.
 `src/App.tsx`, `src/styles.css` — интерфейс; расчёты импортируются из движка и мемоизируются.
 `src/sheets.ts`, `src/export-xlsx.ts`, `src/export-pdf.ts`, `src/client-csv.ts` — выгрузки.
 `src/project-file.ts` — формат `.anooplan` (сборка/разбор файла проекта); `android/java/.../ShareProvider.java` — раздача файлов для ACTION_SEND.
 `src/migrations.ts` — схема и нормализация; `src/idb.ts`, `src/local-projects.ts`, `src/storage-gc.ts` — хранение.
-`server/**` — API и SQLite, использует те же модель и движок. `tests/**` — node:test; `scripts/smoke-dom.mjs` — смоук интерфейса.
+`server/**` — API и SQLite, использует те же модель и движок. `tests/**` — node:test (общие фикстуры — `tests/fixtures.ts`); `eslint.config.js` — стиль и типовые ошибки в CI (`npm run lint`); `scripts/smoke-dom.mjs` — смоук интерфейса.
 
 Проверки: node:test через tsx, сборка tsc + vite, HTTP smoke test и браузерная проверка при наличии Playwright. Проект демонстрации помечен как синтетический, не используется как подмена PDF пользователя.

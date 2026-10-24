@@ -2,16 +2,13 @@ import { useEffect, useRef, useState } from 'react';
 import type { MutableRefObject } from 'react';
 import workerUrl from './pdf-worker?worker&url';
 import type { Floor, Project } from './model';
-import { planRender, fallbackPlan, needsClipping, type PlanRender } from './render-plan';
+import { planRender, fallbackPlan, needsClipping, planMemoryWarning, PLAN_MAX_PIXELS, type PlanRender } from './render-plan';
 import { logDiagnostic } from './diagnostics';
 import { idbGet } from './idb';
 
 type PdfjsModule = typeof import('pdfjs-dist/legacy/build/pdf.mjs');
 type PdfLoadingTask = ReturnType<PdfjsModule['getDocument']>;
 type PdfRenderTask = ReturnType<import('pdfjs-dist/legacy/build/pdf.mjs').PDFPageProxy['render']>;
-
-// Бюджет пикселей подложки: A4-A3 рисуются целиком, A1-A0 — по видимой области.
-const PLAN_MAX_PIXELS = 12_000_000;
 
 interface Options {
   floor: Floor | undefined;
@@ -32,10 +29,12 @@ export function usePdfBackground({ floor, enabled, viewRef, zoom, pan, canvas, s
   const [pdfPages, setPdfPages] = useState(0);
   const [renderPlan, setRenderPlan] = useState<PlanRender | null>(null);
   const [pdfError, setPdfError] = useState('');
+  // Человекочитаемое пояснение, если полный лист не влезает в бюджет памяти и рисуется видимая область.
+  const [pdfNote, setPdfNote] = useState('');
   const [renderTick, setRenderTick] = useState(0);
   const pdfCache = useRef<{ key: string; canvas: HTMLCanvasElement } | null>(null);
 
-  useEffect(() => { setPdfPages(0); setPdfError(''); }, [floor?.id, floor?.pdfId]);
+  useEffect(() => { setPdfPages(0); setPdfError(''); setPdfNote(''); }, [floor?.id, floor?.pdfId]);
 
   useEffect(() => {
     if (!floor?.pdfId || !enabled) return;
@@ -45,9 +44,11 @@ export function usePdfBackground({ floor, enabled, viewRef, zoom, pan, canvas, s
     const stageElement = stage.current;
     const viewWidth = stageElement?.clientWidth || currentFloor.width * currentZoom;
     const viewHeight = stageElement?.clientHeight || currentFloor.height * currentZoom;
+    const dpr = window.devicePixelRatio || 1;
+    setPdfNote(planMemoryWarning(currentFloor.width, currentFloor.height, dpr) ?? '');
     const plan = planRender({
       sheetWidth: currentFloor.width, sheetHeight: currentFloor.height,
-      zoom: currentZoom, dpr: window.devicePixelRatio || 1,
+      zoom: currentZoom, dpr,
       viewWidth, viewHeight, panX: currentPan.x, panY: currentPan.y,
       maxPixels: PLAN_MAX_PIXELS,
     });
@@ -130,5 +131,5 @@ export function usePdfBackground({ floor, enabled, viewRef, zoom, pan, canvas, s
     return () => clearTimeout(timer);
   }, [floor?.pdfId, floor?.width, floor?.height, pan, zoom]);
 
-  return { pdfPages, renderPlan, pdfError, setPdfError };
+  return { pdfPages, renderPlan, pdfError, pdfNote, setPdfError };
 }

@@ -1,6 +1,7 @@
 name: CI
 
-# Быстрый обязательный прогон на каждый push/PR: типы, юнит-тесты, смоук и E2E.
+# Быстрый обязательный прогон на каждый push/PR: линт, типы, юнит-тесты с покрытием,
+# смоук и E2E. Покрытие (lcov) при заданном секрете загружается в Codacy.
 # Pages и неподписанный APK собираются отдельно и только вручную (workflow_dispatch) —
 # это убирает ~2–3 минуты runner-времени с каждого push, не теряя проверок.
 on:
@@ -19,6 +20,10 @@ concurrency:
 jobs:
   test:
     runs-on: ubuntu-24.04
+    env:
+      # Project token Codacy задаёт владелец в секретах. Пустое значение (форк/PR) —
+      # шаг загрузки покрытия пропускается. Токен в лог не выводится.
+      CODACY_PROJECT_TOKEN: ${{ secrets.CODACY_PROJECT_TOKEN }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
@@ -26,10 +31,17 @@ jobs:
           node-version: 24
           cache: npm
       - run: npm ci
+      - name: Линт (ESLint)
+        run: npm run lint
       - name: Типы
         run: npx tsc --noEmit
       - name: Юнит-тесты с покрытием
         run: npm run coverage
+      # Секрет задаётся владельцем: Codacy → Settings → Integrations/API → project token.
+      # Без секрета (например, PR из форка) шаг пропускается, токен в лог не попадает.
+      - name: Покрытие в Codacy
+        if: ${{ env.CODACY_PROJECT_TOKEN != '' }}
+        run: bash <(curl -Ls https://coverage.codacy.com/get.sh) report -l JavaScript -r coverage/lcov.info
       - name: Сборка и бюджет стартового бандла
         run: npm run build && npm run size
       - name: Дымовой тест интерфейса

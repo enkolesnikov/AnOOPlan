@@ -68,6 +68,25 @@ public class MainActivity extends Activity implements NativeBridge.Host {
     /** Ограничение на размер открываемого файла проекта (JSON с PDF в base64 бывает большим). */
     private static final int MAX_PROJECT_FILE_BYTES = 40 * 1024 * 1024;
 
+    /** Границы textZoom, %: совпадают с TEXT_ZOOM_MIN/MAX в src/a11y.ts. */
+    private static final int TEXT_ZOOM_MIN = 85;
+    private static final int TEXT_ZOOM_MAX = 160;
+    /** textZoom по умолчанию, %: для некорректного системного fontScale. */
+    private static final int TEXT_ZOOM_DEFAULT = 100;
+
+    /**
+     * Приводит системный масштаб шрифта (fontScale, 1.0 = 100 %) к проценту textZoom.
+     * Значение округляется и зажимается в диапазон 85–160 %, некорректное даёт 100 %.
+     * Зеркало {@code resolveTextZoom} из src/a11y.ts (Java не импортирует TypeScript).
+     */
+    private static int textZoomPercent(float fontScale) {
+        if (Float.isNaN(fontScale) || Float.isInfinite(fontScale) || fontScale <= 0f) {
+            return TEXT_ZOOM_DEFAULT;
+        }
+        int percent = Math.round(fontScale * 100f);
+        return Math.min(TEXT_ZOOM_MAX, Math.max(TEXT_ZOOM_MIN, percent));
+    }
+
     @SuppressLint("SetJavaScriptEnabled")
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -121,7 +140,10 @@ public class MainActivity extends Activity implements NativeBridge.Host {
         settings.setSupportZoom(false);
         settings.setBuiltInZoomControls(false);
         settings.setMediaPlaybackRequiresUserGesture(false);
-        settings.setTextZoom(100);
+        // Системный размер шрифта («Настройки → Экран → Размер шрифта») WebView сам не
+        // применяет: отдаём ему fontScale из конфигурации, иначе крупный шрифт
+        // игнорируется и интерфейс остаётся нечитаемо мелким (доступность).
+        settings.setTextZoom(textZoomPercent(getResources().getConfiguration().fontScale));
         settings.setCacheMode(WebSettings.LOAD_DEFAULT);
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             // Приложение офлайн: не отправляем запросы в сервис безопасного просмотра.

@@ -8,49 +8,34 @@ import {
 } from '../src/estimate';
 import { createDemoProject } from '../src/demo';
 import { migrateProject } from '../src/migrations';
-import { ApiError, assertProject } from '../server/validation.js';
-import type { Cable, Equipment, Project, Segment, Vertex } from '../src/model';
+import { assertProject } from '../server/validation.js';
+import type { Equipment, Project } from '../src/model';
+import { baseProject, cable, closeTo as close, deepFreeze, device, floor, priceItem, rejectsProject, route, segment, vertex } from './fixtures';
 
-const vertex = (id: string, x: number, y = 0, height = 1, floorId = 'f1'): Vertex => ({ id, x, y, height, floorId });
-const segment = (id: string, a: Vertex, b: Vertex): Segment => ({ id, a, b, mode: 'orthogonal', reservePercent: 0, reserveFixed: 0 });
-const device = (id: string, x: number, model = 'Д-1'): Equipment => ({
-  id, number: id.toUpperCase(), name: `Устройство ${id}`, type: 'Датчик', floorId: 'f1', x, y: 0, height: 1, note: '', properties: { model },
-});
-const cable = (extra: Partial<Cable> = {}): Cable => ({
-  id: 'c1', number: 'К1', name: 'Линия', brand: 'ВВГ', purpose: '',
-  fromId: 'a', toId: 'b', segmentIds: ['s1'], reservePercent: 0, reserveFixed: 0,
-  startReserve: 0, endReserve: 0, quantity: 1, note: '', pricePerMeter: 50, ...extra,
-});
+/** Оборудование сметы: номер заглавными и имя «Устройство …» — так его называет смета. */
+const estimateDevice = (id: string, x: number, model = 'Д-1'): Equipment =>
+  device(id, x, { number: id.toUpperCase(), name: `Устройство ${id}`, properties: { model } });
 
 /**
  * Малый проект с точной арифметикой: два одинаковых устройства (10 000 ₽),
  * кабель 10 м × 50 ₽ (ручная цена), лоток 10 м × 480 ₽, работы 25 %.
  */
 function project(): Project {
-  return {
-    schemaVersion: 2, id: 'p', name: 'Смета', updatedAt: '2026-01-01T00:00:00Z',
-    floors: [{ id: 'f1', name: 'Первый', elevation: 0, metersPerUnit: 0.1, page: 1, width: 1000, height: 700 }],
-    equipment: [device('a', 0), device('b', 100)],
-    routes: [{
-      id: 'r', number: 'Т1', type: 'Лоток', note: '',
-      segments: [segment('s1', vertex('v1', 0), vertex('v2', 100))],
-    }],
-    cables: [cable()],
-    pins: [],
+  return baseProject({
+    name: 'Смета',
+    floors: [floor('f1', { name: 'Первый' })],
+    equipment: [estimateDevice('a', 0), estimateDevice('b', 100)],
+    routes: [route('r', [segment('s1', vertex('v1', 0, 0, 1), vertex('v2', 100, 0, 1))])],
+    cables: [cable({ id: 'c1', segmentIds: ['s1'], pricePerMeter: 50 })],
     catalog: [
-      { id: 'e1', kind: 'equipment', name: 'Д-1', unit: 'шт', price: 5000, note: '' },
-      { id: 'cb1', kind: 'cable', name: 'ВВГ', unit: 'м', price: 40, note: '' },
-      { id: 't1', kind: 'tray', name: 'Лоток', unit: 'м', price: 480, note: '' },
+      priceItem('e1', { name: 'Д-1', price: 5000 }),
+      priceItem('cb1', { kind: 'cable', name: 'ВВГ', unit: 'м', price: 40 }),
+      priceItem('t1', { kind: 'tray', name: 'Лоток', unit: 'м', price: 480 }),
     ],
     catalogDate: '2026-10-01',
     estimate: { laborPercent: 25 },
-  };
+  });
 }
-
-const close = (actual: number | null, expected: number) => {
-  assert.notEqual(actual, null);
-  assert.ok(Math.abs(actual! - expected) < 1e-9, `${actual} != ${expected}`);
-};
 
 test('смета считает оборудование, кабели, лотки и работы точными числами', () => {
   const result = estimate(project());
@@ -123,7 +108,7 @@ test('ручная цена кабеля приоритетнее справоч
 
 test('оборудование группируется по модели: properties.model приоритетнее name', () => {
   const p = project();
-  p.equipment = [device('a', 0), device('b', 100), { ...device('c', 200), properties: { model: '' } }];
+  p.equipment = [estimateDevice('a', 0), estimateDevice('b', 100), { ...estimateDevice('c', 200), properties: { model: '' } }];
   p.catalog!.push({ id: 'e2', kind: 'equipment', name: 'Устройство c', unit: 'шт', price: 100, note: '' });
   const lines = estimate(p).sections[0].lines;
   assert.deepEqual(lines.map(line => [line.name, line.quantity, line.total]), [
@@ -361,14 +346,6 @@ test('catalogDate: только валидная дата YYYY-MM-DD, иначе
   }
 });
 
-const deepFreeze = <T>(value: T): T => {
-  if (value && typeof value === 'object') {
-    for (const key of Object.keys(value as Record<string, unknown>)) deepFreeze((value as Record<string, unknown>)[key]);
-    Object.freeze(value);
-  }
-  return value;
-};
-
 test('estimate не мутирует проект', () => {
   const p = project();
   const before = JSON.stringify(p);
@@ -422,13 +399,6 @@ test('снимок: смена прайса в живом проекте не п
   assert.equal(estimate(snapshot).materials, 500, 'снимок сохранил свои цены');
   assert.equal(snapshot.catalog?.[0].price, 100);
 });
-
-const rejectsProject = (input: unknown, pattern: RegExp) => {
-  assert.throws(
-    () => assertProject(input, () => true),
-    (error: unknown) => error instanceof ApiError && error.status === 422 && pattern.test(error.message),
-  );
-};
 
 test('assertProject принимает валидный каталог, дату прайса и смету', () => {
   assert.doesNotThrow(() => assertProject(project(), () => true));

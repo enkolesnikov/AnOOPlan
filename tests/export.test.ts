@@ -84,7 +84,7 @@ test('листы выгрузки совпадают по набору с сер
   assert.deepEqual(equipment.rows[0], ['Тип', 'Модель', 'Этаж', 'Количество']);
   assert.deepEqual(infrastructure.rows[0], ['Тип', 'Длина, м', 'Сегментов', 'Кабелей', 'Макс. заполнение, %', 'Сегментов с превышением']);
   assert.equal(routeScheme.name, 'Схема трасс');
-  assert.deepEqual(routeScheme.rows[0], ['Трасса', 'Тип КНС', 'Длина, м', 'Сегментов', 'Углы']);
+  assert.deepEqual(routeScheme.rows[0], ['Трасса', 'Тип КНС', 'Сечения', 'Длина, м', 'Сегментов', 'Углы']);
   assert.equal(knSSpec.name, 'Спецификация КНС');
   assert.deepEqual(knSSpec.rows[0], ['Наименование', 'Сечение', 'Подсистема', 'Ед.', 'Кол-во', 'Углы', 'Артикул', 'Производитель', 'Цена, ₽', 'Сумма, ₽']);
   assert.equal(fill.name, 'Заполнение КНС');
@@ -632,4 +632,34 @@ test('PDF: спецификация КНС с подсистемами, угла
   assert.ok(text.includes('Спецификация КНС'), 'нет раздела «Спецификация КНС»');
   assert.ok(text.includes('Горизонтальная'), 'нет подсистемы СКС');
   assert.ok(text.includes('DKC') && text.includes('KK-25'), 'нет артикула/производителя');
+});
+
+test('сегментные размеры КНС: своё сечение видно в схеме трасс, заполнении, спецификации и PDF', async () => {
+  const project = createDemoProject();
+  const route = project.routes[0];
+  const overridden = route.segments[1];
+  overridden.trayWidthMm = 50;
+  overridden.trayHeightMm = 50;
+
+  const sheets = exportSheets(project);
+  const scheme = sheets.find(sheet => sheet.name === 'Схема трасс')!;
+  const schemeRow = scheme.rows.find(row => row[0] === route.number);
+  assert.ok(schemeRow, 'нет строки трассы в схеме трасс');
+  const sections = String(schemeRow[2]);
+  assert.match(sections, /100×50 — /, 'сечение трассы не показано');
+  assert.match(sections, /50×50 — /, 'сечение сегмента не показано');
+  assert.ok(sections.indexOf('100×50') < sections.indexOf('50×50'), 'порядок сечений — по первому сегменту');
+
+  const fill = sheets.find(sheet => sheet.name === 'Заполнение КНС')!;
+  const fillRow = fill.rows.find(row => row[1] === `${route.number}.2`);
+  assert.ok(fillRow, 'нет строки второго сегмента');
+  assert.equal(fillRow[3], '50×50', 'КНС сегмента в ведомости');
+  assert.equal(fillRow[4], 2500, 'площадь сечения сегмента');
+
+  const csv = clientCsv(project);
+  assert.ok(csv.includes('50×50'), 'CSV не содержит сечение сегмента');
+
+  const { text } = await pdfText(await buildJournalPdf(project, fonts));
+  assert.ok(squash(text).includes('100×50 — '), 'PDF: нет сечения трассы');
+  assert.ok(squash(text).includes('50×50 — '), 'PDF: нет сечения сегмента');
 });

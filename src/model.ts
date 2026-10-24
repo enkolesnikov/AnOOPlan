@@ -7,7 +7,19 @@ export interface Equipment {
   color?: string | null;
 }
 export interface Vertex { id:string; floorId:string; x:number; y:number; height:number|null }
-export interface Segment { id:string; a:Vertex; b:Vertex; mode:'orthogonal'|'spatial'; reservePercent:number; reserveFixed:number }
+/**
+ * Сегмент трассы. Размеры КНС необязательны: если поле задано, оно переопределяет
+ * размер трассы для этого участка (в одной трассе могут быть разные лотки/трубы).
+ */
+export interface Segment {
+  id:string; a:Vertex; b:Vertex; mode:'orthogonal'|'spatial'; reservePercent:number; reserveFixed:number;
+  /** Ширина/внутренний диаметр КНС на сегменте, мм. Не задано — размер трассы. */
+  trayWidthMm?: number | null;
+  /** Высота борта лотка/короба на сегменте, мм. Не задано — размер трассы. */
+  trayHeightMm?: number | null;
+  /** Площадь сечения КНС на сегменте, мм². Приоритетнее ширины и высоты. */
+  trayAreaMm2?: number | null;
+}
 /** Подсистема СКС: горизонтальная, магистральная или рабочее место. */
 export type RouteSubsystem = 'horizontal' | 'trunk' | 'workplace';
 export interface Route {

@@ -1,7 +1,11 @@
 // Состав таблиц выгрузки — общий модуль для сервера и офлайн-экспорта в приложении,
 // чтобы XLSX/PDF/CSV содержали одни и те же данные и колонки.
 import type { Cable, PriceKind, Project } from './model';
-import { cableSection, calculateCable, specificationKnS, specifications, validateProject } from './engine';
+import { cableSection, calculateCable, routeSectionsText, specificationKnS, specifications, validateProject } from './engine';
+
+/** Число в русской локали; null — прочерк (для текстовых ячеек выгрузки). */
+const localizedNumber = (value: number | null): string =>
+  value === null || !Number.isFinite(value) ? '—' : value.toLocaleString('ru-RU', { maximumFractionDigits: 3 });
 import { estimate } from './estimate';
 
 export type Cell = string | number | boolean | null;
@@ -76,7 +80,7 @@ export function exportSheets(project: Project): ExportSheet[] {
     { name: 'Кабельный журнал', rows: journal },
     { name: 'Оборудование', rows: [['Тип', 'Модель', 'Этаж', 'Количество'], ...specs.equipment.map(r => [r.type, r.model, r.floor, r.quantity])] },
     { name: 'Кабели', rows: [['Марка', 'Количество линий', 'Геометрия, м', 'Итого, м'], ...specs.cables.map(r => [r.brand, r.lines, r.geometry, r.total])] },
-    { name: 'Схема трасс', rows: [['Трасса', 'Тип КНС', 'Длина, м', 'Сегментов', 'Углы'], ...specs.routeSummary.routes.map(r => [r.number, r.type, r.length, r.segments, r.group === 'Кабель-канал' ? r.angles.total : null]), [], ['Итого по типам', '', '', '', ''], ...specs.routeSummary.groups.map(g => [g.group, '', g.length, g.routes, g.group === 'Кабель-канал' ? g.angles.total : null])] },
+    { name: 'Схема трасс', rows: [['Трасса', 'Тип КНС', 'Сечения', 'Длина, м', 'Сегментов', 'Углы'], ...specs.routeSummary.routes.map(r => [r.number, r.type, routeSectionsText(r.sections, localizedNumber), r.length, r.segments, r.group === 'Кабель-канал' ? r.angles.total : null]), [], ['Итого по типам', '', '', '', '', ''], ...specs.routeSummary.groups.map(g => [g.group, '', '', g.length, g.routes, g.group === 'Кабель-канал' ? g.angles.total : null])] },
     { name: 'Спецификация КНС', rows: [['Наименование', 'Сечение', 'Подсистема', 'Ед.', 'Кол-во', 'Углы', 'Артикул', 'Производитель', 'Цена, ₽', 'Сумма, ₽'], ...specKnS.lines.map(line => [line.name, line.section, line.subsystem, line.unit, line.quantity, line.angles || null, line.article, line.manufacturer, line.price, line.cost]), [], ['Итого по типам', '', '', '', '', '', '', '', '', ''], ...specKnS.totals.map(item => [item.group, '', '', 'м', item.length, item.angles || null, '', '', '', ''])] },
     { name: 'Инфраструктура', rows: [['Тип', 'Длина, м', 'Сегментов', 'Кабелей', 'Макс. заполнение, %', 'Сегментов с превышением'], ...specs.infrastructure.map(r => [r.type, r.length, r.segments, r.cables, r.maxFillPercent, r.overSegments])] },
     { name: 'Заполнение КНС', rows: [['Трасса', 'Сегмент', 'Тип трассы', 'КНС, мм', 'Площадь КНС, мм²', 'Линий', 'Площадь кабелей, мм²', 'Заполнение, %', 'Статус'], ...specs.trayFill.map(r => [r.route, r.segment, r.routeType, r.tray, r.trayAreaMm2, r.lines, r.areaMm2, r.fillPercent, r.status])] },

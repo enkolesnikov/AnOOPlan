@@ -141,6 +141,8 @@ function assertSegment(segment: Row, context: ValidationContext): void {
   if (!['orthogonal', 'spatial'].includes(segment.mode)) fail('Некорректный режим сегмента');
   number(segment.reservePercent, 'segment.reservePercent', false, 0);
   number(segment.reserveFixed, 'segment.reserveFixed', false, 0);
+  // Переопределение сечения КНС на сегменте необязательно, но заданное значение должно быть > 0.
+  for (const key of ['trayWidthMm', 'trayHeightMm', 'trayAreaMm2']) positiveOrEmpty(segment[key], `segment.${key}`);
   for (const raw of [segment.a, segment.b]) assertVertex(raw, context);
 }
 

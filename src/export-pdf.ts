@@ -3,7 +3,7 @@
 import { PDFDocument, rgb, type PDFFont, type PDFPage } from 'pdf-lib';
 import fontkit from '@pdf-lib/fontkit';
 import type { Cable, Project } from './model';
-import { cableSection, calculateCable, domainWarnings, specificationKnS, specifications, validateProject } from './engine';
+import { cableSection, calculateCable, domainWarnings, routeSectionsText, specificationKnS, specifications, validateProject } from './engine';
 import { estimate } from './estimate';
 import type { JournalFonts } from './export-fonts';
 
@@ -570,17 +570,19 @@ function buildSections(project: Project, estimateResult: EstimateResult): Sectio
     {
       id: 'routeScheme',
       title: 'Схема трасс',
-      note: 'Метраж трасс по типам КНС (включая гофру) и количество углов кабельных каналов/коробов. Фитинги и крепления не считаются.',
+      note: 'Метраж трасс по типам КНС (включая гофру), сечения участков и количество углов кабельных каналов/коробов. Сечение берётся с сегмента, если оно там задано, иначе с трассы. Фитинги и крепления не считаются.',
       columns: [
-        { title: 'Трасса', width: 50 },
-        { title: 'Тип КНС', width: 140 },
-        { title: 'Длина, м', width: 80, align: 'right' },
-        { title: 'Сегментов', width: 70, align: 'right' },
-        { title: 'Углы', width: 50, align: 'right' },
+        { title: 'Трасса', width: 46 },
+        { title: 'Тип КНС', width: 120 },
+        { title: 'Сечения', width: 170 },
+        { title: 'Длина, м', width: 70, align: 'right' },
+        { title: 'Сегментов', width: 64, align: 'right' },
+        { title: 'Углы', width: 46, align: 'right' },
       ],
       rows: specs.routeSummary.routes.map(row => [
         row.number,
         row.type || '—',
+        routeSectionsText(row.sections, formatNumber),
         formatNumber(row.length),
         String(row.segments),
         row.group === 'Кабель-канал' ? String(row.angles.total) : '—',
@@ -593,7 +595,7 @@ function buildSections(project: Project, estimateResult: EstimateResult): Sectio
     {
       id: 'knSSpec',
       title: 'Спецификация КНС',
-      note: 'Материалы КНС по подсистемам и сечениям. Углы указаны для кабельных каналов/коробов; фитинги и крепления не считаются. Цены и артикулы — из справочника цен проекта.',
+      note: 'Материалы КНС по подсистемам и сечениям: если у сегмента своё сечение, его метраж входит отдельной строкой. Углы указаны для кабельных каналов/коробов; фитинги и крепления не считаются. Цены и артикулы — из справочника цен проекта.',
       columns: [
         { title: 'Наименование', width: 100 },
         { title: 'Сечение', width: 70 },
@@ -637,7 +639,7 @@ function buildSections(project: Project, estimateResult: EstimateResult): Sectio
     {
       id: 'trayFill',
       title: 'Заполнение КНС',
-      note: 'Заполнение — отношение площади сечения кабелей к площади КНС (лоток, короб, труба, гофра). Внимание выше 40 %, превышение выше 50 %. «Неполный» означает, что сечение не задано и не заменено нулём.',
+      note: 'Заполнение — отношение площади сечения кабелей к площади КНС (лоток, короб, труба, гофра). Внимание выше 40 %, превышение выше 50 %. «Неполный» означает, что сечение не задано и не заменено нулём. Сечение в строке — эффективное для сегмента: своё переопределение важнее размера трассы.',
       columns: [
         { title: 'Трасса', width: 44 },
         { title: 'Сегмент', width: 56 },

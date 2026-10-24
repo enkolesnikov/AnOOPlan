@@ -108,6 +108,36 @@ test('необязательные размеры кабеля и лотка с�
   } finally { await h.close(); }
 });
 
+test('сегментные размеры КНС сохраняются, а неверные значения отклоняются', async () => {
+  const h = await harness();
+  try {
+    const p = fixture();
+    p.routes[0].trayWidthMm = 100;
+    p.routes[0].trayHeightMm = 50;
+    p.routes[0].segments[0].trayWidthMm = 50;
+    p.routes[0].segments[0].trayAreaMm2 = 2500;
+    assert.equal((await h.request('/api/projects', 'POST', p)).status, 201);
+    const stored = await (await h.request('/api/projects/project-1')).json() as Project;
+    assert.equal(stored.routes[0].segments[0].trayWidthMm, 50);
+    assert.equal(stored.routes[0].segments[0].trayAreaMm2, 2500);
+    assert.equal(stored.routes[0].segments[0].trayHeightMm, undefined, 'незаданная высота сегмента остаётся неизвестной');
+    assert.equal(stored.routes[0].trayWidthMm, 100, 'размер трассы не изменился');
+
+    const invalid: Array<(project: Project) => void> = [
+      project => { project.routes[0].segments[0].trayWidthMm = 0; },
+      project => { project.routes[0].segments[0].trayHeightMm = -5; },
+      project => { project.routes[0].segments[0].trayAreaMm2 = 0; },
+      project => { project.routes[0].segments[0].trayAreaMm2 = 'abc' as unknown as number; },
+    ];
+    for (const mutate of invalid) {
+      const bad = fixture(); mutate(bad);
+      assert.equal((await h.request('/api/projects/project-1', 'PUT', bad)).status, 422);
+    }
+    const after = await (await h.request('/api/projects/project-1')).json() as Project;
+    assert.equal(after.routes[0].segments[0].trayWidthMm, 50, 'отклонённый PUT не испортил сохранённые данные');
+  } finally { await h.close(); }
+});
+
 test('цвет оборудования сохраняется, а неверный цвет отклоняется с 422', async () => {
   const h = await harness();
   try {

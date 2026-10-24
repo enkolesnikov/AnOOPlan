@@ -1,9 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
-import { join } from 'node:path';
 import { cloneValue, createUuid, jsonClone, uuidFallback } from '../src/compat';
 import '../src/polyfills';
+import { readRepoFile } from './fixtures';
 
 test('uuidFallback собирает UUID v4 из getRandomValues', () => {
   const bytes = Uint8Array.from({ length: 16 }, (_, index) => index);
@@ -31,7 +30,7 @@ test('cloneValue и jsonClone делают независимую глубоку
 });
 
 test('index.html показывает экран «обновите WebView» ещё до загрузки бандла', () => {
-  const html = readFileSync(join(import.meta.dirname, '..', 'index.html'), 'utf8');
+  const html = readRepoFile('index.html');
   assert.match(html, /id="webview-warning"/);
   assert.ok(html.includes('Chrome\\/(\\d+)'));
   assert.ok(html.includes('Number(match[1]) < 98'));

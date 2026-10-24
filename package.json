@@ -1,7 +1,7 @@
 {
   "name": "anooplan",
-  "version": "2.4.0",
-  "androidVersionCode": 33,
+  "version": "2.5.0",
+  "androidVersionCode": 34,
   "private": true,
   "type": "module",
   "scripts": {
@@ -17,7 +17,9 @@
     "status": "node scripts/status.mjs",
     "status:full": "node scripts/status.mjs --full",
     "coverage": "node scripts/coverage.mjs",
-    "size": "node scripts/check-size.mjs"
+    "size": "node scripts/check-size.mjs",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix"
   },
   "dependencies": {
     "@pdf-lib/fontkit": "^1.1.1",
@@ -30,6 +32,7 @@
     "xlsx": "https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz"
   },
   "devDependencies": {
+    "@eslint/js": "^10.0.1",
     "@playwright/test": "^1.56.1",
     "@types/express": "^5.0.3",
     "@types/multer": "^2.0.0",
@@ -39,10 +42,13 @@
     "@vitejs/plugin-react": "^5.1.0",
     "concurrently": "^9.2.1",
     "esbuild": "^0.28.2",
+    "eslint": "^10.13.0",
     "fake-indexeddb": "^6.2.6",
+    "globals": "^17.13.0",
     "happy-dom": "^21.0.4",
     "tsx": "^4.20.6",
     "typescript": "^5.9.3",
+    "typescript-eslint": "^8.72.0",
     "vite": "^7.2.0"
   }
 }

@@ -1,14 +1,24 @@
 #!/usr/bin/env node
 // Юнит-тесты с покрытием и порогами (без новых зависимостей: node --experimental-test-coverage).
 // Порог чуть ниже текущего уровня, чтобы падать только на реальной регрессии.
-import { readdirSync } from 'node:fs';
+// Дополнительно пишем coverage/lcov.info (встроенный lcov-reporter Node 24) — его
+// загружает Codacy в CI, чтобы в отчёте было реальное покрытие, а не «не загружено».
+import { mkdirSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { join, resolve } from 'node:path';
 
 const ROOT = resolve(import.meta.dirname, '..');
+const COVERAGE_DIR = join(ROOT, 'coverage');
+const LCOV_PATH = join(COVERAGE_DIR, 'lcov.info');
 const files = readdirSync(join(ROOT, 'tests')).filter(name => name.endsWith('.test.ts')).map(name => join('tests', name));
 const THRESHOLDS = { lines: 93, branches: 85, functions: 92 };
-const result = spawnSync('npx', ['tsx', '--test', '--experimental-test-coverage', ...files], {
+mkdirSync(COVERAGE_DIR, { recursive: true });
+const result = spawnSync('npx', [
+  'tsx', '--test', '--experimental-test-coverage',
+  '--test-reporter=spec', '--test-reporter-destination=stdout',
+  '--test-reporter=lcov', `--test-reporter-destination=${LCOV_PATH}`,
+  ...files,
+], {
   cwd: ROOT, encoding: 'utf8', env: { ...process.env, FORCE_COLOR: '0' },
 });
 const output = `${result.stdout || ''}${result.stderr || ''}`;
@@ -17,6 +27,18 @@ if (result.status !== 0) {
   console.error('Юнит-тесты завершились с ошибкой');
   process.exit(result.status ?? 1);
 }
+let lcov = '';
+try {
+  lcov = readFileSync(LCOV_PATH, 'utf8');
+} catch {
+  console.error(`Не создан lcov-отчёт: ${LCOV_PATH}`);
+  process.exit(1);
+}
+if (!lcov.includes('SF:') || !lcov.includes('DA:')) {
+  console.error('lcov-отчёт пуст: нет записей SF/DA');
+  process.exit(1);
+}
+console.log(`  lcov: ${LCOV_PATH} (${(statSync(LCOV_PATH).size / 1024).toFixed(1)} КБ)`);
 const summary = output.split('\n').find(line => line.includes('all files'));
 const numbers = (summary || '').split('|').map(part => parseFloat(part.trim())).filter(value => Number.isFinite(value));
 if (numbers.length < 3) {

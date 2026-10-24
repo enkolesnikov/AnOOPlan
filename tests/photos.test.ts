@@ -2,21 +2,20 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import type { Equipment, Pin, Project } from '../src/model';
 import { orphanPhotoKeys, purgePhotoBlobs } from '../src/photos';
+import { baseProject, device, floor, pin } from './fixtures';
 
-const device = (id: string, photos: string[]): Equipment => ({
-  id, number: id, name: `Устройство ${id}`, type: 'Камера', floorId: 'f1',
-  x: 0, y: 0, height: null, note: '', properties: {}, photos,
-});
-
-const pin = (id: string, photos: string[]): Pin => ({ id, number: 'З-' + id, floorId: 'f1', x: 1, y: 2, comment: '', status: 'open', photos, createdAt: '2026-01-01T00:00:00Z', updatedAt: '2026-01-01T00:00:00Z' });
+/** Камера с фото-ключами: на ней проверяются orphanPhotoKeys/purgePhotoBlobs. */
+const photoDevice = (id: string, photos: string[]): Equipment =>
+  device(id, 0, { name: `Устройство ${id}`, type: 'Камера', height: null, properties: {}, photos });
+const photoPin = (id: string, photos: string[]): Pin => pin(id, { photos });
 
 function fixture(): Project {
-  return {
-    schemaVersion: 2, id: 'p', name: 'Фото', updatedAt: '2026-01-01T00:00:00Z',
-    floors: [{ id: 'f1', name: 'Этаж 1', elevation: 0, metersPerUnit: 0.1, page: 1, width: 1000, height: 700 }],
-    equipment: [device('e1', ['a', 'b']), device('e2', ['c']), device('e3', ['b', 'd'])],
-    routes: [], cables: [], pins: [pin('z1', ['z1'])],
-  };
+  return baseProject({
+    name: 'Фото',
+    floors: [floor('f1', { name: 'Этаж 1' })],
+    equipment: [photoDevice('e1', ['a', 'b']), photoDevice('e2', ['c']), photoDevice('e3', ['b', 'd'])],
+    routes: [], cables: [], pins: [photoPin('z1', ['z1'])],
+  });
 }
 
 test('удаление оборудования возвращает только его фото-ключи', () => {

@@ -20,7 +20,7 @@ export function PlanScreen({ ui }: { ui: AppUi }) {
     draft, setDraft, routeHeight, setRouteHeight, finishRoute, measure, measureMode, setMeasureMode, setMeasure,
     calibration, setCalibration,
     setMessage, cableFrom, setCableFrom, cableTo, setCableTo, setCableSegments, cableSegments, finishCable,
-    setError, pdfError, stage, pointerDown, pointerMove, pointerUp, pointerCancel, stagePressDown,
+    setError, pdfError, pdfNote, stage, pointerDown, pointerMove, pointerUp, pointerCancel, stagePressDown,
     moveLongPress, cancelLongPress, zoomAt, armTap, position, startDrag, pinching, selection, setSelection,
     setTab, setView, pointer, route, cable,
   } = ui;
@@ -42,6 +42,7 @@ export function PlanScreen({ ui }: { ui: AppUi }) {
       {tool === 'measure' && <div className="contextbar"><span>{measureMode === 'length' ? `Рулетка: точек ${Math.min(measure.length, 2)} из 2` : `Площадь: вершин ${measure.length}`}</span><button className={measureMode === 'length' ? 'primary' : ''} onClick={() => { setMeasureMode('length'); setMeasure([]); setMessage('Рулетка: укажите две точки на плане.'); }}>Длина</button><button className={measureMode === 'area' ? 'primary' : ''} onClick={() => { setMeasureMode('area'); setMeasure([]); setMessage('Площадь: обведите контур по вершинам, минимум три.'); }}>Площадь</button><button onClick={() => setMeasure([])}>Сброс</button><small>{floor?.metersPerUnit ? 'Метры по масштабу листа.' : 'Масштаб не задан — результат в единицах PDF.'}</small></div>}
       {tool === 'cable' && <div className="contextbar cable-builder"><label>От {equipmentSelect(project, cableFrom, setCableFrom)}</label><span>→</span><label>До {equipmentSelect(project, cableTo, setCableTo)}</label><button onClick={() => { if (!cableFrom || !cableTo) { setError('Сначала выберите «От» и «До».'); return; } const res = findRoute(project, cableFrom, cableTo); if (res.error) setError(res.error); else { setCableSegments(res.segmentIds); setMessage(`Маршрут построен: ${res.segmentIds.length} сегм.`); } }}>Автомаршрут</button><span>{cableSegments.length} сегм.</span><button className="primary" onClick={finishCable}>Создать</button><button onClick={() => setCableSegments([])}>Сброс</button><small>Выберите «От» и «До» — маршрут строится сам. Можно скорректировать сегменты кликами.</small></div>}
       {pdfError && <div className="banner error">{pdfError}</div>}
+      {pdfNote && <div className="banner" role="status" aria-live="polite">{pdfNote}</div>}
       <div className={`drawing-stage tool-${tool}`} ref={stage}
         onPointerDown={pointerDown} onPointerMove={pointerMove} onPointerUp={pointerUp} onPointerCancel={pointerCancel}
         onPointerDownCapture={stagePressDown} onPointerMoveCapture={moveLongPress} onPointerUpCapture={cancelLongPress}

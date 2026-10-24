@@ -1,7 +1,7 @@
-import type { ChangeEntry, Dimension, Project } from './model';
+import type { ChangeEntry, Dimension, Project, Segment } from './model';
 import { normalizeEquipmentColor } from './equipment-icons';
 import { isCatalogDate, normalizeCatalog } from './estimate';
-import { normalizeRouteColor } from './route-kinds';
+import { SECTION_DIM_KEYS, normalizeRouteColor } from './route-kinds';
 
 /**
  * Текущая версия схемы проекта. Пока это 1; каркас миграций нужен, чтобы
@@ -84,13 +84,29 @@ function normalizeEquipment(value: unknown): Project['equipment'][number] {
   };
 }
 
+/**
+ * Сегмент трассы: геометрия остаётся как есть (её проверяет движок), а размеры
+ * переопределения КНС нормализуются — «6.5» из старой копии станет числом,
+ * мусор считается отсутствующим, а не нулём.
+ */
+function normalizeSegment(value: unknown): Segment {
+  if (!isRecord(value)) return value as unknown as Segment;
+  const segment = { ...(value as unknown as Segment) };
+  for (const key of SECTION_DIM_KEYS) {
+    const normalized = optionalNumber(value[key]);
+    if (normalized === undefined) delete segment[key];
+    else segment[key] = normalized;
+  }
+  return segment;
+}
+
 function normalizeRoute(value: unknown): Project['routes'][number] {
   if (!isRecord(value)) throw new ProjectSchemaError('В проекте повреждён список трасс.');
   return {
     id: String(value.id ?? ''),
     number: typeof value.number === 'string' ? value.number : '',
     type: typeof value.type === 'string' ? value.type : 'Трасса',
-    segments: Array.isArray(value.segments) ? value.segments : [],
+    segments: Array.isArray(value.segments) ? value.segments.map(normalizeSegment) : [],
     note: typeof value.note === 'string' ? value.note : '',
     trayWidthMm: optionalNumber(value.trayWidthMm),
     trayHeightMm: optionalNumber(value.trayHeightMm),

@@ -2,16 +2,15 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import type { Project } from '../src/model';
 import { deleteLocalProject, readLocalProjects, saveLocalProject, type ProjectStorage } from '../src/local-projects';
+import { baseProject } from './fixtures';
 
 function storage(): ProjectStorage & { data: Map<string, string> } {
   const data = new Map<string, string>();
   return { data, getItem: key => data.get(key) ?? null, setItem: (key, value) => { data.set(key, value); } };
 }
 
-const project = (id: string, name = id): Project => ({
-  schemaVersion: 2, id, name, updatedAt: '2026-01-01T00:00:00Z',
-  floors: [], equipment: [], routes: [], cables: [], pins: [],
-});
+const project = (id: string, name = id): Project =>
+  baseProject({ id, name, floors: [], equipment: [], routes: [], cables: [], pins: [] });
 
 test('проекты сохраняются, обновляются и удаляются', () => {
   const store = storage();

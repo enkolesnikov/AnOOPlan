@@ -1,6 +1,7 @@
 import { useMemo, useRef } from 'react';
 import type { PriceItem, PriceKind, Project } from '../model';
 import { estimate, isCatalogDate, normalizeCatalog } from '../estimate';
+import type { EstimateResult, EstimateSection as EstimateSectionData } from '../estimate';
 import { createUuid as uid } from '../compat';
 import { number } from './format';
 import { saveBlobOnDevice } from './native';
@@ -19,17 +20,107 @@ const nonNegativeOrNull = (raw: string): number | null => {
   return Number.isFinite(value) && value >= 0 ? value : null;
 };
 
-/**
- * Экран «Смета и коммерческое предложение»: расчёт по справочнику цен проекта,
- * процент работ и редактирование/импорт-экспорт самого справочника.
- */
-export function EstimateScreen({ project, onChange, onMessage, onError }: {
+/** Статус сметы и дата прайса в шапке экрана. */
+function EstimateStatus({ complete, catalogDateText }: { complete: boolean; catalogDateText: string }) {
+  return <div className="estimate-status">
+    <span className={`badge ${complete ? 'good' : 'warn'}`}>{complete ? 'Смета рассчитана' : 'Смета неполная'}</span>
+    <small>Дата прайса: <strong>{catalogDateText}</strong></small>
+  </div>;
+}
+
+/** Процент работ и примечание к смете. */
+function EstimateControls({ project, onChange }: { project: Project; onChange: (recipe: (project: Project) => void) => void }) {
+  const setEstimate = (patch: { laborPercent?: number | null; note?: string }): void => {
+    onChange(p => { p.estimate = { ...(p.estimate ?? { laborPercent: null }), ...patch }; });
+  };
+  return <div className="estimate-controls">
+    <label className="field estimate-labor">Работы, %<NumberField value={project.estimate?.laborPercent ?? null} ariaLabel="Работы, %" placeholder="Не задано" onCommit={raw => setEstimate({ laborPercent: raw === '' ? null : nonNegativeOrNull(raw) })} /></label>
+    <label className="field estimate-note-field">Примечание к смете<input type="text" value={project.estimate?.note ?? ''} placeholder="Например: Цены действительны 30 дней" onChange={event => setEstimate({ note: event.target.value })} /></label>
+  </div>;
+}
+
+/** Почему смета неполная. */
+function EstimateWarnings({ warnings }: { warnings: string[] }) {
+  return <div className="estimate-warnings"><strong>Смета неполная</strong><ul>{warnings.map((warning, index) => <li key={index}>{warning}</li>)}</ul></div>;
+}
+
+/** Таблица материалов раздела и итог по нему. */
+function SectionTable({ section }: { section: EstimateSectionData }) {
+  return <>
+    <div className="table-scroll"><table className="estimate-table">
+      <thead><tr><th>Позиция</th><th>Ед.</th><th>Количество</th><th>Цена, ₽</th><th>Сумма, ₽</th><th>Источник</th></tr></thead>
+      <tbody>
+        {section.lines.map(line => <tr key={line.id}>
+          <td><strong>{line.name}</strong>{line.note ? <small>{line.note}</small> : null}</td>
+          <td>{line.unit || '—'}</td>
+          <td>{quantityText(line.quantity)}</td>
+          <td>{moneyText(line.price)}</td>
+          <td>{moneyText(line.total)}</td>
+          <td>{line.priceSource ? PRICE_SOURCE_LABELS[line.priceSource] : '—'}</td>
+        </tr>)}
+        {!section.lines.length && <tr><td colSpan={6}>Позиций нет.</td></tr>}
+      </tbody>
+    </table></div>
+    <div className="estimate-section-total"><span>Итого по разделу</span><strong>{section.total === null ? 'не рассчитано' : moneyText(section.total)}</strong></div>
+    {section.warnings.map((warning, index) => <p className="help" key={index}>{warning}</p>)}
+  </>;
+}
+
+/** Раздел «Работы»: процент от материалов и итог. */
+function WorkSection({ section, laborPercent }: { section: EstimateSectionData; laborPercent: number | null }) {
+  return <div className="estimate-work-summary">
+    <p>Работы {laborPercent === null ? 'не рассчитаны: не задан процент.' : `— ${number(laborPercent)} % от стоимости материалов.`}</p>
+    <div className="estimate-section-total"><span>Итого по разделу</span><strong>{section.total === null ? 'не рассчитано' : moneyText(section.total)}</strong></div>
+    {laborPercent !== null && section.total === null && <p className="help">Стоимость работ не рассчитана: сначала должна быть известна стоимость материалов.</p>}
+  </div>;
+}
+
+/** Один раздел сметы: заголовок и строки материалов либо блок работ. */
+function EstimateSection({ section, laborPercent }: { section: EstimateSectionData; laborPercent: number | null }) {
+  return <section className="estimate-section">
+    <div className="estimate-section-head">
+      <h2>{section.title}</h2>
+      <span className={`badge ${section.complete ? 'good' : 'warn'}`}>{section.complete ? 'раздел рассчитан' : 'неполный раздел'}</span>
+    </div>
+    {section.kind === 'work' ? <WorkSection section={section} laborPercent={laborPercent} /> : <SectionTable section={section} />}
+  </section>;
+}
+
+/** Итоги сметы: материалы, работы и общий итог. */
+function EstimateTotals({ result }: { result: EstimateResult }) {
+  return <div className="estimate-totals">
+    <div><span>Материалы</span><strong>{result.materials === null ? 'не рассчитано' : moneyText(result.materials)}</strong></div>
+    <div><span>Работы{result.laborPercent === null ? '' : ` (${number(result.laborPercent)} %)`}</span><strong>{result.labor === null ? 'не рассчитано' : moneyText(result.labor)}</strong></div>
+    <div className="estimate-grand"><span>ИТОГО</span><strong className="estimate-total-value">{result.total === null ? 'Смета не рассчитана' : moneyText(result.total)}</strong></div>
+  </div>;
+}
+
+/** Строка редактора справочника цен. */
+function CatalogRow({ item, index, onUpdate, onRemove }: {
+  item: PriceItem;
+  index: number;
+  onUpdate: (index: number, patch: Partial<PriceItem>) => void;
+  onRemove: (item: PriceItem) => void;
+}) {
+  return <tr>
+    <td className="catalog-kind"><select value={item.kind} aria-label={`Вид позиции ${index + 1}`} onChange={event => onUpdate(index, { kind: event.target.value as PriceKind })}>{(['equipment', 'cable', 'tray'] as const).map(kind => <option key={kind} value={kind}>{PRICE_KIND_LABELS[kind]}</option>)}</select></td>
+    <td className="catalog-name"><input type="text" value={item.name} aria-label={`Наименование позиции ${index + 1}`} onChange={event => onUpdate(index, { name: event.target.value })} /></td>
+    <td className="catalog-article"><input type="text" value={item.article ?? ''} aria-label={`Артикул позиции ${index + 1}`} onChange={event => onUpdate(index, { article: event.target.value })} /></td>
+    <td className="catalog-manufacturer"><input type="text" value={item.manufacturer ?? ''} aria-label={`Производитель позиции ${index + 1}`} onChange={event => onUpdate(index, { manufacturer: event.target.value })} /></td>
+    <td className="catalog-unit"><input type="text" value={item.unit} aria-label={`Единица позиции ${index + 1}`} onChange={event => onUpdate(index, { unit: event.target.value })} /></td>
+    <td className="catalog-price"><NumberField value={item.price} placeholder="Не задано" ariaLabel={`Цена позиции ${index + 1}`} onCommit={raw => onUpdate(index, { price: raw === '' ? null : nonNegativeOrNull(raw) })} /></td>
+    <td className="catalog-note"><input type="text" value={item.note} aria-label={`Примечание позиции ${index + 1}`} onChange={event => onUpdate(index, { note: event.target.value })} /></td>
+    <td className="catalog-remove"><button type="button" aria-label={`Удалить позицию ${item.name}`} title="Удалить позицию" onClick={() => onRemove(item)}>×</button></td>
+  </tr>;
+}
+
+/** Редактор справочника цен: дата прайса, импорт/экспорт JSON и таблица позиций. */
+function CatalogEditor({ project, onChange, onMessage, onError }: {
   project: Project;
   onChange: (recipe: (project: Project) => void) => void;
   onMessage: (text: string) => void;
   onError: (text: string) => void;
 }) {
-  const result = useMemo(() => estimate(project), [project]);
   const importInput = useRef<HTMLInputElement>(null);
   const catalog = project.catalog ?? [];
   function updateCatalogItem(index: number, patch: Partial<PriceItem>): void {
@@ -39,9 +130,6 @@ export function EstimateScreen({ project, onChange, onMessage, onError }: {
       items[index] = { ...items[index], ...patch };
       p.catalog = items;
     });
-  }
-  function setEstimate(patch: { laborPercent?: number | null; note?: string }): void {
-    onChange(p => { p.estimate = { ...(p.estimate ?? { laborPercent: null }), ...patch }; });
   }
   async function exportCatalog(): Promise<void> {
     try {
@@ -87,58 +175,7 @@ export function EstimateScreen({ project, onChange, onMessage, onError }: {
       onError(error instanceof Error ? error.message : String(error));
     }
   }
-  const catalogDateText = project.catalogDate || result.catalogDate || 'не задана';
-  return <section className="document-view estimate-view">
-    <div className="document-title">
-      <div>
-        <span className="eyebrow">ДОКУМЕНТАЦИЯ</span>
-        <h1>Смета и коммерческое предложение</h1>
-        <p>Стоимость материалов по справочнику цен и работы процентом от материалов. Неизвестные цены не подменяются нулём.</p>
-      </div>
-      <div className="estimate-status">
-        <span className={`badge ${result.complete ? 'good' : 'warn'}`}>{result.complete ? 'Смета рассчитана' : 'Смета неполная'}</span>
-        <small>Дата прайса: <strong>{catalogDateText}</strong></small>
-      </div>
-    </div>
-    <div className="estimate-controls">
-      <label className="field estimate-labor">Работы, %<NumberField value={project.estimate?.laborPercent ?? null} ariaLabel="Работы, %" placeholder="Не задано" onCommit={raw => setEstimate({ laborPercent: raw === '' ? null : nonNegativeOrNull(raw) })} /></label>
-      <label className="field estimate-note-field">Примечание к смете<input type="text" value={project.estimate?.note ?? ''} placeholder="Например: Цены действительны 30 дней" onChange={event => setEstimate({ note: event.target.value })} /></label>
-    </div>
-    {!result.complete && <div className="estimate-warnings"><strong>Смета неполная</strong><ul>{result.warnings.map((warning, index) => <li key={index}>{warning}</li>)}</ul></div>}
-    {result.sections.map(section => <section className="estimate-section" key={section.kind}>
-      <div className="estimate-section-head">
-        <h2>{section.title}</h2>
-        <span className={`badge ${section.complete ? 'good' : 'warn'}`}>{section.complete ? 'раздел рассчитан' : 'неполный раздел'}</span>
-      </div>
-      {section.kind === 'work' ? <div className="estimate-work-summary">
-        <p>Работы {result.laborPercent === null ? 'не рассчитаны: не задан процент.' : `— ${number(result.laborPercent)} % от стоимости материалов.`}</p>
-        <div className="estimate-section-total"><span>Итого по разделу</span><strong>{section.total === null ? 'не рассчитано' : moneyText(section.total)}</strong></div>
-        {result.laborPercent !== null && section.total === null && <p className="help">Стоимость работ не рассчитана: сначала должна быть известна стоимость материалов.</p>}
-      </div> : <>
-        <div className="table-scroll"><table className="estimate-table">
-          <thead><tr><th>Позиция</th><th>Ед.</th><th>Количество</th><th>Цена, ₽</th><th>Сумма, ₽</th><th>Источник</th></tr></thead>
-          <tbody>
-            {section.lines.map(line => <tr key={line.id}>
-              <td><strong>{line.name}</strong>{line.note ? <small>{line.note}</small> : null}</td>
-              <td>{line.unit || '—'}</td>
-              <td>{quantityText(line.quantity)}</td>
-              <td>{moneyText(line.price)}</td>
-              <td>{moneyText(line.total)}</td>
-              <td>{line.priceSource ? PRICE_SOURCE_LABELS[line.priceSource] : '—'}</td>
-            </tr>)}
-            {!section.lines.length && <tr><td colSpan={6}>Позиций нет.</td></tr>}
-          </tbody>
-        </table></div>
-        <div className="estimate-section-total"><span>Итого по разделу</span><strong>{section.total === null ? 'не рассчитано' : moneyText(section.total)}</strong></div>
-        {section.warnings.map((warning, index) => <p className="help" key={index}>{warning}</p>)}
-      </>}
-    </section>)}
-    <div className="estimate-totals">
-      <div><span>Материалы</span><strong>{result.materials === null ? 'не рассчитано' : moneyText(result.materials)}</strong></div>
-      <div><span>Работы{result.laborPercent === null ? '' : ` (${number(result.laborPercent)} %)`}</span><strong>{result.labor === null ? 'не рассчитано' : moneyText(result.labor)}</strong></div>
-      <div className="estimate-grand"><span>ИТОГО</span><strong className="estimate-total-value">{result.total === null ? 'Смета не рассчитана' : moneyText(result.total)}</strong></div>
-    </div>
-    <p className="document-note">Смета считается по справочнику цен проекта; ручная цена кабеля приоритетнее справочника. Дата прайса: {catalogDateText}.{project.estimate?.note ? ` Примечание: ${project.estimate.note}.` : ''} Пустые цены не подменяются нулём — они помечены «—» и делают смету неполной.</p>
+  return <>
     <details className="catalog-editor">
       <summary>Справочник цен <span>{catalog.length}</span></summary>
       <div className="catalog-controls">
@@ -152,21 +189,42 @@ export function EstimateScreen({ project, onChange, onMessage, onError }: {
       <div className="table-scroll"><table className="catalog-table">
         <thead><tr><th>Вид</th><th>Наименование</th><th>Артикул</th><th>Производитель</th><th>Ед.</th><th>Цена, ₽</th><th>Примечание</th><th /></tr></thead>
         <tbody>
-          {catalog.map((item, index) => <tr key={item.id}>
-            <td className="catalog-kind"><select value={item.kind} aria-label={`Вид позиции ${index + 1}`} onChange={event => updateCatalogItem(index, { kind: event.target.value as PriceKind })}>{(['equipment', 'cable', 'tray'] as const).map(kind => <option key={kind} value={kind}>{PRICE_KIND_LABELS[kind]}</option>)}</select></td>
-            <td className="catalog-name"><input type="text" value={item.name} aria-label={`Наименование позиции ${index + 1}`} onChange={event => updateCatalogItem(index, { name: event.target.value })} /></td>
-            <td className="catalog-article"><input type="text" value={item.article ?? ''} aria-label={`Артикул позиции ${index + 1}`} onChange={event => updateCatalogItem(index, { article: event.target.value })} /></td>
-            <td className="catalog-manufacturer"><input type="text" value={item.manufacturer ?? ''} aria-label={`Производитель позиции ${index + 1}`} onChange={event => updateCatalogItem(index, { manufacturer: event.target.value })} /></td>
-            <td className="catalog-unit"><input type="text" value={item.unit} aria-label={`Единица позиции ${index + 1}`} onChange={event => updateCatalogItem(index, { unit: event.target.value })} /></td>
-            <td className="catalog-price"><NumberField value={item.price} placeholder="Не задано" ariaLabel={`Цена позиции ${index + 1}`} onCommit={raw => updateCatalogItem(index, { price: raw === '' ? null : nonNegativeOrNull(raw) })} /></td>
-            <td className="catalog-note"><input type="text" value={item.note} aria-label={`Примечание позиции ${index + 1}`} onChange={event => updateCatalogItem(index, { note: event.target.value })} /></td>
-            <td className="catalog-remove"><button type="button" aria-label={`Удалить позицию ${item.name}`} title="Удалить позицию" onClick={() => onChange(p => { p.catalog = (p.catalog ?? []).filter(entry => entry.id !== item.id); })}>×</button></td>
-          </tr>)}
+          {catalog.map((item, index) => <CatalogRow key={item.id} item={item} index={index} onUpdate={updateCatalogItem} onRemove={removed => onChange(p => { p.catalog = (p.catalog ?? []).filter(entry => entry.id !== removed.id); })} />)}
           {!catalog.length && <tr><td colSpan={8}>Справочник пуст. Добавьте позиции или импортируйте JSON.</td></tr>}
         </tbody>
       </table></div>
       <p className="help">Позиции справочника сопоставляются по виду и наименованию без учёта регистра. Цена «—» означает «неизвестно», а не 0. Пустое поле «Работы, %» также делает смету неполной.</p>
     </details>
     <input hidden ref={importInput} type="file" accept=".json,application/json" className="catalog-import-input" onChange={event => { const file = event.target.files?.[0]; if (file) void importCatalogFile(file); event.target.value = ''; }} />
+  </>;
+}
+
+/**
+ * Экран «Смета и коммерческое предложение»: расчёт по справочнику цен проекта,
+ * процент работ и редактирование/импорт-экспорт самого справочника.
+ */
+export function EstimateScreen({ project, onChange, onMessage, onError }: {
+  project: Project;
+  onChange: (recipe: (project: Project) => void) => void;
+  onMessage: (text: string) => void;
+  onError: (text: string) => void;
+}) {
+  const result = useMemo(() => estimate(project), [project]);
+  const catalogDateText = project.catalogDate || result.catalogDate || 'не задана';
+  return <section className="document-view estimate-view">
+    <div className="document-title">
+      <div>
+        <span className="eyebrow">ДОКУМЕНТАЦИЯ</span>
+        <h1>Смета и коммерческое предложение</h1>
+        <p>Стоимость материалов по справочнику цен и работы процентом от материалов. Неизвестные цены не подменяются нулём.</p>
+      </div>
+      <EstimateStatus complete={result.complete} catalogDateText={catalogDateText} />
+    </div>
+    <EstimateControls project={project} onChange={onChange} />
+    {!result.complete && <EstimateWarnings warnings={result.warnings} />}
+    {result.sections.map(section => <EstimateSection key={section.kind} section={section} laborPercent={result.laborPercent} />)}
+    <EstimateTotals result={result} />
+    <p className="document-note">Смета считается по справочнику цен проекта; ручная цена кабеля приоритетнее справочника. Дата прайса: {catalogDateText}.{project.estimate?.note ? ` Примечание: ${project.estimate.note}.` : ''} Пустые цены не подменяются нулём — они помечены «—» и делают смету неполной.</p>
+    <CatalogEditor project={project} onChange={onChange} onMessage={onMessage} onError={onError} />
   </section>;
 }

@@ -4,11 +4,12 @@ import 'fake-indexeddb/auto';
 import type { Project } from '../src/model';
 import { collectStorageGarbage } from '../src/garbage-collector';
 import { idbDelete, idbGet, idbPut } from '../src/idb';
+import { baseProject, device, floor } from './fixtures';
 
-const project = (pdf: string, photo: string): Project => ({
-  schemaVersion: 2, id: 'gc-test', name: 'GC', updatedAt: '2026-01-01T00:00:00Z',
-  floors: [{ id: 'f1', name: 'Этаж', elevation: 0, metersPerUnit: 1, page: 1, width: 1000, height: 700, pdfId: 'idb:' + pdf }],
-  equipment: [{ id: 'e1', number: 'E1', name: 'Камера', type: 'Камера', floorId: 'f1', x: 0, y: 0, height: null, note: '', properties: {}, photos: [photo] }],
+const project = (pdf: string, photo: string): Project => baseProject({
+  id: 'gc-test', name: 'GC',
+  floors: [floor('f1', { name: 'Этаж', metersPerUnit: 1, pdfId: `idb:${pdf}` })],
+  equipment: [device('e1', 0, { number: 'E1', name: 'Камера', type: 'Камера', height: null, properties: {}, photos: [photo] })],
   routes: [], cables: [], pins: [],
 });
 

@@ -6,7 +6,14 @@ import {
   cableSection,
   calculateCable,
   domainWarnings,
+  routeAngleStats,
+  routeSectionLengths,
+  routeSectionsText,
+  routeSummary,
+  specificationKnS,
   specifications,
+  suggestRouteSection,
+  suggestSegmentSection,
   trayFill,
   validateProject,
 } from '../src/engine';
@@ -216,14 +223,14 @@ test('specifications: строки trayFill и статистика заполн
   assert.equal(spec.trayFill.length, 3);
   assert.deepEqual(spec.trayFill[0], {
     route: 'Т1', segment: 'Т1.1', routeType: 'Лоток', tray: '100×50',
-    trayAreaMm2: 5000, lines: 20, areaMm2: 2000, fillPercent: 40, status: 'ок',
+    trayAreaMm2: 5000, lines: 20, areaMm2: 2000, fillPercent: 40, status: 'ок', overridden: false,
   });
   assert.equal(spec.trayFill[1].segment, 'Т1.2');
   assert.equal(spec.trayFill[1].status, 'превышено');
   close(spec.trayFill[1].fillPercent, 60);
   assert.deepEqual(spec.trayFill[2], {
     route: 'Т2', segment: 'Т2.1', routeType: 'Стояк', tray: '50×50',
-    trayAreaMm2: 2500, lines: 0, areaMm2: 0, fillPercent: 0, status: 'пусто',
+    trayAreaMm2: 2500, lines: 0, areaMm2: 0, fillPercent: 0, status: 'пусто', overridden: false,
   });
   const trayGroup = spec.infrastructure.find(group => group.type === 'Лоток');
   const riserGroup = spec.infrastructure.find(group => group.type === 'Стояк');
@@ -326,4 +333,165 @@ test('демо-проект: новые поля не изменили метр�
   close(totals[1], 26.3);
   close(totals[2], 45.55);
   close(totals[3], 27.95);
+});
+
+// --- Сегментные размеры КНС (2.5.0) ---
+// В одной трассе могут быть разные лотки/трубы: размеры сегмента переопределяют размеры трассы
+// по каждому полю отдельно, а метраж, заполнение и спецификация идут по эффективному сечению.
+
+const chain = (dims: Partial<Segment>[]): Segment[] => {
+  let x = 0;
+  return dims.map((extra, index) => {
+    const a = vertex(`v${index}`, x);
+    x += 50;
+    const b = vertex(`v${index + 1}`, x);
+    return { ...segment(`s${index + 1}`, a, b), ...extra };
+  });
+};
+
+test('сегмент со своим сечением: заполнение и ведомость считают по нему', () => {
+  const [s1, s2] = chain([{}, { trayWidthMm: 50, trayHeightMm: 50 }]);
+  const p = baseProject([route('Т1', [s1, s2], { trayWidthMm: 100, trayHeightMm: 50 })], [
+    cable('Л1', ['s1'], { crossSectionMm2: 100, quantity: 5 }),
+    cable('Л2', ['s2'], { crossSectionMm2: 100, quantity: 10 }),
+  ]);
+  const fill = trayFill(p);
+  assert.equal(fill.complete, true);
+  const [first, second] = fill.segments;
+  assert.equal(first.trayAreaMm2, 5000, 'сегмент без override использует лоток трассы');
+  assert.equal(first.overridden, false);
+  assert.equal(first.sectionLabel, '100×50');
+  close(first.fillPercent, 5 * 100 / 5000 * 100);
+  assert.equal(second.trayAreaMm2, 2500, 'свой лоток 50×50');
+  assert.equal(second.trayWidthMm, 50);
+  assert.equal(second.trayHeightMm, 50);
+  assert.equal(second.overridden, true);
+  assert.equal(second.sectionLabel, '50×50');
+  close(second.fillPercent, 10 * 100 / 2500 * 100);
+
+  const rows = specifications(p).trayFill;
+  assert.equal(rows[0].tray, '100×50');
+  assert.equal(rows[0].overridden, false);
+  assert.equal(rows[1].tray, '50×50');
+  assert.equal(rows[1].overridden, true);
+  assert.equal(rows[1].trayAreaMm2, 2500);
+});
+
+test('переопределение по полям: незаданная высота наследуется от трассы', () => {
+  const [s1, s2] = chain([{}, { trayWidthMm: 50 }]);
+  const p = baseProject([route('Т1', [s1, s2], { trayWidthMm: 100, trayHeightMm: 50 })]);
+  const [, second] = trayFill(p).segments;
+  assert.equal(second.trayWidthMm, 50);
+  assert.equal(second.trayHeightMm, 50, 'высота борта взята с трассы');
+  assert.equal(second.trayAreaMm2, 2500);
+});
+
+test('гофра: диаметр на сегменте, высота борта не используется', () => {
+  const [s1, s2] = chain([{}, { trayWidthMm: 40 }]);
+  const p = baseProject([route('Т1', [s1, s2], { type: 'Гофра', trayWidthMm: 20 })], [
+    cable('Л1', ['s2'], { crossSectionMm2: 50 }),
+  ]);
+  const [, second] = trayFill(p).segments;
+  assert.equal(second.sectionLabel, 'Ø40');
+  assert.equal(second.trayHeightMm, null);
+  close(second.trayAreaMm2, circleArea(40));
+  close(second.fillPercent, 50 / circleArea(40) * 100);
+  assert.equal(specifications(p).trayFill[1].tray, 'Ø40');
+});
+
+test('площадь на сегменте приоритетнее его размеров, затем идут размеры трассы', () => {
+  const [s1, s2] = chain([{}, { trayAreaMm2: 1200, trayWidthMm: 999, trayHeightMm: 999 }]);
+  const p = baseProject([route('Т1', [s1, s2], { trayWidthMm: 100, trayHeightMm: 50 })]);
+  const [, second] = trayFill(p).segments;
+  assert.equal(second.trayAreaMm2, 1200);
+  assert.equal(second.sectionLabel, 'S=1200 мм²');
+  assert.equal(specifications(p).trayFill[1].tray, 'S=1200 мм²');
+});
+
+test('неверное сечение на сегменте: предупреждение, incomplete и ошибка валидации', () => {
+  const [s1, s2] = chain([{}, { trayWidthMm: 0 }]);
+  const p = baseProject([route('Т1', [s1, s2], { trayWidthMm: 100, trayHeightMm: 50 })], [
+    cable('Л1', ['s1'], { crossSectionMm2: 100, quantity: 1 }),
+    cable('Л2', ['s2'], { crossSectionMm2: 100, quantity: 1 }),
+  ]);
+  const fill = trayFill(p);
+  assert.equal(fill.segments[0].status, 'ok', 'соседний сегмент считается как раньше');
+  assert.equal(fill.segments[1].status, 'incomplete');
+  assert.equal(fill.segments[1].trayAreaMm2, null);
+  assert.ok(fill.warnings.some(warning => warning.includes('Трасса Т1, сегмент Т1.2: неверное сечение КНС')));
+  assert.equal(fill.complete, false);
+  assert.ok(validateProject(p).includes('Трасса Т1, сегмент Т1.2: неверное сечение КНС'));
+
+  // Если на всех сегментах есть свои размеры, неверный размер трассы не мешает заполнению.
+  const overridden = baseProject([route('Т1', [chain([{ trayWidthMm: 40, trayHeightMm: 40 }])[0]], { trayWidthMm: 0, trayHeightMm: 0 })], [
+    cable('Л1', ['s1'], { crossSectionMm2: 100, quantity: 1 }),
+  ]);
+  const overriddenFill = trayFill(overridden);
+  assert.equal(overriddenFill.segments[0].status, 'ok');
+  assert.equal(overriddenFill.segments[0].overridden, true);
+  assert.equal(overriddenFill.warnings.length, 0);
+  assert.ok(validateProject(overridden).includes('Трасса Т1: неверное сечение КНС'), 'размер трассы всё равно проверяется');
+});
+
+test('routeSummary: метраж по сечениям и итоги по типам КНС', () => {
+  const [s1, s2, s3] = chain([{}, { trayWidthMm: 50, trayHeightMm: 50 }, {}]);
+  const p = baseProject([route('Т1', [s1, s2, s3], { trayWidthMm: 100, trayHeightMm: 50 })]);
+  const summary = routeSummary(p);
+  const row = summary.routes[0];
+  assert.equal(row.sections.length, 2);
+  assert.deepEqual(row.sections[0], { section: '100×50', length: 10, segments: 2, overridden: false });
+  assert.deepEqual(row.sections[1], { section: '50×50', length: 5, segments: 1, overridden: true });
+  assert.equal(routeSectionsText(row.sections, value => (value === null ? '—' : String(value))), '100×50 — 10 м; 50×50 — 5 м');
+  assert.equal(row.length, 15, 'общая длина трассы не изменилась');
+  assert.equal(summary.groups[0].length, 15);
+  assert.equal(routeSectionLengths(p, p.routes[0]).length, 2);
+});
+
+test('спецификация КНС: сечения одной трассы — отдельные строки, углы не задваиваются', () => {
+  // Трасса коробов с поворотом 90° на стыке второго и третьего сегментов.
+  const segments: Segment[] = [
+    segment('s1', vertex('a1', 0, 0), vertex('b1', 50, 0)),
+    segment('s2', vertex('b1', 50, 0), vertex('b2', 50, 50)),
+    { ...segment('s3', vertex('b2', 50, 50), vertex('b3', 100, 50)), trayWidthMm: 50, trayHeightMm: 50 },
+  ];
+  const project = baseProject([route('К1', segments, {
+    type: 'Кабель-канал', trayWidthMm: 100, trayHeightMm: 50, subsystem: 'horizontal',
+    },
+  )], []);
+  project.catalog = [
+    { id: 'p1', kind: 'tray', name: 'Кабель-канал', unit: 'м', price: 300, note: '', article: 'KC-100', manufacturer: 'Завод' },
+  ];
+  const angles = routeAngleStats(project.routes[0]);
+  assert.equal(angles.total, 2, 'два поворота 90° (Г-образная трасса)');
+  const spec = specificationKnS(project);
+  assert.equal(spec.lines.length, 2);
+  const wide = spec.lines.find(line => line.section === '100×50');
+  const narrow = spec.lines.find(line => line.section === '50×50');
+  assert.ok(wide && narrow);
+  assert.equal(wide.quantity, 10);
+  assert.equal(wide.angles, 2, 'углы отнесены к основному сечению');
+  assert.equal(wide.article, 'KC-100');
+  assert.equal(narrow.quantity, 5);
+  assert.equal(narrow.angles, 0);
+  close(spec.totalCost, 15 * 300);
+  assert.equal(spec.totals.find(item => item.group === 'Кабель-канал')?.angles, 2);
+});
+
+test('suggestRouteSection и suggestSegmentSection: сегменты со своим сечением не смешиваются', () => {
+  const [s1, s2] = chain([{}, { trayWidthMm: 50, trayHeightMm: 50 }]);
+  const p = baseProject([route('Т1', [s1, s2], { trayWidthMm: 100, trayHeightMm: 50 })], [
+    cable('Л1', ['s1'], { crossSectionMm2: 400, quantity: 3 }),
+    cable('Л2', ['s2'], { crossSectionMm2: 100, quantity: 2 }),
+  ]);
+  const routeSuggestion = suggestRouteSection(p, p.routes[0]);
+  assert.ok(routeSuggestion, 'подбор по сегментам без override');
+  assert.ok(routeSuggestion.widthMm * (routeSuggestion.heightMm ?? 0) >= 1200);
+  const segmentSuggestion = suggestSegmentSection(p, p.routes[0], s2);
+  assert.ok(segmentSuggestion);
+  assert.ok(segmentSuggestion.label.startsWith('50×50'), `подбор для сегмента: ${segmentSuggestion.label}`);
+
+  const allOverridden = baseProject([route('Т2', [chain([{ trayWidthMm: 50, trayHeightMm: 50 }])[0]], { trayWidthMm: 100, trayHeightMm: 50 })], [
+    cable('Л3', ['s1'], { crossSectionMm2: 400 }),
+  ]);
+  assert.equal(suggestRouteSection(allOverridden, allOverridden.routes[0]), null, 'подбор трассы не трогает сегменты со своим сечением');
 });

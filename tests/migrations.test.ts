@@ -422,3 +422,39 @@ test('подсистема трассы и артикулы справочник
   assert.equal(migrated.catalog?.[0].article, 'KK-1');
   assert.equal(migrated.catalog?.[0].manufacturer, 'DKC');
 });
+
+test('сегментные размеры КНС: строки становятся числами, мусор считается отсутствующим', () => {
+  const demo = createDemoProject();
+  const raw = JSON.parse(JSON.stringify(demo)) as Record<string, unknown>;
+  const segmentRows = (raw.routes as { segments: Record<string, unknown>[] }[])[0].segments;
+  assert.ok(segmentRows.length >= 2);
+  segmentRows[0].trayWidthMm = 50;
+  segmentRows[0].trayHeightMm = 25;
+  segmentRows[1].trayWidthMm = '40';
+  segmentRows[1].trayAreaMm2 = 1256;
+  segmentRows[1].trayHeightMm = 'не число';
+
+  const migrated = migrateProject(raw);
+  const [first, second] = migrated.routes[0].segments;
+  assert.equal(first.trayWidthMm, 50);
+  assert.equal(first.trayHeightMm, 25);
+  assert.equal(second.trayWidthMm, 40, 'числовая строка из старой копии приводится к числу');
+  assert.equal(second.trayAreaMm2, 1256);
+  assert.equal('trayHeightMm' in second, false, 'мусор не превращается в 0');
+  // Сегменты без переопределения не получают новых полей.
+  const untouched = migrated.routes[0].segments[2];
+  assert.equal('trayWidthMm' in untouched, false);
+
+  // Нули и отрицательные размеры сохраняются: их ловит валидация, а не миграция.
+  const zeroRaw = JSON.parse(JSON.stringify(demo)) as Record<string, unknown>;
+  const zeroSegments = (zeroRaw.routes as { segments: Record<string, unknown>[] }[])[0].segments;
+  zeroSegments[0].trayWidthMm = 0;
+  zeroSegments[0].trayAreaMm2 = -1;
+  const zeroMigrated = migrateProject(zeroRaw);
+  assert.equal(zeroMigrated.routes[0].segments[0].trayWidthMm, 0);
+  assert.equal(zeroMigrated.routes[0].segments[0].trayAreaMm2, -1);
+
+  // Переопределения переживают JSON round-trip без потерь.
+  const roundTrip = migrateProject(JSON.parse(JSON.stringify(migrated)));
+  assert.deepEqual(roundTrip.routes[0].segments, migrated.routes[0].segments);
+});

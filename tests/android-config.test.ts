@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { THEME_COLOR_DARK, THEME_COLOR_LIGHT } from '../src/a11y';
 
 const root = join(import.meta.dirname, '..');
 const read = (path: string) => readFileSync(join(root, path), 'utf8');
@@ -95,4 +96,132 @@ test('обмен: ACTION_SEND, провайдер файлов и открыти
   // Сборка компилирует все Java-файлы каталога, включая новый провайдер.
   const script = read('scripts/build-apk.sh');
   assert.match(script, /find "\$ANDROID_DIR\/java" -name '\*\.java'/);
+});
+
+// ── Доступность: textZoom, тёмная тема, высокий контраст ─────────────────
+
+/** Тело CSS-блока по заголовку: от первой «{» до парной «}» с учётом вложенности. */
+function cssBlock(css: string, header: string): string {
+  const start = css.indexOf(header);
+  assert.ok(start >= 0, `в styles.css нет блока ${header}`);
+  let depth = 0;
+  const open = css.indexOf('{', start);
+  for (let index = open; index < css.length; index += 1) {
+    if (css[index] === '{') depth += 1;
+    else if (css[index] === '}') {
+      depth -= 1;
+      if (depth === 0) return css.slice(open + 1, index);
+    }
+  }
+  return '';
+}
+
+/** CSS-переменные блока в виде карты имя → значение. */
+function cssVariables(block: string): Map<string, string> {
+  return new Map([...block.matchAll(/(--[a-z0-9-]+):\s*([^;]+);/g)].map(match => [match[1], match[2].trim()]));
+}
+
+/** Относительная яркость sRGB по WCAG 2.x. */
+function relativeLuminance(hex: string): number {
+  assert.match(hex, /^#[0-9a-f]{6}$/i, `ожидался цвет #rrggbb, получено: ${hex}`);
+  const value = Number.parseInt(hex.slice(1), 16);
+  const channels = [(value >> 16) & 255, (value >> 8) & 255, value & 255].map(channel => {
+    const scaled = channel / 255;
+    return scaled <= 0.04045 ? scaled / 12.92 : ((scaled + 0.055) / 1.055) ** 2.4;
+  });
+  return 0.2126 * channels[0] + 0.7152 * channels[1] + 0.0722 * channels[2];
+}
+
+/** Коэффициент контраста WCAG (1…21). */
+function contrastRatio(first: string, second: string): number {
+  const [light, dark] = [relativeLuminance(first), relativeLuminance(second)].sort((a, b) => b - a);
+  return (light + 0.05) / (dark + 0.05);
+}
+
+test('доступность: MainActivity масштабирует текст по системному fontScale', () => {
+  const activity = read('android/java/com/anooplan/app/MainActivity.java');
+  // fontScale — из конфигурации Android, setTextZoom получает вычисленный процент.
+  assert.match(activity, /getResources\(\)\.getConfiguration\(\)\.fontScale/);
+  assert.match(activity, /settings\.setTextZoom\(\s*textZoomPercent\(/);
+  assert.doesNotMatch(activity, /setTextZoom\(100\)/, 'жёсткий setTextZoom(100) игнорировал системный шрифт');
+  assert.match(activity, /Math\.round\(fontScale \* 100f\)/);
+  assert.match(activity, /Math\.min\(TEXT_ZOOM_MAX, Math\.max\(TEXT_ZOOM_MIN/, 'значение зажимается в 85–160 %');
+  assert.match(
+    activity,
+    /Float\.isNaN\(fontScale\)[\s\S]*Float\.isInfinite\(fontScale\)[\s\S]*TEXT_ZOOM_DEFAULT/,
+    'некорректный fontScale даёт 100 %',
+  );
+  // Границы — единый источник: Java и TypeScript не должны разъезжаться.
+  const script = read('src/a11y.ts');
+  for (const name of ['TEXT_ZOOM_MIN', 'TEXT_ZOOM_MAX', 'TEXT_ZOOM_DEFAULT']) {
+    const pattern = new RegExp(`${name}\\s*=\\s*(\\d+)`);
+    const javaValue = pattern.exec(activity)?.[1];
+    assert.ok(javaValue, `${name} не найден в MainActivity.java`);
+    assert.equal(javaValue, pattern.exec(script)?.[1], `${name} совпадает в MainActivity.java и src/a11y.ts`);
+  }
+});
+
+test('доступность: theme-color с media и color-scheme в index.html', () => {
+  const html = read('index.html');
+  assert.match(html, /<meta name="color-scheme" content="light dark"/);
+  const themes = new Map<string, string>();
+  const pattern = /<meta name="theme-color" content="(#[0-9a-f]{6})" media="\(prefers-color-scheme: (light|dark)\)"/g;
+  for (const match of html.matchAll(pattern)) themes.set(match[2], match[1]);
+  assert.equal(themes.size, 2, 'нужны theme-color для светлой и тёмной темы');
+  // Значения берём из src/a11y.ts, чтобы HTML и Java/CSS не разъезжались.
+  assert.equal(themes.get('light'), THEME_COLOR_LIGHT);
+  assert.equal(themes.get('dark'), THEME_COLOR_DARK);
+});
+
+test('стили: тёмная тема переопределяет цвета и сохраняет контраст ≥ 7:1', () => {
+  const css = read('src/styles.css');
+  const dark = cssBlock(css, '@media (prefers-color-scheme: dark)');
+  assert.match(dark, /color-scheme: dark/);
+  const variables = cssVariables(dark);
+  for (const name of ['--surface', '--surface-2', '--surface-3', '--text', '--muted',
+    '--border', '--border-soft', '--shadow', '--accent-soft']) {
+    assert.ok(variables.has(name), `в тёмной теме не переопределена ${name}`);
+  }
+  for (const surface of ['--surface', '--surface-2', '--surface-3']) {
+    const ratio = contrastRatio(variables.get('--text')!, variables.get(surface)!);
+    assert.ok(ratio >= 7, `основной текст на ${surface}: ${ratio.toFixed(2)}:1, нужно ≥ 7:1`);
+  }
+  assert.ok(contrastRatio(variables.get('--muted')!, variables.get('--surface')!) >= 4.5, 'вторичный текст на --surface');
+  assert.ok(contrastRatio(variables.get('--accent-2')!, variables.get('--surface')!) >= 4.5, 'акцентный текст на --surface');
+  // Белая подпись на залитой кнопке primary (button.primary { color: #fff }).
+  assert.ok(contrastRatio('#ffffff', variables.get('--accent')!) >= 4.5, 'белый текст на --accent');
+});
+
+test('стили: высокий контраст, forced-colors и reduced-motion', () => {
+  const css = read('src/styles.css');
+  const more = cssBlock(css, '@media (prefers-contrast: more)');
+  assert.ok(more.includes('--muted'), 'высокий контраст усиливает вторичный текст');
+  assert.ok(more.includes('border-color: var(--text)'), 'высокий контраст усиливает границы');
+  assert.match(more, /outline-width: 4px/);
+  const darkMore = cssBlock(css, '@media (prefers-color-scheme: dark) and (prefers-contrast: more)');
+  assert.ok(darkMore.includes('--text'), 'тёмная тема + высокий контраст дают белый текст');
+  const forced = cssBlock(css, '@media (forced-colors: active)');
+  assert.ok(forced.includes('CanvasText'), 'в forced-colors используем системный цвет границ');
+  assert.ok(forced.includes('Highlight'), 'выделение в forced-colors — системным Highlight');
+  assert.ok(forced.includes('forced-color-adjust'), 'план сохраняет цвета как изображение');
+  const reduced = cssBlock(css, '@media (prefers-reduced-motion: reduce)');
+  assert.ok(reduced.includes('animation-duration'));
+  assert.ok(reduced.includes('transition-duration'));
+  assert.ok(reduced.includes('scroll-behavior'));
+});
+
+test('стили: textZoom — min-height и переносы вместо обрезки', () => {
+  const css = read('src/styles.css');
+  assert.match(css, /text-size-adjust: 100%/, 'отключаем автоувеличение текста поверх textZoom');
+  assert.match(css, /overflow-wrap: anywhere/);
+  // Фиксированные высоты интерактивных элементов заменены минимумами.
+  assert.match(css, /\.menu-toggle \{[^}]*min-height: 44px/);
+  assert.match(css, /\.props-fab \{[^}]*min-height: 54px/);
+  assert.match(css, /\.properties-close \{[^}]*min-height: 40px/);
+  assert.match(css, /\.history-fab button \{[^}]*min-height: 46px/);
+  assert.match(css, /\.photo-add \{[^}]*min-height: 92px/);
+  assert.doesNotMatch(css, /height: 42px/, 'жёсткая высота 42 px у кнопки меню');
+  // Подпись объекта в списке больше не обрезается многоточием в одну строку.
+  assert.match(css, /\.object-row small \{[^}]*overflow-wrap: anywhere/);
+  assert.doesNotMatch(css, /\.object-row small \{[^}]*text-overflow: ellipsis/);
 });

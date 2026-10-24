@@ -1,4 +1,5 @@
 :root {
+  color-scheme: light dark;
   --bg: #122936;
   --bg-2: #0c1d27;
   --surface: #ffffff;
@@ -20,13 +21,16 @@
 
 * { box-sizing: border-box; }
 html, body, #root { height: 100%; }
+/* Крупный шрифт из системы масштабирует WebView (setTextZoom), автоувеличение текста
+   при этом выключаем — иначе размеры складываются и раскладка рвётся. */
+html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
 body {
   margin: 0;
   font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
   color: var(--text);
   background: var(--surface-2);
   font-size: 14px;
-  line-height: 1.45;
+  line-height: 1.5;
   -webkit-font-smoothing: antialiased;
 }
 
@@ -71,7 +75,7 @@ textarea { resize: vertical; min-height: 54px; }
 }
 .brand { display: flex; align-items: center; gap: 10px; }
 .brand-mark {
-  display: grid; place-items: center; width: 34px; height: 34px;
+  display: grid; place-items: center; min-width: 34px; min-height: 34px; padding: 0 4px;
   background: var(--accent); color: #fff; font-weight: 700; font-size: 18px;
   border-radius: 8px;
 }
@@ -152,9 +156,9 @@ textarea { resize: vertical; min-height: 54px; }
 .object-row.selected { background: var(--accent-soft); border-color: var(--accent); }
 .object-row span:nth-child(2) { flex: 1; min-width: 0; display: flex; flex-direction: column; }
 .object-row strong { font-size: 13px; font-weight: 600; }
-.object-row small { font-size: 12px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.object-row small { font-size: 12px; color: var(--muted); overflow-wrap: anywhere; }
 .object-icon {
-  width: 26px; height: 26px; flex-shrink: 0; border-radius: 6px; display: grid; place-items: center;
+  width: 26px; min-height: 26px; flex-shrink: 0; border-radius: 6px; display: grid; place-items: center;
   background: var(--surface-2); color: var(--muted); font-size: 12px; font-weight: 600;
 }
 .object-icon svg { display: block; }
@@ -184,10 +188,18 @@ textarea { resize: vertical; min-height: 54px; }
 /* ---------- drawing toolbar ---------- */
 .drawing-toolbar {
   display: flex; align-items: center; justify-content: space-between;
+  flex-wrap: wrap; row-gap: 4px;
   padding: 6px 12px; background: var(--surface); border-bottom: 1px solid var(--border);
 }
-.tool-group { display: flex; gap: 4px; }
-.tool-group.history button { width: 34px; }
+.tool-group { display: flex; flex-wrap: wrap; gap: 2px; }
+/* Кнопки инструментов не сжимаем: подписи остаются целыми словами, а группа
+   переносится на следующую строку, когда места мало (крупный системный шрифт тоже).
+   Компактные отступы и 13px позволяют всем восьми инструментам и истории влезть
+   в одну строку на десктопе, не ломая подписи посередине слова. */
+.tool-group.history { gap: 4px; margin-left: auto; }
+.tool-group button { flex: 0 0 auto; font-size: 13px; padding: 6px 5px; gap: 4px; }
+.tool-group button span { white-space: nowrap; }
+.tool-group.history button { min-width: 34px; }
 .tool-group button {
   display: flex; align-items: center; gap: 6px; border: 1px solid transparent; background: transparent; padding: 6px 9px;
 }
@@ -288,7 +300,7 @@ td small { display: block; color: var(--muted); font-size: 12px; }
 .document-note { margin-top: 12px; color: var(--muted); font-size: 12px; }
 
 /* ── Смета и справочник цен ──────────────────────────────────────────── */
-.estimate-status { display: flex; flex-direction: column; align-items: flex-end; gap: 6px; font-size: 12px; color: var(--muted); white-space: nowrap; }
+.estimate-status { display: flex; flex-direction: column; align-items: flex-end; gap: 6px; font-size: 12px; color: var(--muted); overflow-wrap: anywhere; }
 .estimate-status strong { color: var(--text); }
 .estimate-controls { display: flex; flex-wrap: wrap; gap: 12px; margin-bottom: 16px; }
 .estimate-labor { width: 140px; flex: 0 0 auto; }
@@ -320,7 +332,7 @@ td small { display: block; color: var(--muted); font-size: 12px; }
 .catalog-table input, .catalog-table select { width: 100%; min-width: 70px; }
 .catalog-table .catalog-name { min-width: 180px; }
 .catalog-table .catalog-remove { width: 44px; }
-.catalog-table .catalog-remove button { width: 30px; min-height: 30px; padding: 0; }
+.catalog-table .catalog-remove button { min-width: 30px; min-height: 30px; padding: 4px; }
 
 /* ---------- properties panel ---------- */
 .properties {
@@ -328,7 +340,7 @@ td small { display: block; color: var(--muted); font-size: 12px; }
   background: var(--surface); border-left: 1px solid var(--border); min-height: 0;
 }
 .route-summary { display: flex; flex-wrap: wrap; gap: 6px 10px; padding: 8px 12px; border-bottom: 1px solid var(--border-soft); font-size: 11px; color: var(--muted); }
-.route-summary span { white-space: nowrap; }
+.route-summary span { overflow-wrap: anywhere; }
 .route-summary strong { color: var(--text); }
 .plan-dimension { cursor: pointer; }
 .plan-dimension.is-selected line { stroke: #6f45b8; }
@@ -375,7 +387,7 @@ td small { display: block; color: var(--muted); font-size: 12px; }
 }
 .tray-fill-row strong { font-weight: 600; }
 .tray-fill-row span { color: var(--muted); }
-.tray-fill-row em { font-style: normal; font-weight: 600; color: var(--muted); white-space: nowrap; }
+.tray-fill-row em { font-style: normal; font-weight: 600; color: var(--muted); overflow-wrap: anywhere; }
 .tray-fill-row small { grid-column: 1 / -1; color: #a5610f; font-size: 12px; }
 .tray-fill-row.ok { border-left-color: var(--good); }
 .tray-fill-row.ok em { color: var(--good); }
@@ -437,18 +449,20 @@ td small { display: block; color: var(--muted); font-size: 12px; }
 @media (max-width: 1023px) {
   .menu-toggle {
     display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0;
-    width: 42px; height: 42px; border: 1px solid #2b4d60; background: #1c3a4a; color: #e9f2f5;
+    min-width: 44px; min-height: 44px; padding: 6px 8px;
+    border: 1px solid #2b4d60; background: #1c3a4a; color: #e9f2f5;
     font-size: 20px; border-radius: 8px;
   }
   .props-fab {
     display: grid; place-items: center; position: fixed; right: 14px; bottom: 96px; z-index: 70;
-    width: 54px; height: 54px; border-radius: 50%; border: none;
+    min-width: 54px; min-height: 54px; padding: 6px; border-radius: 50%; border: none;
     background: var(--accent); color: #fff; font-size: 24px; box-shadow: 0 4px 18px rgba(0, 142, 148, .42);
   }
   .props-fab.active { display: none; }
   .properties-close {
     display: inline-flex; align-items: center; justify-content: center; margin-left: auto;
-    width: 40px; height: 40px; border: none; background: transparent; color: var(--muted); font-size: 24px;
+    min-width: 40px; min-height: 40px; padding: 4px 8px;
+    border: none; background: transparent; color: var(--muted); font-size: 24px;
   }
   .scrim { display: block; position: fixed; inset: 0; z-index: 58; background: rgba(12, 29, 39, .45); }
   .desk-only { display: none; }
@@ -474,15 +488,15 @@ td small { display: block; color: var(--muted); font-size: 12px; }
   button, input, select, textarea { min-height: 40px; }
   .topbar { gap: 6px; padding: 6px 8px; flex-wrap: nowrap; }
   .brand { display: none; }
-  .brand-mark { width: 32px; height: 32px; font-size: 16px; }
+  .brand-mark { min-width: 32px; min-height: 32px; font-size: 16px; }
   .project-heading { flex: 1 1 auto; min-width: 0; }
   .project-heading input { font-size: 14px; max-width: 100%; }
   .save-indicator { display: none; }
   .top-actions { gap: 6px; flex-wrap: wrap; flex-shrink: 0; }
-  .top-actions button { padding: 6px 9px; font-size: 12px; white-space: nowrap; }
+  .top-actions button { padding: 6px 9px; font-size: 12px; white-space: normal; overflow-wrap: anywhere; }
   .commandbar { flex-wrap: nowrap; gap: 4px; padding: 4px 8px; }
   .view-tabs { flex: 1 1 auto; }
-  .view-tabs button { flex: 1; padding: 8px 3px; font-size: 12px; white-space: nowrap; }
+  .view-tabs button { flex: 1; padding: 8px 3px; font-size: 12px; white-space: normal; overflow-wrap: anywhere; }
   .command-actions { flex-wrap: nowrap; gap: 4px; flex-shrink: 0; }
 
   /* план: максимум площади, инструменты — крупная нижняя панель */
@@ -501,7 +515,7 @@ td small { display: block; color: var(--muted); font-size: 12px; }
   .drawing-toolbar .tool-group button b { font-size: 20px; line-height: 1; }
   .drawing-toolbar .tool-group button span { display: block; font-size: 11px; }
   .drawing-toolbar .tool-group.history { flex: 0 0 auto; }
-  .drawing-toolbar .tool-group.history button { width: 44px; min-height: 52px; }
+  .drawing-toolbar .tool-group.history button { min-width: 44px; min-height: 52px; }
 
   .document-view { padding: 12px 10px; }
   .statusbar { font-size: 11px; padding: 4px 10px; gap: 6px; }
@@ -510,7 +524,7 @@ td small { display: block; color: var(--muted); font-size: 12px; }
 }
 
 /* ── Нижние панели действий (bottom sheet) ───────────────────────────── */
-.export-trigger { white-space: nowrap; }
+.export-trigger { white-space: normal; overflow-wrap: anywhere; }
 
 .sheet-backdrop {
   position: fixed; inset: 0; z-index: 95;
@@ -569,12 +583,12 @@ input[inputmode="decimal"] { text-align: left; }
 }
 .photo-card img { display: block; width: 100%; height: 100%; object-fit: cover; }
 .photo-card button {
-  position: absolute; top: 2px; right: 2px; width: 26px; height: 26px; min-height: 26px;
+  position: absolute; top: 2px; right: 2px; width: 26px; min-height: 26px;
   padding: 0; border: none; border-radius: 50%;
   background: rgba(12, 29, 39, .72); color: #fff; font-size: 15px; line-height: 1;
 }
 .photo-add {
-  width: 92px; height: 92px; border-radius: 10px;
+  width: 92px; min-height: 92px; border-radius: 10px;
   border: 1px dashed var(--border); background: var(--surface-3);
   color: var(--muted); font-size: 13px;
 }
@@ -640,7 +654,7 @@ input[inputmode="decimal"] { text-align: left; }
     position: fixed; right: 14px; bottom: 162px; z-index: 70;
   }
   .history-fab button {
-    width: 46px; height: 46px; min-height: 46px; padding: 0; border-radius: 50%;
+    min-width: 46px; min-height: 46px; padding: 0; border-radius: 50%;
     border: 1px solid var(--border); background: var(--surface); color: var(--accent-2);
     font-size: 22px; line-height: 1; box-shadow: 0 2px 10px rgba(18, 41, 54, .18);
   }
@@ -707,3 +721,141 @@ input[inputmode="decimal"] { text-align: left; }
 .pin-symbol { cursor: pointer; }
 .pin-symbol.is-selected circle { stroke: var(--accent-2); stroke-width: 3; }
 .object-icon.pin-icon { background: #fdf1e2; color: var(--warn); }
+
+/* ══════════════════════════════════════════════════════════════════════
+   Доступность: крупный системный шрифт (Android textZoom 85–160 %).
+   При увеличении текста переносим строки и растягиваем элементы по высоте,
+   а не обрезаем содержимое фиксированными размерами.
+   ══════════════════════════════════════════════════════════════════════ */
+button, input, select, textarea, summary,
+.object-row, .object-row small, .sheet-list button, .top-actions button,
+.view-tabs button, .badge, .chip, .route-summary span, .statusbar,
+.empty-list, .help, .document-note, .field small { overflow-wrap: anywhere; }
+
+/* ══════════════════════════════════════════════════════════════════════
+   Тёмная тема: системная настройка Android/браузера.
+   Контраст основного текста на поверхностях — ≥ 12:1, вторичного (--muted) — ≥ 7:1;
+   значения проверяет tests/android-config.test.ts.
+   ══════════════════════════════════════════════════════════════════════ */
+@media (prefers-color-scheme: dark) {
+  :root {
+    color-scheme: dark;
+    --bg: #0b1a22;
+    --bg-2: #06121a;
+    --surface: #13252f;
+    --surface-2: #0c1a23;
+    --surface-3: #1a2f3a;
+    --border: #4a6b7a;
+    --border-soft: #35525f;
+    --text: #eef5f7;
+    --muted: #a9bfc8;
+    --accent: #0b7a80;
+    --accent-2: #6fd8dd;
+    --accent-soft: rgba(111, 216, 221, 0.16);
+    --warn: #f0b25a;
+    --danger: #f08aa3;
+    --good: #6fd39c;
+    --violet: #c3a8ef;
+    --shadow: 0 2px 10px rgba(0, 0, 0, 0.55);
+  }
+
+  .modal-backdrop { background: rgba(2, 8, 12, 0.72); }
+  .scrim { background: rgba(2, 8, 12, 0.6); }
+  .sheet-backdrop { background: rgba(2, 8, 12, 0.68); }
+
+  /* План — «бумага»: лист остаётся белым, иначе PDF и подписи не читаются. */
+  .drawing-stage { background: #0a161d; }
+  .drawing-sheet { box-shadow: 0 4px 26px rgba(0, 0, 0, 0.6); }
+  .equipment-symbol text { fill: #122936; }
+  .no-pdf { color: #54666f; }
+  .no-pdf span { color: #8fa3ad; }
+  .no-pdf p { color: #54666f; }
+  .plan-badge, .plan-legend { background: rgba(19, 37, 47, 0.94); }
+  .legend-equipment { background: #fff; }
+
+  /* Элементы со светлыми цветами, зашитыми в правила выше. */
+  .banner.error { background: rgba(240, 138, 163, 0.14); color: #ffb3c4; border-bottom-color: rgba(240, 138, 163, 0.4); }
+  .contextbar { background: rgba(240, 178, 90, 0.14); border-bottom-color: rgba(240, 178, 90, 0.4); }
+  .contextbar label { color: #f0c78a; }
+  .contextbar.cable-builder { background: rgba(195, 168, 239, 0.16); border-bottom-color: rgba(195, 168, 239, 0.4); }
+  .contextbar.cable-builder label { color: #d9c8f7; }
+  .object-icon.equipment-icon { background: rgba(111, 216, 221, 0.18); color: var(--accent-2); }
+  .object-icon.route-icon, .object-icon.pin-icon { background: rgba(240, 178, 90, 0.18); color: var(--warn); }
+  .object-icon.cable-icon { background: rgba(195, 168, 239, 0.18); color: var(--violet); }
+  .dot { background: #5b7884; }
+  .badge.good { background: rgba(111, 211, 156, 0.16); color: var(--good); }
+  .badge.warn { background: rgba(240, 178, 90, 0.16); color: #f5c67f; }
+  .estimate-warnings { border-color: rgba(240, 178, 90, 0.45); background: rgba(240, 178, 90, 0.12); }
+  .estimate-warnings strong,
+  .tray-fill-row small,
+  .tray-fill-row.warning em { color: #f5c67f; }
+  .calculation-card { border-color: rgba(111, 211, 156, 0.5); background: rgba(111, 211, 156, 0.1); }
+  .calculation-card.incomplete { border-color: rgba(240, 178, 90, 0.5); background: rgba(240, 178, 90, 0.12); }
+  button.danger { border-color: rgba(240, 138, 163, 0.45); }
+  button.danger:hover:not(:disabled) { background: rgba(240, 138, 163, 0.14); }
+  .project-delete:hover:not(:disabled) { background: rgba(240, 138, 163, 0.14); }
+  .sheet-list button.danger { border-color: rgba(240, 138, 163, 0.45); }
+
+  /* Фокус и поля: светлый акцент заметнее тёмного на тёмной поверхности. */
+  :focus-visible { outline-color: var(--accent-2); }
+  input:focus, select:focus, textarea:focus { outline-color: rgba(111, 216, 221, 0.4); }
+}
+
+/* ══════════════════════════════════════════════════════════════════════
+   Высокий контраст: усиливаем границы и вторичный текст, убираем тени.
+   ══════════════════════════════════════════════════════════════════════ */
+@media (prefers-contrast: more) {
+  :root {
+    --border: #4a575e;
+    --border-soft: #78858c;
+    --muted: #3d4a51;
+    --shadow: none;
+  }
+  button, input, select, textarea, summary { border-width: 2px; border-color: var(--text); }
+  .object-row, .tray-fill-row, .segment-editor, .estimate-totals > div, .calculation-card,
+  .badge, .chip, .plan-badge, .plan-legend { border: 1px solid var(--text); }
+  .object-row.selected { border-width: 2px; }
+  th, .empty-list, .help, .document-note, .field small, .project-health small { color: var(--text); }
+  .dot { outline: 1px solid var(--text); outline-offset: 1px; }
+  :focus-visible { outline-width: 4px; outline-offset: 3px; }
+}
+
+/* Тёмная тема + высокий контраст: белый текст и светлые границы. */
+@media (prefers-color-scheme: dark) and (prefers-contrast: more) {
+  :root {
+    --border: #b6ccd4;
+    --border-soft: #93aab3;
+    --muted: #dbe8ec;
+    --text: #ffffff;
+    --accent-2: #a6eef1;
+    --shadow: none;
+  }
+}
+
+/* ══════════════════════════════════════════════════════════════════════
+   Принудительные цвета системы (Windows high contrast, Android).
+   Свои цвета не навязываем: состояние читается по границам и обводкам.
+   ══════════════════════════════════════════════════════════════════════ */
+@media (forced-colors: active) {
+  :root { --shadow: none; }
+  button, input, select, textarea, summary, .badge, .chip, .dot, .object-row, .tray-fill-row,
+  .project-health, .estimate-totals > div, .calculation-card, .plan-badge, .plan-legend,
+  .segment-editor, .catalog-editor { border: 1px solid CanvasText; }
+  /* Кнопки без рамки в обычной теме тоже получают видимый контур. */
+  .view-tabs button, .structure-tabs button, .tool-group button, .sheet-head button,
+  .properties-close, .menu-toggle, .photo-card button, .project-delete { border: 1px solid CanvasText; }
+  .object-row.selected, .view-tabs button.active, .structure-tabs button.active,
+  .tool-group button.active, .tray-fill-row.ok, .tray-fill-row.warning, .tray-fill-row.over {
+    outline: 2px solid Highlight;
+    outline-offset: -2px;
+  }
+  .route-segment.is-selected .visible-route,
+  .route-segment.cable-selected .visible-route { stroke: Highlight; }
+  .equipment-symbol.is-selected .equipment-badge { stroke: Highlight; stroke-width: 3; }
+  .dot.calibrated, .dot.warning { background: ButtonText; }
+  .modal-backdrop, .sheet-backdrop, .scrim { background: Canvas; }
+  .plan-badge, .plan-legend { background: Canvas; color: CanvasText; }
+  /* План — как изображение: сохраняем цвета листа, трасс и подписей. */
+  .drawing-sheet, .no-pdf { forced-color-adjust: none; }
+  :focus-visible { outline: 3px solid Highlight; outline-offset: 2px; }
+}

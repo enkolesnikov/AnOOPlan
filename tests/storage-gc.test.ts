@@ -2,21 +2,20 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import type { Equipment, Pin, Project } from '../src/model';
 import { referencedStorageKeys, unusedStorageKeys } from '../src/storage-gc';
+import { baseProject, device, floor, pin } from './fixtures';
 
-const device = (id: string, photos: string[]): Equipment => ({
-  id, number: id, name: id, type: 'Камера', floorId: 'f1',
-  x: 0, y: 0, height: null, note: '', properties: {}, photos,
-});
-
-const pin = (photos: string[]): Pin => ({ id: 'z1', number: 'З-1', floorId: 'f1', x: 1, y: 2, comment: '', status: 'open', photos, createdAt: '2026-01-01T00:00:00Z', updatedAt: '2026-01-01T00:00:00Z' });
+/** Камера с фото: ключи проверяются в referencedStorageKeys/unusedStorageKeys. */
+const gcDevice = (id: string, photos: string[]): Equipment =>
+  device(id, 0, { name: id, type: 'Камера', height: null, properties: {}, photos });
+const gcPin = (photos: string[]): Pin => pin('z1', { number: 'З-1', photos });
 
 function project(id = 'p', pdf = 'pdf-a', photos: string[] = ['p1'], pinPhotos: string[] = ['z1']): Project {
-  return {
-    schemaVersion: 2, id, name: id, updatedAt: '2026-01-01T00:00:00Z',
-    floors: [{ id: 'f1', name: 'Этаж 1', elevation: 0, metersPerUnit: 0.1, page: 1, width: 1000, height: 700, pdfId: `idb:${pdf}` }],
-    equipment: [device('e1', photos)],
-    routes: [], cables: [], pins: [pin(pinPhotos)],
-  };
+  return baseProject({
+    id, name: id,
+    floors: [floor('f1', { name: 'Этаж 1', pdfId: `idb:${pdf}` })],
+    equipment: [gcDevice('e1', photos)],
+    routes: [], cables: [], pins: [gcPin(pinPhotos)],
+  });
 }
 
 test('ссылки собираются из этажей и фотографий', () => {

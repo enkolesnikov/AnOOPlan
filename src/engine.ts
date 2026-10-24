@@ -1,5 +1,12 @@
 import type { Cable, Dimension, Equipment, Project, Route, Segment, Vertex } from './model';
-import { isDiameterRoute, routeKindOf } from './route-kinds';
+import {
+  SECTION_DIM_KEYS,
+  effectiveSectionDims,
+  hasSectionOverride,
+  isDiameterRoute,
+  routeKindOf,
+  segmentSectionLabel,
+} from './route-kinds';
 
 const EPS = 1e-6;
 const finite = (value: unknown): value is number => typeof value === 'number' && Number.isFinite(value);
@@ -280,6 +287,10 @@ export interface SegmentFill {
   trayWidthMm: number | null;
   trayHeightMm: number | null;
   trayAreaMm2: number | null;
+  /** Сегмент переопределяет сечение трассы. */
+  overridden: boolean;
+  /** Эффективное сечение для ведомости: «100×50», «Ø20» или «S=500 мм²». */
+  sectionLabel: string;
   cables: number;
   lines: number;
   unknownCables: number;
@@ -330,32 +341,39 @@ interface TrayDimensions {
   problem: 'missing' | 'invalid' | null;
 }
 
-/** Площадь сечения КНС: явная площадь приоритетнее; для гофры/трубы — круг по диаметру. */
-function routeSectionDimensions(route: Route): TrayDimensions {
-  const areaState = dimensionState(route.trayAreaMm2);
-  if (areaState === 'valid') return { areaMm2: route.trayAreaMm2 as number, problem: null };
+/**
+ * Площадь сечения КНС участка: явная площадь приоритетнее; для гофры/трубы — круг по диаметру.
+ * Без сегмента считаются размеры трассы, с сегментом — его переопределение (поле в поле).
+ */
+function routeSectionDimensions(route: Route, segment?: Segment): TrayDimensions {
+  const dims = effectiveSectionDims(route, segment);
+  const areaState = dimensionState(dims.trayAreaMm2);
+  if (areaState === 'valid') return { areaMm2: dims.trayAreaMm2 as number, problem: null };
   if (areaState === 'invalid') return { areaMm2: null, problem: 'invalid' };
   if (isDiameterRoute(route)) {
     // Для гофры и трубы пользователь задаёт внутренний диаметр (в поле ширины);
     // площадь круга считается автоматически, высота борта не используется.
-    const diameterState = dimensionState(route.trayWidthMm);
+    const diameterState = dimensionState(dims.trayWidthMm);
     if (diameterState === 'invalid') return { areaMm2: null, problem: 'invalid' };
     if (diameterState === 'valid') {
-      const diameter = route.trayWidthMm as number;
+      const diameter = dims.trayWidthMm as number;
       const area = Math.PI * diameter * diameter / 4;
       return finite(area) && area > 0 ? { areaMm2: area, problem: null } : { areaMm2: null, problem: 'invalid' };
     }
     return { areaMm2: null, problem: 'missing' };
   }
-  const widthState = dimensionState(route.trayWidthMm);
-  const heightState = dimensionState(route.trayHeightMm);
+  const widthState = dimensionState(dims.trayWidthMm);
+  const heightState = dimensionState(dims.trayHeightMm);
   if (widthState === 'invalid' || heightState === 'invalid') return { areaMm2: null, problem: 'invalid' };
   if (widthState === 'valid' && heightState === 'valid') {
-    const area = (route.trayWidthMm as number) * (route.trayHeightMm as number);
+    const area = (dims.trayWidthMm as number) * (dims.trayHeightMm as number);
     return finite(area) && area > 0 ? { areaMm2: area, problem: null } : { areaMm2: null, problem: 'invalid' };
   }
   return { areaMm2: null, problem: 'missing' };
 }
+
+/** Заданное, но некорректное значение размера (0, отрицательное, NaN/Infinity). */
+const invalidGivenDimension = (value: unknown): boolean => isGiven(value) && (!finite(value) || value <= 0);
 
 const SECTION_PROBLEM_TEXT: Record<'missing' | 'invalid', string> = {
   missing: 'не задано сечение КНС',
@@ -363,16 +381,7 @@ const SECTION_PROBLEM_TEXT: Record<'missing' | 'invalid', string> = {
 };
 
 /** Текстовое обозначение КНС для ведомости: площадь, диаметр, размеры или прочерк. */
-export function routeSectionLabel(route: Route): string {
-  if (dimensionState(route.trayAreaMm2) === 'valid') return `S=${route.trayAreaMm2} мм²`;
-  if (isDiameterRoute(route)) {
-    return dimensionState(route.trayWidthMm) === 'valid' ? `Ø${route.trayWidthMm}` : '—';
-  }
-  if (dimensionState(route.trayWidthMm) === 'valid' && dimensionState(route.trayHeightMm) === 'valid') {
-    return `${route.trayWidthMm}×${route.trayHeightMm}`;
-  }
-  return '—';
-}
+export { routeSectionLabel, segmentSectionLabel } from './route-kinds';
 
 const validQuantity = (cable: Cable): boolean => Number.isInteger(cable.quantity) && cable.quantity > 0;
 
@@ -481,18 +490,52 @@ export function dimensionText(distance: DimensionGeometry): string {
 const ROUTE_GROUP_LABELS: Record<string, string> = {
   tray: 'Лоток', corrugated: 'Гофра', pipe: 'Труба', trunking: 'Кабель-канал',
 };
+export interface RouteSectionLength {
+  /** Эффективное сечение участков: «100×50», «Ø20» или «S=500 мм²». */
+  section: string;
+  length: number | null;
+  segments: number;
+  /** Хотя бы один сегмент переопределяет сечение трассы. */
+  overridden: boolean;
+}
 export interface RouteSummaryRow {
-  number: string; type: string; group: string; kind: string | null;
+  id: string; number: string; type: string; group: string; kind: string | null;
   length: number | null; segments: number; angles: RouteAngleStats;
+  /** Метраж по эффективным сечениям: в одной трассе могут быть разные лотки/трубы. */
+  sections: RouteSectionLength[];
 }
 export interface RouteSummaryGroup {
   group: string; length: number | null; routes: number; angles: RouteAngleStats;
 }
 export interface RouteSummaryResult { routes: RouteSummaryRow[]; groups: RouteSummaryGroup[] }
 
+/** Метраж трассы по эффективным сечениям сегментов (переопределение важнее размера трассы). */
+export function routeSectionLengths(project: Project, route: Route): RouteSectionLength[] {
+  const rows: RouteSectionLength[] = [];
+  for (const segment of route.segments) {
+    const section = segmentSectionLabel(route, segment);
+    const length = segmentLength(project, segment);
+    let row = rows.find(item => item.section === section);
+    if (!row) {
+      row = { section, length: 0, segments: 0, overridden: false };
+      rows.push(row);
+    }
+    row.segments += 1;
+    if (hasSectionOverride(segment)) row.overridden = true;
+    row.length = row.length === null || length === null ? null : row.length + length;
+  }
+  return rows;
+}
+
+/** Текст сечений трассы для схемы трасс: «100×50 — 12,4 м; Ø25 — 3,1 м». */
+export function routeSectionsText(sections: RouteSectionLength[], format: (value: number | null) => string): string {
+  if (!sections.length) return '—';
+  return sections.map(item => `${item.section} — ${format(item.length)} м`).join('; ');
+}
+
 /**
  * Сводка трасс для листа «Схема трасс»: метраж по каждой трассе и по типам КНС
- * (включая суммарную гофру) плюс количество углов у коробов.
+ * (включая суммарную гофру) плюс количество углов у коробов и метраж по сечениям.
  */
 export function routeSummary(project: Project): RouteSummaryResult {
   const routes: RouteSummaryRow[] = [];
@@ -502,7 +545,10 @@ export function routeSummary(project: Project): RouteSummaryResult {
     const group = kind ? ROUTE_GROUP_LABELS[kind] : (route.type || 'Своя КНС');
     const length = routeLength(project, route);
     const angles = routeAngleStats(route);
-    routes.push({ number: route.number, type: route.type, group, kind, length, segments: route.segments.length, angles });
+    routes.push({
+      id: route.id, number: route.number, type: route.type, group, kind,
+      length, segments: route.segments.length, angles, sections: routeSectionLengths(project, route),
+    });
     let totals = groups.find(item => item.group === group);
     if (!totals) { totals = { group, length: 0, routes: 0, angles: { total: 0, angles90: 0, angles45: 0, other: 0 } }; groups.push(totals); }
     totals.routes += 1;
@@ -538,17 +584,8 @@ const cableEquivalentDiameter = (cable: Cable): number | null => {
   return Math.sqrt(4 * section.areaMm2 / Math.PI);
 };
 
-/**
- * Подбор минимального стандартного сечения КНС по кабелям трассы:
- * заполнение не выше рекомендуемых 40 %, для круглых КНС диаметр не меньше
- * эквивалентного диаметра самого толстого кабеля.
- */
-export function suggestRouteSection(project: Project, route: Route): RouteSectionSuggestion | null {
-  const fill = trayFill(project);
-  const used = Math.max(0, ...fill.segments.filter(row => row.routeId === route.id && row.usedAreaMm2 !== null).map(row => row.usedAreaMm2 as number));
-  if (!(used > 0)) return null;
-  const routeCables = project.cables.filter(cable => cable.segmentIds.some(id => route.segments.some(segment => segment.id === id)));
-  const maxCableDiameter = Math.max(0, ...routeCables.map(cableEquivalentDiameter).filter((value): value is number => value !== null));
+/** Минимальное стандартное сечение под заданную занятую площадь и самый толстый кабель. */
+function pickStandardSection(used: number, route: Route, maxCableDiameter: number): RouteSectionSuggestion | null {
   if (isDiameterRoute(route)) {
     for (const diameter of [16, 20, 25, 32, 40, 50, 63, 75, 90, 110]) {
       const area = Math.PI * diameter * diameter / 4;
@@ -567,6 +604,43 @@ export function suggestRouteSection(project: Project, route: Route): RouteSectio
     }
   }
   return null;
+}
+
+/** Максимальная занятая площадь по сегментам с заданным фильтром; null — кабелей без сечения нет. */
+function usedAreaOf(project: Project, route: Route, predicate: (segment: Segment) => boolean): number {
+  const fill = trayFill(project);
+  const relevant = new Set(route.segments.filter(predicate).map(segment => segment.id));
+  const used = fill.segments
+    .filter(row => row.routeId === route.id && relevant.has(row.segmentId) && row.usedAreaMm2 !== null)
+    .map(row => row.usedAreaMm2 as number);
+  return used.length ? Math.max(...used) : 0;
+}
+
+/** Самый толстый кабель по эквивалентному диаметру среди кабелей трассы. */
+function thickestCableDiameter(project: Project, route: Route): number {
+  const segmentIds = new Set(route.segments.map(segment => segment.id));
+  const routeCables = project.cables.filter(cable => cable.segmentIds.some(id => segmentIds.has(id)));
+  return Math.max(0, ...routeCables.map(cableEquivalentDiameter).filter((value): value is number => value !== null));
+}
+
+/**
+ * Подбор минимального стандартного сечения КНС по кабелям трассы:
+ * заполнение не выше рекомендуемых 40 %, для круглых КНС диаметр не меньше
+ * эквивалентного диаметра самого толстого кабеля.
+ * Учитываются только сегменты без собственного сечения: сегменты с переопределением
+ * подбираются отдельно (`suggestSegmentSection`), иначе предложение их не изменит.
+ */
+export function suggestRouteSection(project: Project, route: Route): RouteSectionSuggestion | null {
+  const used = usedAreaOf(project, route, segment => !hasSectionOverride(segment));
+  if (!(used > 0)) return null;
+  return pickStandardSection(used, route, thickestCableDiameter(project, route));
+}
+
+/** Подбор стандартного сечения для одного сегмента с переопределением. */
+export function suggestSegmentSection(project: Project, route: Route, segment: Segment): RouteSectionSuggestion | null {
+  const used = usedAreaOf(project, route, item => item.id === segment.id);
+  if (!(used > 0)) return null;
+  return pickStandardSection(used, route, thickestCableDiameter(project, route));
 }
 
 export interface KnSLine {
@@ -599,34 +673,42 @@ export function specificationKnS(project: Project): KnSSpecification {
   const warnings: string[] = [];
   const catalog = project.catalog ?? [];
   for (const route of project.routes) {
-    const row = summary.routes.find(item => item.number === route.number && item.type === route.type);
+    const row = summary.routes.find(item => item.id === route.id);
     if (!row) continue;
     const subsystem = routeSubsystemLabel(route);
-    const section = routeSectionLabel(route);
-    const existing = lines.find(line => line.name === row.group && line.section === section && line.subsystem === subsystem);
-    const angles = row.group === 'Кабель-канал' ? row.angles.total : 0;
-    if (existing) {
-      existing.quantity = existing.quantity === null || row.length === null ? null : existing.quantity + row.length;
-      existing.angles += angles;
-      existing.routes += 1;
-      existing.cost = existing.quantity === null || existing.price === null ? null : existing.quantity * existing.price;
-      continue;
-    }
-    // Сначала ищем позицию по конкретному типу трассы, затем по группе (например, «Гофра»).
-    const match = catalog.find(item => item.kind === 'tray' && item.name.trim().toLowerCase() === route.type.trim().toLowerCase())
-      ?? catalog.find(item => item.kind === 'tray' && item.name.trim().toLowerCase() === row.group.trim().toLowerCase());
-    lines.push({
-      name: row.group,
-      section,
-      subsystem,
-      unit: 'м',
-      quantity: row.length,
-      angles,
-      article: match?.article ?? '',
-      manufacturer: match?.manufacturer ?? '',
-      price: match?.price ?? null,
-      cost: row.length === null || !match || match.price === null ? null : row.length * match.price,
-      routes: 1,
+    // Сечения могут различаться по сегментам: в спецификацию входит метраж каждого сечения.
+    const sections = row.sections.length
+      ? row.sections
+      : [{ section: '—', length: row.length, segments: 0, overridden: false }];
+    // Углы относятся к трассе целиком: для коробов относим их к основному сечению
+    // (наибольший метраж), чтобы не задваивать количество углов в разных строках.
+    const primary = sections.reduce((best, item, index) => ((item.length ?? -1) > (sections[best].length ?? -1) ? index : best), 0);
+    sections.forEach((item, index) => {
+      const angles = row.group === 'Кабель-канал' && index === primary ? row.angles.total : 0;
+      const existing = lines.find(line => line.name === row.group && line.section === item.section && line.subsystem === subsystem);
+      if (existing) {
+        existing.quantity = existing.quantity === null || item.length === null ? null : existing.quantity + item.length;
+        existing.angles += angles;
+        existing.routes += 1;
+        existing.cost = existing.quantity === null || existing.price === null ? null : existing.quantity * existing.price;
+        return;
+      }
+      // Сначала ищем позицию по конкретному типу трассы, затем по группе (например, «Гофра»).
+      const match = catalog.find(entry => entry.kind === 'tray' && entry.name.trim().toLowerCase() === route.type.trim().toLowerCase())
+        ?? catalog.find(entry => entry.kind === 'tray' && entry.name.trim().toLowerCase() === row.group.trim().toLowerCase());
+      lines.push({
+        name: row.group,
+        section: item.section,
+        subsystem,
+        unit: 'м',
+        quantity: item.length,
+        angles,
+        article: match?.article ?? '',
+        manufacturer: match?.manufacturer ?? '',
+        price: match?.price ?? null,
+        cost: item.length === null || !match || match.price === null ? null : item.length * match.price,
+        routes: 1,
+      });
     });
   }
   const totals: { group: string; length: number | null; angles: number }[] = [];
@@ -647,18 +729,30 @@ export function trayFill(project: Project): TrayFillResult {
   const warnings: string[] = [];
   const segments: SegmentFill[] = [];
   for (const route of project.routes) {
-    const section = routeSectionDimensions(route);
-    const safeTrayArea = section.problem === null && finite(section.areaMm2) && section.areaMm2 > 0 ? section.areaMm2 : null;
-    const trayWidthMm = givenNumber(route.trayWidthMm);
-    // Для круглых КНС высота не используется и в ведомость не попадает.
-    const trayHeightMm = isDiameterRoute(route) ? null : givenNumber(route.trayHeightMm);
-    const routeHasCables = route.segments.some(segment => project.cables.some(cable => cable.segmentIds.includes(segment.id)));
-    if (routeHasCables && section.problem) warnings.push(`Трасса ${route.number}: ${SECTION_PROBLEM_TEXT[section.problem]} — заполнение не рассчитано`);
+    const routeSection = routeSectionDimensions(route);
+    // Сегменты без своего сечения используют размер трассы: если он не задан,
+    // предупреждение относится к трассе, а не повторяется на каждом сегменте.
+    const inheritedCableSegments = route.segments.filter(segment => !hasSectionOverride(segment)
+      && project.cables.some(cable => cable.segmentIds.includes(segment.id)));
+    if (routeSection.problem && inheritedCableSegments.length) {
+      warnings.push(`Трасса ${route.number}: ${SECTION_PROBLEM_TEXT[routeSection.problem]} — заполнение не рассчитано`);
+    }
     route.segments.forEach((segment, index) => {
       const label = `${route.number}.${index + 1}`;
       const prefix = `Трасса ${route.number}, сегмент ${label}`;
+      const section = routeSectionDimensions(route, segment);
+      const overridden = hasSectionOverride(segment);
+      const dims = effectiveSectionDims(route, segment);
+      const safeTrayArea = section.problem === null && finite(section.areaMm2) && section.areaMm2 > 0 ? section.areaMm2 : null;
+      const trayWidthMm = givenNumber(dims.trayWidthMm);
+      // Для круглых КНС высота не используется и в ведомость не попадает.
+      const trayHeightMm = isDiameterRoute(route) ? null : givenNumber(dims.trayHeightMm);
       const passing = project.cables.filter(cable => cable.segmentIds.includes(segment.id));
       const segmentWarnings: string[] = [];
+      // Ошибка в собственном сечении сегмента не должна теряться за предупреждением трассы.
+      if (section.problem && (overridden || !inheritedCableSegments.length) && passing.length) {
+        segmentWarnings.push(`${prefix}: ${SECTION_PROBLEM_TEXT[section.problem]} — заполнение не рассчитано`);
+      }
       let lines = 0;
       let usedAreaMm2: number | null = 0;
       let unknownCables = 0;
@@ -667,10 +761,10 @@ export function trayFill(project: Project): TrayFillResult {
       const unknownSectionNumbers: string[] = [];
       const unknownQuantityNumbers: string[] = [];
       for (const cable of passing) {
-        const section = cableSection(cable);
+        const cableArea = cableSection(cable);
         const quantityOk = validQuantity(cable);
         if (quantityOk) lines += cable.quantity;
-        if (section.areaMm2 === null) {
+        if (cableArea.areaMm2 === null) {
           sectionUnknown = true;
           unknownSectionNumbers.push(cable.number);
         }
@@ -678,11 +772,11 @@ export function trayFill(project: Project): TrayFillResult {
           quantityUnknown = true;
           unknownQuantityNumbers.push(cable.number);
         }
-        if (section.areaMm2 === null || !quantityOk) {
+        if (cableArea.areaMm2 === null || !quantityOk) {
           unknownCables += 1;
           continue;
         }
-        usedAreaMm2 += section.areaMm2 * cable.quantity;
+        usedAreaMm2 += cableArea.areaMm2 * cable.quantity;
       }
       if (sectionUnknown) {
         const noun = unknownSectionNumbers.length === 1 ? 'кабеля' : 'кабелей';
@@ -723,6 +817,8 @@ export function trayFill(project: Project): TrayFillResult {
         trayWidthMm,
         trayHeightMm,
         trayAreaMm2: areaMm2,
+        overridden,
+        sectionLabel: segmentSectionLabel(route, segment),
         cables: passing.length,
         lines,
         unknownCables,
@@ -753,6 +849,8 @@ export interface TrayFillRow {
   areaMm2: number | null;
   fillPercent: number | null;
   status: 'ок' | 'внимание' | 'превышено' | 'пусто' | 'неполный';
+  /** Сечение взято с сегмента, а не с трассы. */
+  overridden: boolean;
 }
 
 const TRAY_STATUS_LABELS: Record<TrayFillStatus, TrayFillRow['status']> = {
@@ -806,23 +904,24 @@ export function specifications(project: Project) {
   }
   const fill = trayFill(project);
   const trayFillRows: TrayFillRow[] = [];
-  let fillIndex = 0;
+  // Строки заполнения идут в том же порядке, что сегменты; связываем по id, а не по индексу.
+  const fillBySegment = new Map(fill.segments.map(row => [row.segmentId, row]));
   for (const route of project.routes) {
-    for (let index = 0; index < route.segments.length; index += 1) {
-      const segmentFill = fill.segments[fillIndex];
-      fillIndex += 1;
+    route.segments.forEach((segment, index) => {
+      const segmentFill = fillBySegment.get(segment.id);
       trayFillRows.push({
         route: route.number,
         segment: `${route.number}.${index + 1}`,
         routeType: route.type,
-        tray: routeSectionLabel(route),
+        tray: segmentSectionLabel(route, segment),
         trayAreaMm2: segmentFill?.trayAreaMm2 ?? null,
         lines: segmentFill?.lines ?? 0,
         areaMm2: segmentFill?.usedAreaMm2 ?? null,
         fillPercent: segmentFill?.fillPercent ?? null,
         status: TRAY_STATUS_LABELS[segmentFill?.status ?? 'incomplete'],
+        overridden: segmentFill?.overridden ?? false,
       });
-    }
+    });
   }
   for (const group of infrastructure) {
     const typeSegments = fill.segments.filter(segment => segment.routeType === group.type);
@@ -898,11 +997,14 @@ export function validateProject(project: Project): string[] {
   const { duplicates } = segmentIndex(project);
   for (const id of duplicates) errors.push(`Неоднозначный ID сегмента ${id}`);
   for (const route of project.routes) {
-    const trayValues = [route.trayWidthMm, route.trayHeightMm, route.trayAreaMm2];
-    if (trayValues.some(value => isGiven(value) && (!finite(value) || value <= 0))) errors.push(`Трасса ${route.number}: неверное сечение КНС`);
-    for (const segment of route.segments) {
+    if (SECTION_DIM_KEYS.some(key => invalidGivenDimension(route[key]))) errors.push(`Трасса ${route.number}: неверное сечение КНС`);
+    route.segments.forEach((segment, index) => {
+      // Переопределение сечения на сегменте проверяется так же, как размеры трассы.
+      if (SECTION_DIM_KEYS.some(key => invalidGivenDimension(segment[key]))) {
+        errors.push(`Трасса ${route.number}, сегмент ${route.number}.${index + 1}: неверное сечение КНС`);
+      }
       errors.push(...segmentErrors(project, segment), ...reserveErrors(`Сегмент ${segment.id}`, segment.reservePercent, segment.reserveFixed));
-    }
+    });
   }
   for (const cable of project.cables) {
     const outerDiameterMm = cable.outerDiameterMm;

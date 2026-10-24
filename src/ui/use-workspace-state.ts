@@ -120,7 +120,7 @@ export function useWorkspaceState() {
     setSelection(null);
     setDraft([]);
   });
-  const { pdfPages, renderPlan, pdfError } = usePdfBackground({
+  const { pdfPages, renderPlan, pdfError, pdfNote } = usePdfBackground({
     floor, enabled: view === 'plan', viewRef, zoom, pan, canvas, stage, mutate,
   });
   const { historyOpen, setHistoryOpen, snapshots, setSnapshots, takeSnapshot, openHistory, restoreSnapshot, deleteSnapshot } = useSnapshots({
@@ -155,7 +155,7 @@ export function useWorkspaceState() {
     projectRef, floor, dirty, dirtyRef, equipment, route, cable, pin, dimension, photoOwner,
     cableSectionResult, calculation, issues, cableCalcs, fill, cableFill, routeFillWorst, totals, issueCount,
     undo, redo, commit, mutate, history, resetHistory, recordHistory,
-    pdfPages, renderPlan, pdfError,
+    pdfPages, renderPlan, pdfError, pdfNote,
     historyOpen, setHistoryOpen, snapshots, setSnapshots, takeSnapshot, openHistory, restoreSnapshot, deleteSnapshot,
     photoUrls, load,
   };

@@ -1,25 +1,16 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { calculateCable, dimensionGeometry, dimensionText, findRoute, routeAngleStats, routeLength, routeSummary, segmentLength, specificationKnS, specifications, suggestRouteSection, validateProject } from '../src/engine';
-import type { Equipment, Project, Segment, Vertex } from '../src/model';
+import type { Project } from '../src/model';
+import { baseProject, closeTo, device, route, segment, vertex } from './fixtures';
 
-const vertex = (id: string, x: number, y = 0, height: number | null = 3, floorId = 'f1'): Vertex => ({ id, x, y, height, floorId });
-const segment = (id: string, a: Vertex, b: Vertex, extra: Partial<Segment> = {}): Segment => ({ id, a, b, mode: 'orthogonal', reservePercent: 0, reserveFixed: 0, ...extra });
-const device = (id: string, x: number, height: number | null = 1, floorId = 'f1'): Equipment => ({ id, number: id, name: `Датчик ${id}`, type: 'Датчик', floorId, x, y: 0, height, note: '', properties: { model: 'Д-1' } });
+/** Проект тестов расчёта: трасса и оборудование лежат на одной высоте (3 м). */
 function fixture(): Project {
-  return {
-    schemaVersion: 2, id: 'p', name: 'Тест', updatedAt: '2026-01-01T00:00:00Z',
-    floors: [
-      { id: 'f1', name: 'Первый', elevation: 0, metersPerUnit: 0.1, page: 1, width: 1000, height: 700 },
-      { id: 'f2', name: 'Второй', elevation: 4, metersPerUnit: 0.1, page: 2, width: 1000, height: 700 },
-    ],
-    equipment: [device('a', 0), device('b', 100)],
-    routes: [{ id: 'r', number: 'Т1', type: 'Лоток', note: '', segments: [segment('s', vertex('v1', 0), vertex('v2', 100))] }],
-    pins: [],
-    cables: [{ id: 'c', number: 'К1', name: 'Линия', brand: 'ВВГ', purpose: '', fromId: 'a', toId: 'b', segmentIds: ['s'], reservePercent: 0, reserveFixed: 0, startReserve: 0, endReserve: 0, quantity: 1, note: '' }],
-  };
+  return baseProject({
+    routes: [route('r', [segment('s', vertex('v1', 0), vertex('v2', 100))])],
+  });
 }
-const close = (actual: number | null, expected: number) => { assert.notEqual(actual, null); assert.ok(Math.abs(actual! - expected) < 1e-10, `${actual} != ${expected}`); };
+const close = (actual: number | null, expected: number) => closeTo(actual, expected, 1e-10);
 const incomplete = (p: Project) => {
   const result = calculateCable(p, p.cables[0]);
   assert.equal(result.complete, false);
@@ -62,7 +53,7 @@ test('межэтажная вертикаль учитывает отметки 
   const p = fixture();
   const s = segment('s', vertex('a', 0, 0, 3), vertex('b', 0, 0, 1, 'f2'));
   p.routes[0].segments = [s];
-  p.equipment[1] = device('b', 0, 0, 'f2');
+  p.equipment[1] = device('b', 0, { height: 0, floorId: 'f2' });
   close(segmentLength(p, s), 2);
   close(calculateCable(p, p.cables[0]).geometry, 5);
   s.b.x = 1;
@@ -245,7 +236,7 @@ test('длина трассы, углы и сводка по типам КНС',
 
 test('относительный размер между оборудованием считается по прямой', () => {
   const p = fixture();
-  p.equipment.push(device('c', 0, 1, 'f2'));
+  p.equipment.push(device('c', 0, { height: 1, floorId: 'f2' }));
   const flat = dimensionGeometry(p, { id: 'd1', fromId: 'a', toId: 'b' });
   assert.deepEqual(flat.units, 100);
   assert.deepEqual(flat.meters, 10);

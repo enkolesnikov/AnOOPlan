@@ -13,17 +13,16 @@ import {
 import type { ProjectPhotoAttachment, ProjectPdfAttachment } from '../src/project-file';
 import { migrateProject, ProjectSchemaError } from '../src/migrations';
 import { createDemoProject } from '../src/demo';
-import { ApiError, assertProject } from '../server/validation.js';
+import { assertProject } from '../server/validation.js';
+import { baseProject, device, floor, rejectsProject } from './fixtures';
 import type { Project } from '../src/model';
 
-function project(): Project {
-  return {
-    schemaVersion: 2, id: 'p1', name: 'Проект обмена', updatedAt: '2026-01-01T00:00:00Z',
-    floors: [{ id: 'f1', name: 'Этаж', elevation: 0, metersPerUnit: 0.1, page: 1, width: 1000, height: 700 }],
-    equipment: [{ id: 'e1', number: 'E1', name: 'Камера', type: 'Камера', floorId: 'f1', x: 1, y: 2, height: null, note: '', properties: {} }],
-    routes: [], cables: [], pins: [],
-  };
-}
+const project = (): Project => baseProject({
+  id: 'p1', name: 'Проект обмена',
+  floors: [floor('f1', { name: 'Этаж' })],
+  equipment: [device('e1', 1, { y: 2, number: 'E1', name: 'Камера', type: 'Камера', height: null, properties: {} })],
+  routes: [], cables: [], pins: [],
+});
 
 const PDFS: ProjectPdfAttachment[] = [{ id: 'idb:plan-1', name: 'plan.pdf', dataBase64: 'JVBERi0xLjQK' }];
 const PHOTOS: ProjectPhotoAttachment[] = [{ key: 'photo-1', name: 'foto.jpg', mime: 'image/jpeg', dataBase64: 'Zm90bw==' }];
@@ -175,38 +174,33 @@ test('assertProject принимает проект из .anooplan с докум
   assert.doesNotThrow(() => assertProject(bare.project, () => true), 'старый проект без документа валиден');
 });
 
-const rejectsProject = (input: unknown, pattern: RegExp) => {
-  assert.throws(
-    () => assertProject(input, () => true),
-    (error: unknown) => error instanceof ApiError && error.status === 422 && pattern.test(error.message),
-  );
-};
+/** Копия демо-проекта с прицелом на «сырой» JSON: поля можно портить для валидатора. */
+const mutableProject = (): { document: Record<string, unknown>; [key: string]: unknown } =>
+  JSON.parse(JSON.stringify(createDemoProject())) as { document: Record<string, unknown>; [key: string]: unknown };
 
 test('assertProject отклоняет мусор в document/changeLog с 422', () => {
-  const base = createDemoProject();
-
-  const badChangeLog = JSON.parse(JSON.stringify(base)) as Record<string, any>;
+  const badChangeLog = mutableProject();
   badChangeLog.document.changeLog = 'нет';
   rejectsProject(badChangeLog, /project\.document\.changeLog: некорректная запись/);
 
-  const nonObjectEntry = JSON.parse(JSON.stringify(base)) as Record<string, any>;
+  const nonObjectEntry = mutableProject();
   nonObjectEntry.document.changeLog = [null];
   rejectsProject(nonObjectEntry, /project\.document\.changeLog: некорректная запись/);
 
-  const missingFields = JSON.parse(JSON.stringify(base)) as Record<string, any>;
+  const missingFields = mutableProject();
   missingFields.document.changeLog = [{ version: '1' }];
   rejectsProject(missingFields, /project\.document\.changeLog: некорректная запись/);
 
-  const badField = JSON.parse(JSON.stringify(base)) as Record<string, any>;
+  const badField = mutableProject();
   badField.document.changeLog = [{ id: 'c1', version: '1', date: '2026-10-01', author: 'А', description: 5 }];
   rejectsProject(badField, /project\.document\.changeLog: некорректная запись/);
 
-  const badOrganization = JSON.parse(JSON.stringify(base)) as Record<string, any>;
+  const badOrganization = mutableProject();
   badOrganization.document.organization = 5;
   rejectsProject(badOrganization, /project\.document\.organization: некорректная строка/);
 
-  const badDocument = JSON.parse(JSON.stringify(base)) as Record<string, any>;
-  badDocument.document = 'документ';
+  const badDocument = mutableProject();
+  (badDocument as { document: unknown }).document = 'документ';
   rejectsProject(badDocument, /project\.document: ожидается объект/);
 });
 

@@ -711,6 +711,62 @@ if (traySection) {
 const infrastructureSection = Array.from(document.querySelectorAll('.spec-section')).find(section => (section.querySelector('h2')?.textContent || '').includes('Кабельная инфраструктура'));
 check(Boolean(infrastructureSection) && (infrastructureSection.textContent || '').includes('Макс. заполнение, %'), 'в инфраструктуре есть колонка «Макс. заполнение, %»');
 
+console.log('\n7j-2. Сегментные размеры КНС');
+const segmentPlanTab = Array.from(document.querySelectorAll('.view-tabs button')).find(button => (button.textContent || '').trim() === 'План');
+if (segmentPlanTab) segmentPlanTab.click();
+await sleep(200);
+const segmentRoutesTab = Array.from(document.querySelectorAll('.structure-tabs button')).find(button => (button.textContent || '').includes('Трассы'));
+if (segmentRoutesTab) segmentRoutesTab.click();
+await sleep(200);
+const segmentRouteRow = document.querySelector('.object-row[data-kind="route"]');
+if (segmentRouteRow) { segmentRouteRow.click(); await sleep(300); }
+const segmentEditors = document.querySelectorAll('.properties .segment-editor');
+check(segmentEditors.length > 1, `в свойствах трассы есть редакторы сегментов (${segmentEditors.length})`);
+const segmentEditorText = () => document.querySelector('.properties .segment-editor')?.textContent || '';
+check(segmentEditorText().includes('Сечение КНС на сегменте'), 'у сегмента есть блок «Сечение КНС на сегменте»');
+check(segmentEditorText().includes('Пустое поле — размер трассы'), 'у сегментного сечения есть подсказка про наследование размера трассы');
+const segmentSectionText = () => document.querySelector('.properties .segment-editor .section-label span')?.textContent || '';
+check(segmentSectionText().includes('100×50'), `до правки сегмент использует лоток трассы: ${segmentSectionText()}`);
+const segmentField = text => Array.from((document.querySelector('.properties .segment-editor') || document).querySelectorAll('label')).find(label => (label.textContent || '').includes(text));
+// React слушает нативный value-сеттер: прямое присваивание input.value не считается изменением.
+const nativeValue = (input, value) => {
+  const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
+  setter.call(input, value);
+  input.dispatchEvent(new window.Event('input', { bubbles: true }));
+};
+const segmentWidthInput = segmentField('Ширина, мм')?.querySelector('input');
+if (segmentWidthInput) { nativeValue(segmentWidthInput, '50'); await sleep(400); }
+const segmentHeightInput = segmentField('Высота борта, мм')?.querySelector('input');
+if (segmentHeightInput) { nativeValue(segmentHeightInput, '50'); await sleep(400); }
+check(segmentSectionText().includes('50×50'), `своё сечение сегмента показано в свойствах: ${segmentSectionText()}`);
+check(segmentSectionText().includes('своё'), 'сечение помечено как своё');
+const firstFillRowText = document.querySelector('.properties .tray-fill .tray-fill-row')?.textContent || '';
+check(firstFillRowText.includes('50×50'), `сегментная строка заполнения использует сечение сегмента: ${firstFillRowText.slice(0, 80)}`);
+const segmentFillText = document.querySelector('.properties .segment-editor .segment-fill')?.textContent || '';
+check(segmentFillText.includes('50×50'), `в редакторе сегмента показано его сечение: ${segmentFillText.slice(0, 80)}`);
+const segmentResetButton = Array.from(document.querySelectorAll('.properties .segment-editor button')).find(button => (button.textContent || '').includes('Как у трассы'));
+check(Boolean(segmentResetButton), 'есть кнопка сброса сечения к трассе');
+if (segmentResetButton) {
+  segmentResetButton.click();
+  await sleep(400);
+}
+check(segmentSectionText().includes('100×50') && !segmentSectionText().includes('своё'), `после сброса сегмент снова использует лоток трассы: ${segmentSectionText()}`);
+const resetFillRowText = document.querySelector('.properties .tray-fill .tray-fill-row')?.textContent || '';
+check(resetFillRowText.includes('100×50'), `строка заполнения вернулась к лотку трассы: ${resetFillRowText.slice(0, 80)}`);
+
+const segmentSpecsTab = Array.from(document.querySelectorAll('.view-tabs button')).find(button => (button.textContent || '').trim() === 'Ведомости');
+if (segmentSpecsTab) { segmentSpecsTab.click(); await sleep(700); }
+const schemeSection = Array.from(document.querySelectorAll('.spec-section')).find(section => (section.querySelector('h2')?.textContent || '').includes('Схема трасс'));
+check(Boolean(schemeSection), 'в ведомостях есть раздел «Схема трасс»');
+if (schemeSection) {
+  const schemeHeaders = Array.from(schemeSection.querySelectorAll('th')).map(cell => (cell.textContent || '').trim());
+  check(schemeHeaders.includes('Сечения'), `в схеме трасс есть колонка «Сечения»: ${schemeHeaders.join(', ')}`);
+  const sectionCells = Array.from(schemeSection.querySelectorAll('tbody tr'))
+    .map(row => (row.children[schemeHeaders.indexOf('Сечения')]?.textContent || '').trim())
+    .filter(Boolean);
+  check(sectionCells.some(value => /\d+×\d+ — \d/.test(value)), `в схеме трасс показан метраж по сечению: ${sectionCells.slice(0, 2).join(' | ')}`);
+}
+
 console.log('\n7k. Иконки оборудования и выбор цвета');
 const planViewTab = Array.from(document.querySelectorAll('.view-tabs button')).find(button => (button.textContent || '').trim() === 'План');
 if (planViewTab) planViewTab.click();
