@@ -2,6 +2,7 @@
 // отдельно растром, а трассы и оборудование — векторами; снимок попадает в PDF «на подпись».
 import type { Floor, Project } from './model';
 import { EQUIPMENT_ICON_GLYPHS, equipmentColor, equipmentIcon } from './equipment-icons';
+import { routeColor } from './route-kinds';
 
 const escapeXml = (value: string): string => value.replace(/[<>&"']/g, character => {
   switch (character) {
@@ -29,16 +30,17 @@ export function buildPlanSvg(project: Project, floor: Floor): string {
       const onFloorA = segment.a.floorId === floor.id;
       const onFloorB = segment.b.floorId === floor.id;
       if (!onFloorA && !onFloorB) continue;
+      const color = routeColor(route);
       if (onFloorA && onFloorB) {
         segments.push(
           `<line x1="${round(segment.a.x)}" y1="${round(segment.a.y)}" x2="${round(segment.b.x)}" y2="${round(segment.b.y)}" ` +
-          `stroke="#008e94" stroke-width="${round(routeWidth)}" stroke-linecap="round" />`,
+          `stroke="${color}" stroke-width="${round(routeWidth)}" stroke-linecap="round" />`,
         );
       } else {
         const vertex = onFloorA ? segment.a : segment.b;
         risers.push(
-          `<circle cx="${round(vertex.x)}" cy="${round(vertex.y)}" r="${round(casingWidth)}" fill="none" stroke="#875ec5" stroke-width="${round(routeWidth / 2)}" />` +
-          `<text x="${round(vertex.x + casingWidth)}" y="${round(vertex.y - casingWidth / 2)}" font-size="${round(symbol * 0.7)}" fill="#875ec5" font-family="sans-serif">↕</text>`,
+          `<circle cx="${round(vertex.x)}" cy="${round(vertex.y)}" r="${round(casingWidth)}" fill="none" stroke="${color}" stroke-width="${round(routeWidth / 2)}" />` +
+          `<text x="${round(vertex.x + casingWidth)}" y="${round(vertex.y - casingWidth / 2)}" font-size="${round(symbol * 0.7)}" fill="${color}" font-family="sans-serif">↕</text>`,
         );
       }
     }

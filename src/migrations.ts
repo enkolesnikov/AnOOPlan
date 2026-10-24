@@ -1,6 +1,7 @@
 import type { ChangeEntry, Project } from './model';
 import { normalizeEquipmentColor } from './equipment-icons';
 import { isCatalogDate, normalizeCatalog } from './estimate';
+import { normalizeRouteColor } from './route-kinds';
 
 /**
  * Текущая версия схемы проекта. Пока это 1; каркас миграций нужен, чтобы
@@ -94,6 +95,8 @@ function normalizeRoute(value: unknown): Project['routes'][number] {
     trayWidthMm: optionalNumber(value.trayWidthMm),
     trayHeightMm: optionalNumber(value.trayHeightMm),
     trayAreaMm2: optionalNumber(value.trayAreaMm2),
+    // Цвет трассы необязателен: валидный #rgb/#rrggbb приводится к #rrggbb, мусор считается отсутствующим.
+    color: normalizeRouteColor(value.color) ?? undefined,
   } as Project['routes'][number];
 }
 

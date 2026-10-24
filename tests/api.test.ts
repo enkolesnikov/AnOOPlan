@@ -146,6 +146,39 @@ test('цвет оборудования сохраняется, а неверн�
   } finally { await h.close(); }
 });
 
+test('цвет трассы КНС сохраняется и валидируется', async () => {
+  const h = await harness();
+  try {
+    const p = fixture();
+    p.routes[0].color = '#ABC';
+    assert.equal((await h.request('/api/projects', 'POST', p)).status, 201);
+    const stored = await (await h.request('/api/projects/project-1')).json() as Project;
+    assert.equal(String(stored.routes[0].color).toLowerCase(), '#abc');
+
+    const short = fixture();
+    short.id = 'project-2';
+    short.routes[0].color = '#00ff00';
+    assert.equal((await h.request('/api/projects', 'POST', short)).status, 201);
+
+    const invalid: Array<(project: Project) => void> = [
+      project => { project.routes[0].color = 'red'; },
+      project => { project.routes[0].color = '#12'; },
+      project => { project.routes[0].color = ''; },
+    ];
+    for (const mutate of invalid) {
+      const bad = fixture(); mutate(bad);
+      const response = await h.request('/api/projects/project-1', 'PUT', bad);
+      assert.equal(response.status, 422);
+    }
+    const rejected = await h.request('/api/projects/project-1', 'PUT', { ...fixture(), routes: [{ ...fixture().routes[0], color: 'red' }] });
+    assert.equal(rejected.status, 422);
+    assert.match((await rejected.json()).error, /route\.color/);
+
+    const after = await (await h.request('/api/projects/project-1')).json() as Project;
+    assert.equal(String(after.routes[0].color).toLowerCase(), '#abc', 'отклонённый PUT не испортил цвет');
+  } finally { await h.close(); }
+});
+
 test('PDF multipart and portable backup restore preserve original bytes; restore is atomic', async () => {
   const a = await harness(); const b = await harness();
   try {

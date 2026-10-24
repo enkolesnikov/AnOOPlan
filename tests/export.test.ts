@@ -22,7 +22,7 @@ const fonts: JournalFonts = {
   bold: toArrayBuffer('../src/assets/fonts/AnOOPlanSans-Bold.ttf'),
 };
 
-const SHEETS = ['Кабельный журнал', 'Оборудование', 'Кабели', 'Инфраструктура', 'Заполнение лотков', 'Смета', 'Коммерческое предложение', 'Справочник цен', 'Замечания', 'Предупреждения'];
+const SHEETS = ['Кабельный журнал', 'Оборудование', 'Кабели', 'Инфраструктура', 'Заполнение КНС', 'Смета', 'Коммерческое предложение', 'Справочник цен', 'Замечания', 'Предупреждения'];
 const ESTIMATE_HEADER = ['Раздел', 'Позиция', 'Ед.', 'Количество', 'Цена, ₽', 'Сумма, ₽', 'Источник цены', 'Примечание'];
 const COMMERCIAL_HEADER = ['Раздел', 'Сумма, ₽'];
 const CATALOG_HEADER = ['Вид', 'Наименование', 'Ед.', 'Цена, ₽', 'Примечание'];
@@ -31,7 +31,7 @@ const CATALOG_HEADER = ['Вид', 'Наименование', 'Ед.', 'Цена
 const squash = (value: string): string => value.replace(/\s+/g, ' ');
 const pdfNumber = (value: number | null): string => squash(formatNumber(value));
 const JOURNAL_HEADER = ['Номер', 'Наименование', 'Марка', 'Диаметр, мм', 'Сечение, мм²', 'Назначение', 'От', 'До', 'Трасса (ID)', 'Количество', 'Геометрия, м', 'Запас трассы, м', 'Запас кабеля, м', 'Запас концов, м', 'Итог одного, м', 'Итог с количеством, м', 'Цена, ₽/м', 'Стоимость, ₽', 'Расчёт полный', 'Предупреждения', 'Примечание'];
-const FILL_HEADER = ['Трасса', 'Сегмент', 'Тип трассы', 'Лоток, мм', 'Площадь лотка, мм²', 'Линий', 'Площадь кабелей, мм²', 'Заполнение, %', 'Статус'];
+const FILL_HEADER = ['Трасса', 'Сегмент', 'Тип трассы', 'КНС, мм', 'Площадь КНС, мм²', 'Линий', 'Площадь кабелей, мм²', 'Заполнение, %', 'Статус'];
 
 const emptyProject = (): Project => ({
   schemaVersion: 2, id: 'p', name: 'Пустой проект', updatedAt: '2026-01-01T00:00:00Z',
@@ -83,7 +83,7 @@ test('листы выгрузки совпадают по набору с сер
   assert.equal(journal.rows.length, createDemoProject().cables.length + 1);
   assert.deepEqual(equipment.rows[0], ['Тип', 'Модель', 'Этаж', 'Количество']);
   assert.deepEqual(infrastructure.rows[0], ['Тип', 'Длина, м', 'Сегментов', 'Кабелей', 'Макс. заполнение, %', 'Сегментов с превышением']);
-  assert.equal(fill.name, 'Заполнение лотков');
+  assert.equal(fill.name, 'Заполнение КНС');
   assert.deepEqual(fill.rows[0], FILL_HEADER);
   const segments = createDemoProject().routes.reduce((sum, route) => sum + route.segments.length, 0);
   assert.equal(segments, 7, 'демо-проект должен содержать 7 сегментов');
@@ -114,7 +114,7 @@ test('XLSX собирается в приложении и читается об
   assert.equal(pins.length, project.pins.length);
   assert.ok(pins.some(row => row['Номер'] === project.pins[0].number));
 
-  const fill = XLSX.utils.sheet_to_json<unknown[]>(workbook.Sheets['Заполнение лотков'], { header: 1, defval: '' });
+  const fill = XLSX.utils.sheet_to_json<unknown[]>(workbook.Sheets['Заполнение КНС'], { header: 1, defval: '' });
   assert.deepEqual(fill[0], FILL_HEADER);
   assert.equal(fill.length, project.routes.reduce((sum, route) => sum + route.segments.length, 0) + 1);
   assert.ok(fill.slice(1).every(row => typeof row[7] === 'number'), 'заполнение в демо-проекте известно и не пустое');
@@ -181,9 +181,9 @@ test('XLSX собирается в приложении и читается об
   const camera = catalog.find(row => row[1] === 'Камера входа')!;
   assert.deepEqual(camera, ['Оборудование', 'Камера входа', 'шт', 6500, '']);
   assert.deepEqual(catalog.find(row => row[1] === 'КВК-П 2×0.75'), ['Кабель', 'КВК-П 2×0.75', 'м', 38, '']);
-  assert.deepEqual(catalog.find(row => row[1] === 'Стояк'), ['Лоток', 'Стояк', 'м', 620, '']);
+  assert.deepEqual(catalog.find(row => row[1] === 'Стояк'), ['КНС', 'Стояк', 'м', 620, '']);
   for (const row of catalog.slice(1)) {
-    assert.ok(['Оборудование', 'Кабель', 'Лоток'].includes(String(row[0])), `неизвестный вид позиции: ${String(row[0])}`);
+    assert.ok(['Оборудование', 'Кабель', 'КНС'].includes(String(row[0])), `неизвестный вид позиции: ${String(row[0])}`);
   }
 });
 
@@ -212,14 +212,14 @@ test('PDF журнала собирается офлайн с кириллице
   // Новые колонки журнала и секция заполнения лотка.
   assert.ok(text.includes('Ø, мм'), 'нет колонки диаметра');
   assert.ok(text.includes('S, мм²'), 'нет колонки сечения');
-  assert.ok(text.includes('Заполнение лотков'), 'нет секции заполнения лотков');
+  assert.ok(text.includes('Заполнение КНС'), 'нет секции заполнения лотков');
   assert.ok(text.includes('Заполнение, %'), 'нет колонки процента заполнения');
   assert.ok(text.includes('Внимание выше 40'), 'в примечании нет порога 40 %');
   assert.ok(text.includes('превышение выше 50'), 'в примечании нет порога 50 %');
   // В инфраструктуре PDF те же новые колонки, что и в XLSX/CSV.
   assert.ok(text.includes('Макс. заполнение, %'), 'в PDF-инфраструктуре нет колонки макс. заполнения');
   assert.ok(text.includes('Сегментов с превышением'), 'в PDF-инфраструктуре нет колонки превышений');
-  assert.ok(text.includes('Площадь лотка, мм²'), 'в PDF-разделе нет площади лотка');
+  assert.ok(text.includes('Площадь КНС, мм²'), 'в PDF-разделе нет площади лотка');
   const fillPercent = specifications(project).trayFill[0].fillPercent;
   assert.ok(fillPercent !== null, 'в демо-проекте заполнение должно считаться');
   assert.ok(text.includes(formatNumber(fillPercent)), `в PDF нет значения заполнения ${formatNumber(fillPercent)}`);
@@ -291,9 +291,9 @@ test('CSV содержит диаметр, сечение и раздел зап
   assert.equal(journalRow[3], '"6"', 'у кабеля демо-проекта диаметр 6 мм');
   assert.ok(journalRow[4].startsWith('"28.2'), 'сечение должно считаться по диаметру');
 
-  const start = lines.indexOf('"Заполнение лотков"');
+  const start = lines.indexOf('"Заполнение КНС"');
   assert.ok(start > 0, 'в CSV нет раздела заполнения лотков');
-  assert.equal(lines[start + 1], '"Трасса";"Сегмент";"Лоток, мм";"Линий";"Площадь кабелей, мм²";"Заполнение, %";"Статус"');
+  assert.equal(lines[start + 1], '"Трасса";"Сегмент";"КНС, мм";"Линий";"Площадь кабелей, мм²";"Заполнение, %";"Статус"');
   const segments = project.routes.reduce((sum, route) => sum + route.segments.length, 0);
   const fillRows = lines.slice(start + 2, start + 2 + segments);
   assert.equal(fillRows.length, segments, 'в CSV должна быть строка на каждый сегмент');
@@ -342,7 +342,7 @@ test('незаданные размеры выгружаются как null/п�
   assert.equal(journal.rows[1][3], null, 'неизвестный диаметр — null, не 0');
   assert.equal(journal.rows[1][4], null, 'неизвестное сечение — null, не 0');
 
-  const fill = sheets.find(sheet => sheet.name === 'Заполнение лотков')!;
+  const fill = sheets.find(sheet => sheet.name === 'Заполнение КНС')!;
   assert.equal(fill.rows.length, 2);
   assert.equal(fill.rows[1][4], null, 'площадь лотка неизвестна — null');
   assert.equal(fill.rows[1][7], null, 'заполнение неизвестно — null');
@@ -356,12 +356,12 @@ test('незаданные размеры выгружаются как null/п�
   const journalRows = XLSX.utils.sheet_to_json<Record<string, string>>(workbook.Sheets['Кабельный журнал'], { defval: '' });
   assert.equal(journalRows[0]['Диаметр, мм'], '');
   assert.equal(journalRows[0]['Сечение, мм²'], '');
-  const fillRows = XLSX.utils.sheet_to_json<unknown[]>(workbook.Sheets['Заполнение лотков'], { header: 1, defval: '' });
+  const fillRows = XLSX.utils.sheet_to_json<unknown[]>(workbook.Sheets['Заполнение КНС'], { header: 1, defval: '' });
   assert.equal(fillRows[1][7], '');
   assert.equal(fillRows[1][8], 'неполный');
 
   const lines = clientCsv(project).split('\r\n');
-  const start = lines.indexOf('"Заполнение лотков"');
+  const start = lines.indexOf('"Заполнение КНС"');
   assert.ok(start > 0);
   const cells = lines[start + 2].split(';');
   assert.equal(cells[5], '""', 'неизвестное заполнение в CSV пустое, не 0');
@@ -415,7 +415,7 @@ test('PDF пустого проекта не падает и сообщает о
   const { text } = await pdfText(bytes);
   assert.ok(text.includes('Нет записей'));
   assert.ok(text.includes('Пустой проект'));
-  assert.ok(text.includes('Заполнение лотков'), 'секция заполнения должна быть и в пустом проекте');
+  assert.ok(text.includes('Заполнение КНС'), 'секция заполнения должна быть и в пустом проекте');
 });
 
 test('смета демо сходится: материалы + работы = итог, предупреждений нет', () => {
@@ -526,7 +526,7 @@ test('PDF: оглавление с названиями разделов и фа
   const { pageTexts } = await pdfText(await buildJournalPdf(project, fonts));
   const contents = pageTexts[1];
   assert.ok(contents.includes('Оглавление'), 'нет страницы оглавления');
-  const expected = ['Кабельный журнал', 'Оборудование', 'Кабельная продукция', 'Кабельная инфраструктура', 'Заполнение лотков', 'Смета', 'Коммерческое предложение', 'Замечания', 'Лист регистрации изменений'];
+  const expected = ['Кабельный журнал', 'Оборудование', 'Кабельная продукция', 'Кабельная инфраструктура', 'Заполнение КНС', 'Смета', 'Коммерческое предложение', 'Замечания', 'Лист регистрации изменений'];
   for (const title of expected) {
     assert.ok(contents.includes(title), `в оглавлении нет «${title}»`);
     const after = contents.slice(contents.indexOf(title) + title.length);
@@ -575,7 +575,7 @@ test('PDF: include фильтрует печатаемые разделы и с�
   const journalOnly = await pdfText(await buildJournalPdf(project, fonts, { include: ['journal'] }));
   assert.ok(journalOnly.pages < full.pages, 'с фильтром разделов страниц должно быть меньше');
   assert.ok(journalOnly.text.includes('Кабельный журнал'), 'выбранный раздел не напечатан');
-  for (const absent of ['Оборудование', 'Заполнение лотков', 'Коммерческое предложение', 'Лист регистрации изменений', 'Итого по смете']) {
+  for (const absent of ['Оборудование', 'Заполнение КНС', 'Коммерческое предложение', 'Лист регистрации изменений', 'Итого по смете']) {
     assert.ok(!journalOnly.text.includes(absent), `раздел/строка «${absent}» не должны печататься`);
   }
   assert.ok(!journalOnly.pageTexts[1].includes('Смета'), 'оглавление должно фильтроваться вместе с разделами');
@@ -589,7 +589,7 @@ test('PDF: include:[] — титул, оглавление и страница �
   assert.ok(pageTexts[0].includes(project.document!.organization!), 'на титуле нет организации');
   assert.ok(pageTexts[1].includes('Оглавление'), 'нет оглавления');
   assert.ok(pageTexts[1].includes('Разделы не выбраны.'), 'пустое оглавление должно быть явным');
-  for (const absent of ['Оборудование', 'Смета', 'Заполнение лотков', 'Лист регистрации изменений']) {
+  for (const absent of ['Оборудование', 'Смета', 'Заполнение КНС', 'Лист регистрации изменений']) {
     assert.ok(!pageTexts[1].includes(absent), `в оглавлении не должно быть «${absent}»`);
     assert.ok(!pageTexts[2].includes(absent), `на странице итогов не должно быть раздела «${absent}»`);
   }

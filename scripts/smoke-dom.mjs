@@ -641,7 +641,7 @@ if (fillCableRow) {
   check(Number.isFinite(diameterValue) && diameterValue > 0, `демо-кабель имеет диаметр (${diameterInput?.value || '—'})`);
   const calculationText = document.querySelector('.calculation-card')?.textContent || '';
   check(calculationText.includes('Сечение') && calculationText.includes('мм²'), 'в расчёте кабеля показано сечение, мм²');
-  check(calculationText.includes('Заполнение лотка'), 'в расчёте кабеля показано заполнение лотка');
+  check(calculationText.includes('Заполнение КНС'), 'в расчёте кабеля показано заполнение КНС');
 }
 
 const routesTabFill = Array.from(document.querySelectorAll('.structure-tabs button')).find(button => (button.textContent || '').includes('Трассы'));
@@ -654,11 +654,27 @@ if (fillRouteRow) {
   await sleep(250);
 }
 const routeLabels = Array.from(document.querySelectorAll('.properties label')).map(label => label.textContent || '');
-check(routeLabels.some(text => text.includes('Ширина лотка, мм')), 'в свойствах трассы есть поле «Ширина лотка, мм»');
+check(routeLabels.some(text => text.includes('Ширина, мм')), 'в свойствах трассы есть поле «Ширина, мм»');
 check(routeLabels.some(text => text.includes('Высота борта, мм')), 'в свойствах трассы есть поле «Высота борта, мм»');
-check(routeLabels.some(text => text.includes('Площадь лотка, мм²')), 'в свойствах трассы есть поле «Площадь лотка, мм²»');
+check(routeLabels.some(text => text.includes('Площадь сечения, мм²')), 'в свойствах трассы есть поле «Площадь сечения, мм²»');
 const routeProperties = document.querySelector('.properties')?.textContent || '';
-check(routeProperties.includes('Заполнение лотка'), 'в свойствах трассы есть блок «Заполнение лотка»');
+check(routeProperties.includes('Заполнение КНС'), 'в свойствах трассы есть блок «Заполнение КНС»');
+// Типы КНС и цвета: выбор типа меняет подписи размеров, цвет — палитра.
+const kindChips = Array.from(document.querySelectorAll('.properties .chip-row .chip')).map(button => (button.textContent || '').trim());
+for (const label of ['Лоток', 'Гофра', 'Труба', 'Кабель-канал']) check(kindChips.includes(label), `в свойствах трассы есть тип КНС «${label}»`);
+check(Boolean(document.querySelector('.properties .color-swatches .color-swatch')), 'в свойствах трассы есть палитра цвета');
+check(Boolean(document.querySelector('.properties .color-swatches .color-default')), 'есть сброс цвета «По умолчанию»');
+const chipByLabel = label => Array.from(document.querySelectorAll('.properties .chip-row .chip')).find(button => (button.textContent || '').trim() === label);
+const corrugatedChip = chipByLabel('Гофра');
+if (corrugatedChip) { corrugatedChip.click(); await sleep(260); }
+const corrugatedLabels = Array.from(document.querySelectorAll('.properties label')).map(label => label.textContent || '');
+check(corrugatedLabels.some(text => text.includes('Внутренний диаметр, мм')), 'для гофры показывается поле «Внутренний диаметр, мм»');
+check(!corrugatedLabels.some(text => text.includes('Высота борта, мм')), 'для гофры высота борта скрыта');
+check((document.querySelector('.properties')?.textContent || '').includes('Гофра'), 'тип трассы переключился на «Гофра»');
+const trayChip = chipByLabel('Лоток');
+if (trayChip) { trayChip.click(); await sleep(220); }
+const trayLabelsBack = Array.from(document.querySelectorAll('.properties label')).map(label => label.textContent || '');
+check(trayLabelsBack.some(text => text.includes('Высота борта, мм')), 'переключение обратно на «Лоток» возвращает высоту борта');
 const trayFillRows = Array.from(document.querySelectorAll('.tray-fill-row'));
 check(trayFillRows.length > 0, `в блоке заполнения есть строки сегментов (${trayFillRows.length})`);
 check(trayFillRows.some(row => /\d+([.,]\d+)?\s*%/.test(row.textContent || '')), 'в строке сегмента показан процент заполнения');
@@ -671,8 +687,8 @@ if (specsTabFill) {
   specsTabFill.click();
   await sleep(300);
 }
-const traySection = Array.from(document.querySelectorAll('.spec-section')).find(section => (section.querySelector('h2')?.textContent || '').includes('Заполнение лотков'));
-check(Boolean(traySection), 'в ведомостях есть раздел «Заполнение лотков»');
+const traySection = Array.from(document.querySelectorAll('.spec-section')).find(section => (section.querySelector('h2')?.textContent || '').includes('Заполнение КНС'));
+check(Boolean(traySection), 'в ведомостях есть раздел «Заполнение КНС»');
 if (traySection) {
   const headers = Array.from(traySection.querySelectorAll('th')).map(cell => (cell.textContent || '').trim());
   check(headers.includes('Заполнение, %'), `в таблице есть колонка «Заполнение, %»: ${headers.join(', ')}`);

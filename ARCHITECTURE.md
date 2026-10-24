@@ -16,7 +16,7 @@ interface Floor { id:string; name:string; elevation:number|null; metersPerUnit:n
 interface Equipment { id:string; number:string; name:string; type:string; floorId:string; x:number; y:number; height:number|null; note:string; properties:Record<string,string>; color?:string|null }
 interface Vertex { id:string; floorId:string; x:number; y:number; height:number|null }
 interface Segment { id:string; a:Vertex; b:Vertex; mode:'orthogonal'|'spatial'; reservePercent:number; reserveFixed:number }
-interface Route { id:string; number:string; type:string; segments:Segment[]; note:string; trayWidthMm?:number|null; trayHeightMm?:number|null; trayAreaMm2?:number|null }
+interface Route { id:string; number:string; type:string; segments:Segment[]; note:string; color?:string|null; trayWidthMm?:number|null; trayHeightMm?:number|null; trayAreaMm2?:number|null }
 interface Cable { id:string; number:string; name:string; brand:string; purpose:string; fromId:string; toId:string; segmentIds:string[]; reservePercent:number; reserveFixed:number; startReserve:number; endReserve:number; quantity:number; note:string; outerDiameterMm?:number|null; crossSectionMm2?:number|null }
 interface Pin { id:string; number:string; floorId:string; x:number; y:number; comment:string; status:'open'|'closed'; photos?:string[]; createdAt:string; updatedAt:string }
 interface PriceItem { id:string; kind:'equipment'|'cable'|'tray'; name:string; unit:string; price:number|null; note:string }
@@ -30,13 +30,23 @@ interface Project { schemaVersion:1|2; id:string; name:string; floors:Floor[]; e
 
 Формула: G = сумма пространственных длин сегментов + вертикальные подводы концов. Rт = сумма(Lсегмента × %сегмента / 100 + фиксированный запас сегмента). Итог = G + Rт + G × %кабеля / 100 + фиксированный запас кабеля + запас начала + запас конца. Количество кабелей умножает итог только в спецификации. Инфраструктура учитывается однократно. Промежуточные результаты не округляются. Ортогональный сегмент не допускает одновременных изменений x,y; горизонтальное и вертикальное движение — сумма, spatial — гипотенуза.
 
-## Заполнение лотка
+## Типы КНС, цвета и заполнение
+
+Кабеленесущая система (КНС) задаётся свободным `Route.type`; `src/route-kinds.ts` распознаёт четыре
+готовых типа — **лоток**, **гофра**, **труба**, **кабель-канал** — по подстрокам («лоток», «гофр»,
+«труб», «кабельный/кабель-канал», «короб») и не требует менять схему. Для типа определены цвет по
+умолчанию (`#008e94`, `#e78c22`, `#2f6fda`, `#2f9e63`), способ сечения (прямоугольник Ш×В или круг по
+диаметру) и подписи. Свой тип получает нейтральный цвет. `Route.color` — необязательный `#rrggbb`
+(нормализуется как цвет оборудования), `routeColor(route)` возвращает сохранённый валидный цвет или
+цвет типа; цвет используется на плане (CSS-переменная `--route-color` у SVG-группы), в списке трасс,
+легенде и `plan-svg.ts` для PDF-листа «План», поэтому выбранный/подсвеченный сегмент по-прежнему
+отличается цветом выделения. Валидация API отклоняет некорректный `route.color` (422).
 
 `cableSection(cable)` принимает площадь внешнего сечения: `crossSectionMm2`, если задана и положительна, иначе `π·d²/4` от `outerDiameterMm`. Заданное некорректное значение (0, отрицательное, NaN/Infinity) даёт ошибку и `null` — второй источник не подставляется, чтобы неверные данные не выглядели расчётом; если не задано ничего, площадь тоже `null` (данных нет).
 
-`trayFill(project)` идёт по всем сегментам всех трасс в порядке проекта. Площадь лотка: `trayAreaMm2`, иначе `trayWidthMm·trayHeightMm`; некорректные заданные размеры дают `null`, а не 0. Занятая площадь сегмента — сумма `площадь кабеля · quantity` по кабелям, чей `segmentIds` содержит сегмент. Заполнение = занятая площадь / площадь лотка · 100 %. Статусы: `ok` (≤ 40 %), `warning` (> 40 %), `over` (> 50 %), `empty` (кабелей нет), `incomplete` (неизвестен лоток, сечение или количество). Неизвестные значения не заменяются нулём; `complete` ложно, если есть `incomplete`, а `maxFillPercent`/`overSegments` дают сводку. Предупреждения вида «Трасса Т1, сегмент Т1.1: заполнение 63 % — превышен предел 50 %» попадают в `domainWarnings` и PDF. `specifications(project).trayFill` — строки по сегментам для ведомости/PDF/XLSX/CSV, в `infrastructure` — `maxFillPercent` и `overSegments` по типу трассы. Размеры лотка задаются на трассу: все её сегменты используют один лоток.
+`trayFill(project)` идёт по всем сегментам всех трасс в порядке проекта. Площадь сечения КНС: `trayAreaMm2` (приоритетно), иначе для гофры/трубы — `π·d²/4` по внутреннему диаметру в `trayWidthMm`, а для лотка/короба — `trayWidthMm·trayHeightMm`; некорректные заданные размеры дают `null`, а не 0. Для круглых КНС высота борта не используется и в ведомость не попадает. Занятая площадь сегмента — сумма `площадь кабеля · quantity` по кабелям, чей `segmentIds` содержит сегмент. Заполнение = занятая площадь / площадь лотка · 100 %. Статусы: `ok` (≤ 40 %), `warning` (> 40 %), `over` (> 50 %), `empty` (кабелей нет), `incomplete` (неизвестен лоток, сечение или количество). Неизвестные значения не заменяются нулём; `complete` ложно, если есть `incomplete`, а `maxFillPercent`/`overSegments` дают сводку. Предупреждения вида «Трасса Т1, сегмент Т1.1: заполнение 63 % — превышен предел 50 %» попадают в `domainWarnings` и PDF. `specifications(project).trayFill` — строки по сегментам для ведомости/PDF/XLSX/CSV, в `infrastructure` — `maxFillPercent` и `overSegments` по типу трассы. Размеры КНС задаются на трассу: все её сегменты используют одну КНС; сегментный override — в планах.
 
-Порог 40 % — рекомендуемый, 50 % — предел; сравнение с границами идёт с допуском 1e-9, чтобы ровно 40 % не становилось вниманием из-за погрешности double, а ровно 50 % — превышением.
+Трассы печатаются в PDF цветом типа/своим цветом: SVG-оверлей плана и экран используют один и тот же `routeColor`, поэтому документ совпадает с экраном. Порог 40 % — рекомендуемый, 50 % — предел; сравнение с границами идёт с допуском 1e-9, чтобы ровно 40 % не становилось вниманием из-за погрешности double, а ровно 50 % — превышением.
 
 ## Автопрокладка маршрута
 
@@ -105,6 +115,7 @@ interface Project { schemaVersion:1|2; id:string; name:string; floors:Floor[]; e
 `src/engine.ts` — расчёты: длины, запасы, автопрокладка, заполнение лотка, спецификации, валидация.
 `src/estimate.ts` — справочник цен, смета по разделам и нормализация каталога.
 `src/equipment-icons.ts` — иконки и цвета оборудования (общий набор для плана, PDF и списка).
+`src/route-kinds.ts` — типы КНС, цвета по типу/свои, распознавание типа и подписи сечения (план, список, PDF).
 `src/App.tsx`, `src/styles.css` — интерфейс; расчёты импортируются из движка и мемоизируются.
 `src/sheets.ts`, `src/export-xlsx.ts`, `src/export-pdf.ts`, `src/client-csv.ts` — выгрузки.
 `src/project-file.ts` — формат `.anooplan` (сборка/разбор файла проекта); `android/java/.../ShareProvider.java` — раздача файлов для ACTION_SEND.

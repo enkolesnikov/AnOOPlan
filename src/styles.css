@@ -239,7 +239,7 @@ textarea { resize: vertical; min-height: 54px; }
 
 /* SVG drawing elements */
 .route-segment { cursor: pointer; }
-.visible-route { stroke: var(--accent); stroke-linecap: round; stroke-linejoin: round; }
+.visible-route { stroke: var(--route-color, var(--accent)); stroke-linecap: round; stroke-linejoin: round; }
 .route-segment.cable-selected .visible-route { stroke: var(--warn); }
 .route-segment.is-selected .visible-route { stroke: var(--accent-2); }
 .svg-label { font-family: inherit; font-weight: 600; }

@@ -1,5 +1,6 @@
 import { findRoute } from '../engine';
 import { equipmentColor, equipmentIcon } from '../equipment-icons';
+import { routeColor } from '../route-kinds';
 import { PlanAccessibilityList } from '../PlanAccessibilityList';
 import { EquipmentSymbol } from './equipment-icon';
 import { areaLabel, number } from './format';
@@ -49,10 +50,10 @@ export function PlanScreen({ ui }: { ui: AppUi }) {
             {project.routes.flatMap(r => r.segments.map((s, index) => {
               const visibleA = s.a.floorId === floor.id, visibleB = s.b.floorId === floor.id; if (!visibleA && !visibleB) return null;
               const chosen = cableSegments.includes(s.id) || cable?.segmentIds.includes(s.id); const selected = selection?.id === r.id;
-              return <g key={s.id} data-object="segment" data-id={s.id} data-route={r.id} className={`route-segment ${chosen ? 'cable-selected' : ''} ${selected ? 'is-selected' : ''}`} onPointerDown={e => { e.stopPropagation(); if (pinching.current) return; if (tool === 'cable') armTap(e, () => setCableSegments(ids => ids.includes(s.id) ? ids.filter(id => id !== s.id) : [...ids, s.id])); else if (tool === 'route') armTap(e, () => { const p = position(e); setDraft(points => [...points, p]); }); else if (tool === 'select') armTap(e, () => setSelection({ kind: 'route', id: r.id })); }}>
+              return <g key={s.id} data-object="segment" data-id={s.id} data-route={r.id} className={`route-segment ${chosen ? 'cable-selected' : ''} ${selected ? 'is-selected' : ''}`} style={{ '--route-color': routeColor(r) } as unknown as import('react').CSSProperties} onPointerDown={e => { e.stopPropagation(); if (pinching.current) return; if (tool === 'cable') armTap(e, () => setCableSegments(ids => ids.includes(s.id) ? ids.filter(id => id !== s.id) : [...ids, s.id])); else if (tool === 'route') armTap(e, () => { const p = position(e); setDraft(points => [...points, p]); }); else if (tool === 'select') armTap(e, () => setSelection({ kind: 'route', id: r.id })); }}>
                 <line x1={s.a.x} y1={s.a.y} x2={s.b.x} y2={s.b.y} stroke="transparent" strokeWidth={26 / zoom} />
                 <line x1={s.a.x} y1={s.a.y} x2={s.b.x} y2={s.b.y} strokeWidth={(chosen ? 5 : selected ? 4 : 3) / zoom} className="visible-route" pointerEvents="none" strokeDasharray={!visibleA || !visibleB ? `${7 / zoom} ${4 / zoom}` : undefined} />
-                {(!visibleA || !visibleB) && <g transform={`translate(${s.a.x},${s.a.y})`}><circle r={9 / zoom} fill="white" stroke="#875ec5" strokeWidth={2 / zoom} /><text textAnchor="middle" y={4 / zoom} fontSize={12 / zoom} fill="#875ec5">↕</text></g>}
+                {(!visibleA || !visibleB) && <g transform={`translate(${s.a.x},${s.a.y})`}><circle r={9 / zoom} fill="white" stroke={routeColor(r)} strokeWidth={2 / zoom} /><text textAnchor="middle" y={4 / zoom} fontSize={12 / zoom} fill={routeColor(r)}>↕</text></g>}
                 {(selected || chosen) && <text x={(s.a.x + s.b.x) / 2 + 6 / zoom} y={(s.a.y + s.b.y) / 2 - 7 / zoom} fontSize={11 / zoom} fill="#126e71" className="svg-label">{tool === 'cable' ? cableSegments.indexOf(s.id) + 1 || '' : `${r.number}.${index + 1}`}</text>}
               </g>;
             }))}
@@ -79,7 +80,7 @@ export function PlanScreen({ ui }: { ui: AppUi }) {
           </svg>
         </div>}
         <div className="plan-badge"><span className="dot calibrated" />{floor?.name || 'Нет этажей'}<span> / </span>{floor?.metersPerUnit ? `${number(floor.metersPerUnit)} м/ед.` : 'Масштаб не задан'}</div>
-        <div className="plan-legend"><span className="legend-line" /> Трасса <span className="legend-equipment" /> Оборудование <span className="legend-cable" /> Выбранный кабель</div>
+        <div className="plan-legend">{(() => { const seen = new Map<string, string>(); for (const route of project.routes) { const label = route.type || 'Трасса'; if (!seen.has(label)) seen.set(label, routeColor(route)); } const items = [...seen.entries()].slice(0, 5); return items.length ? items.map(([label, color]) => <span key={label}><i className="legend-line" style={{ background: color }} />{label}{' '}</span>) : <><span className="legend-line" />Трасса</>; })()}<span className="legend-equipment" /> Оборудование <span className="legend-cable" /> Выбранный кабель</div>
       </div><div className="tool-hint"><span>{toolHints[tool]}</span><small>Координаты PDF: {pointer ? `${number(pointer.x)}; ${number(pointer.y)}` : '—'}</small></div><PlanAccessibilityList project={project} floor={floor} />
 </div>
   );

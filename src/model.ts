@@ -10,6 +10,8 @@ export interface Vertex { id:string; floorId:string; x:number; y:number; height:
 export interface Segment { id:string; a:Vertex; b:Vertex; mode:'orthogonal'|'spatial'; reservePercent:number; reserveFixed:number }
 export interface Route {
   id:string; number:string; type:string; segments:Segment[]; note:string;
+  /** Цвет трассы (#rrggbb). null/undefined — цвет по умолчанию для типа КНС. */
+  color?: string | null;
   /** Ширина лотка, мм. null/undefined — размер неизвестен, заполнение не считается. */
   trayWidthMm?: number | null;
   /** Высота борта лотка, мм. null/undefined — размер неизвестен. */

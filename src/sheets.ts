@@ -17,7 +17,7 @@ function cableDiameter(cable: Cable): number | null {
 export const PRICE_KIND_LABELS: Record<PriceKind, string> = {
   equipment: 'Оборудование',
   cable: 'Кабель',
-  tray: 'Лоток',
+  tray: 'КНС',
 };
 
 /** Источник цены в смете: «вручную»/«справочник», неизвестный — null (пусто в таблице). */
@@ -76,7 +76,7 @@ export function exportSheets(project: Project): ExportSheet[] {
     { name: 'Оборудование', rows: [['Тип', 'Модель', 'Этаж', 'Количество'], ...specs.equipment.map(r => [r.type, r.model, r.floor, r.quantity])] },
     { name: 'Кабели', rows: [['Марка', 'Количество линий', 'Геометрия, м', 'Итого, м'], ...specs.cables.map(r => [r.brand, r.lines, r.geometry, r.total])] },
     { name: 'Инфраструктура', rows: [['Тип', 'Длина, м', 'Сегментов', 'Кабелей', 'Макс. заполнение, %', 'Сегментов с превышением'], ...specs.infrastructure.map(r => [r.type, r.length, r.segments, r.cables, r.maxFillPercent, r.overSegments])] },
-    { name: 'Заполнение лотков', rows: [['Трасса', 'Сегмент', 'Тип трассы', 'Лоток, мм', 'Площадь лотка, мм²', 'Линий', 'Площадь кабелей, мм²', 'Заполнение, %', 'Статус'], ...specs.trayFill.map(r => [r.route, r.segment, r.routeType, r.tray, r.trayAreaMm2, r.lines, r.areaMm2, r.fillPercent, r.status])] },
+    { name: 'Заполнение КНС', rows: [['Трасса', 'Сегмент', 'Тип трассы', 'КНС, мм', 'Площадь КНС, мм²', 'Линий', 'Площадь кабелей, мм²', 'Заполнение, %', 'Статус'], ...specs.trayFill.map(r => [r.route, r.segment, r.routeType, r.tray, r.trayAreaMm2, r.lines, r.areaMm2, r.fillPercent, r.status])] },
     { name: 'Смета', rows: estimateRows },
     { name: 'Коммерческое предложение', rows: commercial },
     { name: 'Справочник цен', rows: catalog },

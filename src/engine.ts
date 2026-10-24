@@ -1,4 +1,5 @@
 import type { Cable, Equipment, Project, Route, Segment, Vertex } from './model';
+import { isDiameterRoute } from './route-kinds';
 
 const EPS = 1e-6;
 const finite = (value: unknown): value is number => typeof value === 'number' && Number.isFinite(value);
@@ -328,11 +329,23 @@ interface TrayDimensions {
   problem: 'missing' | 'invalid' | null;
 }
 
-/** Площадь лотка: trayAreaMm2 приоритетнее произведения ширины и высоты; без фолбэка с некорректных данных. */
-function trayDimensions(route: Route): TrayDimensions {
+/** Площадь сечения КНС: явная площадь приоритетнее; для гофры/трубы — круг по диаметру. */
+function routeSectionDimensions(route: Route): TrayDimensions {
   const areaState = dimensionState(route.trayAreaMm2);
   if (areaState === 'valid') return { areaMm2: route.trayAreaMm2 as number, problem: null };
   if (areaState === 'invalid') return { areaMm2: null, problem: 'invalid' };
+  if (isDiameterRoute(route)) {
+    // Для гофры и трубы пользователь задаёт внутренний диаметр (в поле ширины);
+    // площадь круга считается автоматически, высота борта не используется.
+    const diameterState = dimensionState(route.trayWidthMm);
+    if (diameterState === 'invalid') return { areaMm2: null, problem: 'invalid' };
+    if (diameterState === 'valid') {
+      const diameter = route.trayWidthMm as number;
+      const area = Math.PI * diameter * diameter / 4;
+      return finite(area) && area > 0 ? { areaMm2: area, problem: null } : { areaMm2: null, problem: 'invalid' };
+    }
+    return { areaMm2: null, problem: 'missing' };
+  }
   const widthState = dimensionState(route.trayWidthMm);
   const heightState = dimensionState(route.trayHeightMm);
   if (widthState === 'invalid' || heightState === 'invalid') return { areaMm2: null, problem: 'invalid' };
@@ -343,14 +356,17 @@ function trayDimensions(route: Route): TrayDimensions {
   return { areaMm2: null, problem: 'missing' };
 }
 
-const TRAY_PROBLEM_TEXT: Record<'missing' | 'invalid', string> = {
-  missing: 'не заданы размеры лотка',
-  invalid: 'неверный размер лотка',
+const SECTION_PROBLEM_TEXT: Record<'missing' | 'invalid', string> = {
+  missing: 'не задано сечение КНС',
+  invalid: 'неверное сечение КНС',
 };
 
-/** Текстовое обозначение лотка для ведомости: площадь (она приоритетнее), размеры или прочерк. */
-function trayLabel(route: Route): string {
+/** Текстовое обозначение КНС для ведомости: площадь, диаметр, размеры или прочерк. */
+function sectionLabel(route: Route): string {
   if (dimensionState(route.trayAreaMm2) === 'valid') return `S=${route.trayAreaMm2} мм²`;
+  if (isDiameterRoute(route)) {
+    return dimensionState(route.trayWidthMm) === 'valid' ? `Ø${route.trayWidthMm}` : '—';
+  }
   if (dimensionState(route.trayWidthMm) === 'valid' && dimensionState(route.trayHeightMm) === 'valid') {
     return `${route.trayWidthMm}×${route.trayHeightMm}`;
   }
@@ -364,12 +380,13 @@ export function trayFill(project: Project): TrayFillResult {
   const warnings: string[] = [];
   const segments: SegmentFill[] = [];
   for (const route of project.routes) {
-    const tray = trayDimensions(route);
-    const safeTrayArea = tray.problem === null && finite(tray.areaMm2) && tray.areaMm2 > 0 ? tray.areaMm2 : null;
+    const section = routeSectionDimensions(route);
+    const safeTrayArea = section.problem === null && finite(section.areaMm2) && section.areaMm2 > 0 ? section.areaMm2 : null;
     const trayWidthMm = givenNumber(route.trayWidthMm);
-    const trayHeightMm = givenNumber(route.trayHeightMm);
+    // Для круглых КНС высота не используется и в ведомость не попадает.
+    const trayHeightMm = isDiameterRoute(route) ? null : givenNumber(route.trayHeightMm);
     const routeHasCables = route.segments.some(segment => project.cables.some(cable => cable.segmentIds.includes(segment.id)));
-    if (routeHasCables && tray.problem) warnings.push(`Трасса ${route.number}: ${TRAY_PROBLEM_TEXT[tray.problem]} — заполнение не рассчитано`);
+    if (routeHasCables && section.problem) warnings.push(`Трасса ${route.number}: ${SECTION_PROBLEM_TEXT[section.problem]} — заполнение не рассчитано`);
     route.segments.forEach((segment, index) => {
       const label = `${route.number}.${index + 1}`;
       const prefix = `Трасса ${route.number}, сегмент ${label}`;
@@ -531,7 +548,7 @@ export function specifications(project: Project) {
         route: route.number,
         segment: `${route.number}.${index + 1}`,
         routeType: route.type,
-        tray: trayLabel(route),
+        tray: sectionLabel(route),
         trayAreaMm2: segmentFill?.trayAreaMm2 ?? null,
         lines: segmentFill?.lines ?? 0,
         areaMm2: segmentFill?.usedAreaMm2 ?? null,
@@ -615,7 +632,7 @@ export function validateProject(project: Project): string[] {
   for (const id of duplicates) errors.push(`Неоднозначный ID сегмента ${id}`);
   for (const route of project.routes) {
     const trayValues = [route.trayWidthMm, route.trayHeightMm, route.trayAreaMm2];
-    if (trayValues.some(value => isGiven(value) && (!finite(value) || value <= 0))) errors.push(`Трасса ${route.number}: неверный размер лотка`);
+    if (trayValues.some(value => isGiven(value) && (!finite(value) || value <= 0))) errors.push(`Трасса ${route.number}: неверное сечение КНС`);
     for (const segment of route.segments) {
       errors.push(...segmentErrors(project, segment), ...reserveErrors(`Сегмент ${segment.id}`, segment.reservePercent, segment.reserveFixed));
     }

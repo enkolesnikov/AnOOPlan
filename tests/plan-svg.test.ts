@@ -18,6 +18,22 @@ test('SVG плана содержит трассы и обозначения о�
   assert.ok(svg.includes(`AnOOPlan · ${floor.name}`), 'нет подписи листа');
 });
 
+test('SVG плана рисует трассы цветом типа КНС и своим цветом', () => {
+  const project = createDemoProject();
+  const floor = project.floors[0];
+  // Только трассы: у розетки в демо свой оранжевый цвет иконки, он не должен вмешиваться.
+  project.equipment = [];
+  project.routes[0].type = 'Гофра';
+  project.routes[0].color = undefined;
+  const orange = buildPlanSvg(project, floor);
+  assert.ok(orange.includes('stroke="#e78c22"'), 'гофра должна быть оранжевой');
+
+  project.routes[0].color = '#123456';
+  const custom = buildPlanSvg(project, floor);
+  assert.ok(custom.includes('stroke="#123456"'), 'свой цвет трассы должен попасть в PDF-план');
+  assert.ok(!custom.includes('stroke="#e78c22"'), 'свой цвет вытесняет цвет по умолчанию');
+});
+
 test('SVG экранирует пользовательские названия', () => {
   const project = createDemoProject();
   const floor = project.floors[0];

@@ -176,7 +176,7 @@ test('неизвестные размеры лотка: incomplete и преду
   assert.equal(fill.trayAreaMm2, null);
   close(fill.usedAreaMm2, circleArea(6));
   assert.equal(result.complete, false);
-  assert.ok(result.warnings.includes('Трасса Т1: не заданы размеры лотка — заполнение не рассчитано'));
+  assert.ok(result.warnings.includes('Трасса Т1: не задано сечение КНС — заполнение не рассчитано'));
 });
 
 test('некорректная площадь лотка не подменяется шириной и высотой', () => {
@@ -188,7 +188,7 @@ test('некорректная площадь лотка не подменяет
   const [fill] = result.segments;
   assert.equal(fill.trayAreaMm2, null);
   assert.equal(fill.status, 'incomplete');
-  assert.ok(result.warnings.includes('Трасса Т1: неверный размер лотка — заполнение не рассчитано'));
+  assert.ok(result.warnings.includes('Трасса Т1: неверное сечение КНС — заполнение не рассчитано'));
 });
 
 test('неверное количество кабеля делает сегмент неполным', () => {
@@ -247,6 +247,37 @@ test('обозначение лотка: размеры, площадь или �
   assert.equal(rows[1].status, 'пусто');
 });
 
+test('гофра и труба: площадь считается по внутреннему диаметру', () => {
+  const p = oneRoute({ type: 'Гофра', trayWidthMm: 20 }, [cable('Л1', ['s1'], { crossSectionMm2: 50 })]);
+  const fill = trayFill(p);
+  close(fill.segments[0].trayAreaMm2, Math.PI * 100);
+  close(fill.segments[0].fillPercent, 50 / (Math.PI * 100) * 100);
+  assert.equal(fill.segments[0].trayHeightMm, null, 'высота борта у круглой КНС не используется');
+  const rows = specifications(p).trayFill;
+  assert.equal(rows[0].routeType, 'Гофра');
+  assert.equal(rows[0].tray, 'Ø20');
+
+  const pipe = oneRoute({ type: 'Труба', trayWidthMm: 25 }, [cable('Л2', ['s1'], { crossSectionMm2: 100 })]);
+  close(trayFill(pipe).segments[0].trayAreaMm2, Math.PI * 25 * 25 / 4);
+  assert.equal(specifications(pipe).trayFill[0].tray, 'Ø25');
+});
+
+test('труба: явная площадь приоритетнее диаметра', () => {
+  const p = oneRoute({ type: 'Труба', trayWidthMm: 20, trayAreaMm2: 500 }, [cable('Л1', ['s1'], { crossSectionMm2: 50 })]);
+  const fill = trayFill(p);
+  assert.equal(fill.segments[0].trayAreaMm2, 500);
+  close(fill.segments[0].fillPercent, 10);
+  assert.equal(specifications(p).trayFill[0].tray, 'S=500 мм²');
+});
+
+test('неверный диаметр гофры не подменяется и даёт warning', () => {
+  const p = oneRoute({ type: 'Гофра', trayWidthMm: -10 }, [cable('Л1', ['s1'], { crossSectionMm2: 50 })]);
+  const fill = trayFill(p);
+  assert.equal(fill.segments[0].status, 'incomplete');
+  assert.equal(fill.segments[0].trayAreaMm2, null);
+  assert.ok(fill.warnings.includes('Трасса Т1: неверное сечение КНС — заполнение не рассчитано'));
+});
+
 test('domainWarnings добавляет предупреждения о превышении заполнения', () => {
   const p = oneRoute({ trayWidthMm: 50, trayHeightMm: 50 }, [cable('Л3', ['s1'], { crossSectionMm2: 400, quantity: 4 })]);
   const warnings = domainWarnings(p);
@@ -261,7 +292,7 @@ test('validateProject ловит только заданные некоррек�
     cable('Л2', ['s1'], { crossSectionMm2: -5 }),
   ]);
   const errors = validateProject(p);
-  assert.ok(errors.includes('Трасса Т1: неверный размер лотка'));
+  assert.ok(errors.includes('Трасса Т1: неверное сечение КНС'));
   assert.ok(errors.includes('Кабель Л1: неверный внешний диаметр'));
   assert.ok(errors.includes('Кабель Л2: неверная площадь сечения'));
 

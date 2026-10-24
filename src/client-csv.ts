@@ -29,7 +29,7 @@ export function clientCsv(project: Project): string {
   for (const pin of project.pins ?? []) rows.push([pin.number, project.floors.find(floor => floor.id === pin.floorId)?.name || '', pin.x, pin.y, pin.comment, pin.status === 'closed' ? 'закрыто' : 'открыто']);
   rows.push([]); rows.push(['Инфраструктура']); rows.push(['Тип', 'Длина, м', 'Сегментов', 'Кабелей', 'Макс. заполнение, %', 'Сегментов с превышением']);
   for (const group of specs.infrastructure) rows.push([group.type, group.length, group.segments, group.cables, group.maxFillPercent, group.overSegments]);
-  rows.push([]); rows.push(['Заполнение лотков']); rows.push(['Трасса', 'Сегмент', 'Лоток, мм', 'Линий', 'Площадь кабелей, мм²', 'Заполнение, %', 'Статус']);
+  rows.push([]); rows.push(['Заполнение КНС']); rows.push(['Трасса', 'Сегмент', 'КНС, мм', 'Линий', 'Площадь кабелей, мм²', 'Заполнение, %', 'Статус']);
   for (const row of specs.trayFill) rows.push([row.route, row.segment, row.tray, row.lines, row.areaMm2, row.fillPercent, row.status]);
 
   // Смета: позиции материальных разделов и их итоги; работы — отдельной итоговой строкой.

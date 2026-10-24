@@ -1,6 +1,7 @@
 import type { Project } from '../src/model.js';
 import { normalizeEquipmentColor } from '../src/equipment-icons.js';
 import { isCatalogDate } from '../src/estimate.js';
+import { normalizeRouteColor } from '../src/route-kinds.js';
 
 export class ApiError extends Error {
   constructor(public status: number, message: string) { super(message); }
@@ -80,6 +81,7 @@ export function assertProject(input: unknown, pdfExists: (id: string) => boolean
     claim(r.id, 'route.id'); text(r.type, 'route.type'); text(r.note, 'route.note');
     // Размеры лотка необязательны: отсутствие означает «неизвестно», но заданное значение должно быть > 0.
     for (const k of ['trayWidthMm', 'trayHeightMm', 'trayAreaMm2']) positiveOrEmpty(r[k], `route.${k}`);
+    if (r.color !== undefined && r.color !== null && normalizeRouteColor(r.color) === null) fail('route.color: ожидается цвет #rrggbb');
     for (const s of array(r.segments, 'segments')) {
       object(s, 'segment'); claim(s.id, 'segment.id'); segmentIds.add(s.id);
       if (!['orthogonal', 'spatial'].includes(s.mode)) fail('Некорректный режим сегмента');
