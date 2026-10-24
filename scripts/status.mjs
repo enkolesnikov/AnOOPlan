@@ -3,7 +3,7 @@
 // npm run status       — версии, git, размеры, уязвимости, ориентировочные счётчики;
 // npm run status:full  — плюс реальный прогон тестов, смоука и E2E.
 import { readdirSync, statSync, existsSync, readFileSync } from 'node:fs';
-import { spawnSync, execSync } from 'node:child_process';
+import { spawnSync } from 'node:child_process';
 import { join, resolve } from 'node:path';
 
 const ROOT = resolve(import.meta.dirname, '..');
@@ -22,8 +22,12 @@ const countMatches = (dir, pattern) => {
 };
 const sizeOf = path => (existsSync(path) ? `${(statSync(path).size / 1024).toFixed(1)} КБ` : '—');
 const dirSize = dir => {
-  if (!existsSync(join(ROOT, dir))) return '—';
-  try { return execSync(`du -sh ${JSON.stringify(join(ROOT, dir))}`, { encoding: 'utf8' }).split('\t')[0]; } catch { return '—'; }
+  const target = join(ROOT, dir);
+  if (!existsSync(target)) return '—';
+  // Без shell: аргументы передаются списком, путь из репозитория не может стать командой.
+  const result = spawnSync('du', ['-sh', target], { encoding: 'utf8' });
+  if (result.status !== 0) return '—';
+  return (result.stdout || '').split('\t')[0] || '—';
 };
 
 console.log(`AnOOPlan ${pkg.version} (androidVersionCode ${pkg.androidVersionCode})`);
