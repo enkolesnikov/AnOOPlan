@@ -411,3 +411,14 @@ test('размеры между оборудованием нормализую�
   const migrated = migrateProject(source);
   assert.deepEqual(migrated.dimensions, [{ id: 'd1', fromId: 'e1', toId: 'e2', note: '' }]);
 });
+
+
+test('подсистема трассы и артикулы справочника сохраняются при миграции', () => {
+  const source = project() as unknown as Record<string, unknown>;
+  source.routes = [{ id: 'r1', number: 'Т1', type: 'Кабель-канал', note: '', subsystem: 'trunk', segments: [] }];
+  source.catalog = [{ id: 'c1', kind: 'tray', name: 'Кабель-канал', unit: 'м', price: 100, note: '', article: 'KK-1', manufacturer: 'DKC' }];
+  const migrated = migrateProject(source);
+  assert.equal(migrated.routes[0].subsystem, 'trunk');
+  assert.equal(migrated.catalog?.[0].article, 'KK-1');
+  assert.equal(migrated.catalog?.[0].manufacturer, 'DKC');
+});

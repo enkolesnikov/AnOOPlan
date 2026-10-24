@@ -20,8 +20,8 @@ const DEMO_PRICE_PER_METER = 38; // КВК-П 2×0,75, ₽/м — в учебн�
 const DEMO_CATALOG_DATE = '2026-10-01';
 
 /** Позиция учебного справочника цен; id — через uid(), чтобы демо-копии не конфликтовали. */
-const priceItem = (kind: PriceKind, name: string, price: number, unit = 'шт'): PriceItem =>
-  ({ id: uid(), kind, name, unit, price, note: '' });
+const priceItem = (kind: PriceKind, name: string, price: number, unit = 'шт', details: Partial<PriceItem> = {}): PriceItem =>
+  ({ id: uid(), kind, name, unit, price, note: '', ...details });
 
 const cable = (
   id: string, number: string, name: string, brand: string, purpose: string,
@@ -155,8 +155,10 @@ export function createDemoProject(): Project {
       priceItem('equipment', 'Камера лестницы', 6500),
       priceItem('equipment', 'Розетка у входа', 450),
       priceItem('cable', 'КВК-П 2×0.75', DEMO_PRICE_PER_METER, 'м'),
-      priceItem('tray', 'Лоток', 480, 'м'),
-      priceItem('tray', 'Стояк', 620, 'м'),
+      priceItem('tray', 'Лоток', 480, 'м', { manufacturer: 'DKC', article: 'L-100', series: 'Лоток перфорированный', size: '100×50' }),
+      priceItem('tray', 'Стояк', 620, 'м', { manufacturer: 'DKC', article: 'L-50', series: 'Лоток перфорированный', size: '50×50' }),
+      priceItem('tray', 'Гофра', 95, 'м', { manufacturer: 'IEK', article: 'GF-20', series: 'Гофра ПВХ', size: 'Ø20' }),
+      priceItem('tray', 'Кабель-канал', 280, 'м', { manufacturer: 'DKC', article: 'KK-25', series: 'Кабель-канал', size: '25×25' }),
     ],
     catalogDate: DEMO_CATALOG_DATE,
     estimate: { laborPercent: 25, note: 'Цены действительны 30 дней' },

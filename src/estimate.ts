@@ -45,7 +45,7 @@ export function normalizePriceItem(value: unknown, index = 0): PriceItem | null 
   if (!name) return null;
   const unit = text(value.unit).trim();
   const id = typeof value.id === 'string' && value.id.trim() ? value.id : `price-${index + 1}`;
-  return {
+  const item: PriceItem = {
     id,
     kind: value.kind,
     name,
@@ -53,6 +53,15 @@ export function normalizePriceItem(value: unknown, index = 0): PriceItem | null 
     price: nonnegative(value.price) ? value.price : null,
     note: text(value.note),
   };
+  const manufacturer = text(value.manufacturer).trim();
+  const article = text(value.article).trim();
+  const series = text(value.series).trim();
+  const size = text(value.size).trim();
+  if (manufacturer) item.manufacturer = manufacturer;
+  if (article) item.article = article;
+  if (series) item.series = series;
+  if (size) item.size = size;
+  return item;
 }
 
 /** Справочник цен: не-массив трактуется как пустой, мусорные записи отбрасываются. */

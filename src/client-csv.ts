@@ -1,5 +1,5 @@
 import type { Cable, Project } from './model';
-import { cableSection, calculateCable, specifications } from './engine';
+import { cableSection, calculateCable, specificationKnS, specifications } from './engine';
 import { estimate } from './estimate';
 import { PRICE_KIND_LABELS, laborLabel, priceSourceLabel } from './sheets';
 
@@ -12,6 +12,7 @@ function cableDiameter(cable: Cable): number | null {
 /** CSV с BOM и точкой с запятой: открывается в Excel без импорта. */
 export function clientCsv(project: Project): string {
   const specs = specifications(project);
+  const specKnS = specificationKnS(project);
   const estimateResult = estimate(project);
   const rows: (string | number | null)[][] = [];
   rows.push(['Кабельный журнал']);
@@ -31,6 +32,10 @@ export function clientCsv(project: Project): string {
   for (const route of specs.routeSummary.routes) rows.push([route.number, route.type, route.length, route.segments, route.group === 'Кабель-канал' ? route.angles.total : null]);
   rows.push([]); rows.push(['Итого по типам', 'Длина, м', 'Трасс', 'Углы']);
   for (const group of specs.routeSummary.groups) rows.push([group.group, group.length, group.routes, group.group === 'Кабель-канал' ? group.angles.total : null]);
+  rows.push([]); rows.push(['Спецификация КНС']); rows.push(['Наименование', 'Сечение', 'Подсистема', 'Ед.', 'Кол-во', 'Углы', 'Артикул', 'Производитель', 'Цена, ₽', 'Сумма, ₽']);
+  for (const line of specKnS.lines) rows.push([line.name, line.section, line.subsystem, line.unit, line.quantity, line.angles || null, line.article, line.manufacturer, line.price, line.cost]);
+  rows.push([]); rows.push(['Итого по типам', '', '', 'м', 'Длина', 'Углы']);
+  for (const group of specKnS.totals) rows.push([group.group, '', '', 'м', group.length, group.angles]);
   rows.push([]); rows.push(['Инфраструктура']); rows.push(['Тип', 'Длина, м', 'Сегментов', 'Кабелей', 'Макс. заполнение, %', 'Сегментов с превышением']);
   for (const group of specs.infrastructure) rows.push([group.type, group.length, group.segments, group.cables, group.maxFillPercent, group.overSegments]);
   rows.push([]); rows.push(['Заполнение КНС']); rows.push(['Трасса', 'Сегмент', 'КНС, мм', 'Линий', 'Площадь кабелей, мм²', 'Заполнение, %', 'Статус']);

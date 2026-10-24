@@ -97,6 +97,8 @@ function normalizeRoute(value: unknown): Project['routes'][number] {
     trayAreaMm2: optionalNumber(value.trayAreaMm2),
     // Цвет трассы необязателен: валидный #rgb/#rrggbb приводится к #rrggbb, мусор считается отсутствующим.
     color: normalizeRouteColor(value.color) ?? undefined,
+    // Подсистема СКС необязательна: неизвестное значение не подменяется и не роняет загрузку.
+    subsystem: value.subsystem === 'horizontal' || value.subsystem === 'trunk' || value.subsystem === 'workplace' ? value.subsystem : undefined,
   } as Project['routes'][number];
 }
 

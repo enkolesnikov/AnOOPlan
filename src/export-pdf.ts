@@ -3,7 +3,7 @@
 import { PDFDocument, rgb, type PDFFont, type PDFPage } from 'pdf-lib';
 import fontkit from '@pdf-lib/fontkit';
 import type { Cable, Project } from './model';
-import { cableSection, calculateCable, domainWarnings, specifications, validateProject } from './engine';
+import { cableSection, calculateCable, domainWarnings, specificationKnS, specifications, validateProject } from './engine';
 import { estimate } from './estimate';
 import type { JournalFonts } from './export-fonts';
 
@@ -16,6 +16,7 @@ export type JournalSectionId =
   | 'equipment'
   | 'cables'
   | 'routeScheme'
+  | 'knSSpec'
   | 'infrastructure'
   | 'trayFill'
   | 'estimate'
@@ -33,6 +34,7 @@ export const DEFAULT_JOURNAL_SECTIONS: JournalSectionId[] = [
   'equipment',
   'cables',
   'routeScheme',
+  'knSSpec',
   'infrastructure',
   'trayFill',
   'estimate',
@@ -494,6 +496,7 @@ const laborLabel = (percent: number | null): string => (percent === null ? 'Ра
 
 function buildSections(project: Project, estimateResult: EstimateResult): Section[] {
   const specs = specifications(project);
+  const specKnS = specificationKnS(project);
   const equipmentNumber = (id: string) => project.equipment.find(item => item.id === id)?.number || '—';
 
   const journal = project.cables.map(cable => {
@@ -586,6 +589,37 @@ function buildSections(project: Project, estimateResult: EstimateResult): Sectio
       footer: specs.routeSummary.groups.length
         ? `Итого по типам: ${specs.routeSummary.groups.map(group => `${group.group} — ${formatNumber(group.length)} м${group.group === 'Кабель-канал' ? `, углов ${group.angles.total}` : ''}`).join('; ')}.`
         : undefined,
+    },
+    {
+      id: 'knSSpec',
+      title: 'Спецификация КНС',
+      note: 'Материалы КНС по подсистемам и сечениям. Углы указаны для кабельных каналов/коробов; фитинги и крепления не считаются. Цены и артикулы — из справочника цен проекта.',
+      columns: [
+        { title: 'Наименование', width: 100 },
+        { title: 'Сечение', width: 70 },
+        { title: 'Подсистема', width: 90 },
+        { title: 'Ед.', width: 28 },
+        { title: 'Кол-во', width: 50, align: 'right' },
+        { title: 'Углы', width: 36, align: 'right' },
+        { title: 'Артикул / производитель', width: 160 },
+        { title: 'Сумма, ₽', width: 70, align: 'right' },
+      ],
+      rows: specKnS.lines.map(line => [
+        line.name,
+        line.section || '—',
+        line.subsystem,
+        line.unit,
+        formatNumber(line.quantity),
+        line.angles ? String(line.angles) : '—',
+        [line.article, line.manufacturer].filter(Boolean).join(' / ') || '—',
+        formatNumber(line.cost),
+      ]),
+      emptyText: 'Трасс для спецификации нет.',
+      footer: [
+        specKnS.totals.length ? `Итого по типам: ${specKnS.totals.map(item => `${item.group} — ${formatNumber(item.length)} м${item.angles ? `, углов ${item.angles}` : ''}`).join('; ')}.` : '',
+        specKnS.totalCost !== null ? `Стоимость КНС: ${formatNumber(specKnS.totalCost)} ₽.` : '',
+        ...specKnS.warnings,
+      ].filter(Boolean).join(' '),
     },
     {
       id: 'infrastructure',

@@ -8,8 +8,12 @@ export interface Equipment {
 }
 export interface Vertex { id:string; floorId:string; x:number; y:number; height:number|null }
 export interface Segment { id:string; a:Vertex; b:Vertex; mode:'orthogonal'|'spatial'; reservePercent:number; reserveFixed:number }
+/** Подсистема СКС: горизонтальная, магистральная или рабочее место. */
+export type RouteSubsystem = 'horizontal' | 'trunk' | 'workplace';
 export interface Route {
   id:string; number:string; type:string; segments:Segment[]; note:string;
+  /** Подсистема СКС (необязательно; старые проекты её не имеют). */
+  subsystem?: RouteSubsystem;
   /** Цвет трассы (#rrggbb). null/undefined — цвет по умолчанию для типа КНС. */
   color?: string | null;
   /** Ширина лотка, мм. null/undefined — размер неизвестен, заполнение не считается. */
@@ -47,6 +51,12 @@ export interface PriceItem {
   /** Цена за единицу, ₽. null — цена неизвестна, а не 0. */
   price: number | null;
   note: string;
+  /** Производитель и артикул — для спецификации КНС (необязательные поля). */
+  manufacturer?: string;
+  article?: string;
+  series?: string;
+  /** Типоразмер/сечение, например «Ø20» или «100×50». */
+  size?: string;
 }
 
 /** Настройки сметы проекта. Работы считаются процентом от стоимости материалов. */

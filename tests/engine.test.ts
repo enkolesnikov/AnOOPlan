@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { calculateCable, dimensionGeometry, dimensionText, findRoute, routeAngleStats, routeLength, routeSummary, segmentLength, specifications, validateProject } from '../src/engine';
+import { calculateCable, dimensionGeometry, dimensionText, findRoute, routeAngleStats, routeLength, routeSummary, segmentLength, specificationKnS, specifications, suggestRouteSection, validateProject } from '../src/engine';
 import type { Equipment, Project, Segment, Vertex } from '../src/model';
 
 const vertex = (id: string, x: number, y = 0, height: number | null = 3, floorId = 'f1'): Vertex => ({ id, x, y, height, floorId });
@@ -255,4 +255,42 @@ test('относительный размер между оборудовани�
   const across = dimensionGeometry(p, { id: 'd3', fromId: 'a', toId: 'c' });
   assert.equal(across.problem, 'Оборудование на разных этажах');
   assert.equal(across.meters, null);
+});
+
+
+test('спецификация КНС: подсистемы, углы и артикулы из справочника', () => {
+  const p = fixture();
+  const v2 = vertex('v2', 100, 0);
+  const v3 = vertex('v3', 100, 50);
+  p.routes = [
+    { id: 'r1', number: 'Г1', type: 'Гофра', note: '', subsystem: 'trunk', segments: [segment('s1', vertex('a1', 0), v2)] },
+    { id: 'r2', number: 'К1', type: 'Кабель-канал', note: '', subsystem: 'horizontal', segments: [segment('s2', vertex('a2', 0), v2), segment('s3', v2, v3)] },
+  ];
+  p.catalog = [
+    { id: 'c1', kind: 'tray', name: 'Гофра', unit: 'м', price: 42, note: '', article: 'GF-20', manufacturer: 'IEK' },
+    { id: 'c2', kind: 'tray', name: 'Кабель-канал', unit: 'м', price: 180, note: '', article: 'KK-25', manufacturer: 'DKC' },
+  ];
+  const spec = specificationKnS(p);
+  assert.deepEqual(spec.lines.map(line => [line.name, line.subsystem, line.quantity, line.angles]), [
+    ['Гофра', 'Магистральная', 10, 0],
+    ['Кабель-канал', 'Горизонтальная', 15, 1],
+  ]);
+  assert.equal(spec.lines[0].article, 'GF-20');
+  assert.equal(spec.lines[1].manufacturer, 'DKC');
+  assert.equal(spec.lines[0].cost, 420);
+  assert.equal(spec.totalCost, 420 + 2700);
+});
+
+test('подбор минимального сечения КНС по кабелям', () => {
+  const p = fixture();
+  p.routes[0].type = 'Гофра';
+  p.routes[0].trayWidthMm = null;
+  p.routes[0].trayHeightMm = null;
+  p.routes[0].trayAreaMm2 = null;
+  p.cables = [{ id: 'c', number: 'К1', name: 'Кабель', brand: 'ВВГ', purpose: '', fromId: 'a', toId: 'b', segmentIds: ['s'], reservePercent: 0, reserveFixed: 0, startReserve: 0, endReserve: 0, quantity: 1, note: '', outerDiameterMm: 10 }];
+  const suggestion = suggestRouteSection(p, p.routes[0]);
+  assert.ok(suggestion, 'подбор должен вернуть сечение');
+  assert.equal(suggestion!.kind, 'diameter');
+  assert.ok(suggestion!.widthMm >= 16);
+  assert.ok(suggestion!.fillPercent <= 40);
 });

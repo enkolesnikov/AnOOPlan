@@ -150,17 +150,19 @@ export function EstimateScreen({ project, onChange, onMessage, onError }: {
         </div>
       </div>
       <div className="table-scroll"><table className="catalog-table">
-        <thead><tr><th>Вид</th><th>Наименование</th><th>Ед.</th><th>Цена, ₽</th><th>Примечание</th><th /></tr></thead>
+        <thead><tr><th>Вид</th><th>Наименование</th><th>Артикул</th><th>Производитель</th><th>Ед.</th><th>Цена, ₽</th><th>Примечание</th><th /></tr></thead>
         <tbody>
           {catalog.map((item, index) => <tr key={item.id}>
             <td className="catalog-kind"><select value={item.kind} aria-label={`Вид позиции ${index + 1}`} onChange={event => updateCatalogItem(index, { kind: event.target.value as PriceKind })}>{(['equipment', 'cable', 'tray'] as const).map(kind => <option key={kind} value={kind}>{PRICE_KIND_LABELS[kind]}</option>)}</select></td>
             <td className="catalog-name"><input type="text" value={item.name} aria-label={`Наименование позиции ${index + 1}`} onChange={event => updateCatalogItem(index, { name: event.target.value })} /></td>
+            <td className="catalog-article"><input type="text" value={item.article ?? ''} aria-label={`Артикул позиции ${index + 1}`} onChange={event => updateCatalogItem(index, { article: event.target.value })} /></td>
+            <td className="catalog-manufacturer"><input type="text" value={item.manufacturer ?? ''} aria-label={`Производитель позиции ${index + 1}`} onChange={event => updateCatalogItem(index, { manufacturer: event.target.value })} /></td>
             <td className="catalog-unit"><input type="text" value={item.unit} aria-label={`Единица позиции ${index + 1}`} onChange={event => updateCatalogItem(index, { unit: event.target.value })} /></td>
             <td className="catalog-price"><NumberField value={item.price} placeholder="Не задано" ariaLabel={`Цена позиции ${index + 1}`} onCommit={raw => updateCatalogItem(index, { price: raw === '' ? null : nonNegativeOrNull(raw) })} /></td>
             <td className="catalog-note"><input type="text" value={item.note} aria-label={`Примечание позиции ${index + 1}`} onChange={event => updateCatalogItem(index, { note: event.target.value })} /></td>
             <td className="catalog-remove"><button type="button" aria-label={`Удалить позицию ${item.name}`} title="Удалить позицию" onClick={() => onChange(p => { p.catalog = (p.catalog ?? []).filter(entry => entry.id !== item.id); })}>×</button></td>
           </tr>)}
-          {!catalog.length && <tr><td colSpan={6}>Справочник пуст. Добавьте позиции или импортируйте JSON.</td></tr>}
+          {!catalog.length && <tr><td colSpan={8}>Справочник пуст. Добавьте позиции или импортируйте JSON.</td></tr>}
         </tbody>
       </table></div>
       <p className="help">Позиции справочника сопоставляются по виду и наименованию без учёта регистра. Цена «—» означает «неизвестно», а не 0. Пустое поле «Работы, %» также делает смету неполной.</p>

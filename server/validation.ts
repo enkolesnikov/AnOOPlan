@@ -148,6 +148,7 @@ function assertRoute(route: Row, context: ValidationContext): void {
   context.claim(route.id, 'route.id');
   text(route.type, 'route.type');
   text(route.note, 'route.note');
+  if (route.subsystem !== undefined && !['horizontal', 'trunk', 'workplace'].includes(route.subsystem)) fail('route.subsystem: ожидается horizontal, trunk или workplace');
   // Размеры КНС необязательны: отсутствие означает «неизвестно», но заданное значение должно быть > 0.
   for (const key of ['trayWidthMm', 'trayHeightMm', 'trayAreaMm2']) positiveOrEmpty(route[key], `route.${key}`);
   if (route.color !== undefined && route.color !== null && normalizeRouteColor(route.color) === null) fail('route.color: ожидается цвет #rrggbb');
@@ -184,7 +185,8 @@ function assertCatalogField(value: unknown): void {
       && typeof entry.name === 'string' && entry.name.trim() !== ''
       && typeof entry.unit === 'string'
       && priceOk
-      && typeof entry.note === 'string';
+      && typeof entry.note === 'string'
+      && ['manufacturer', 'article', 'series', 'size'].every(key => entry[key] === undefined || typeof entry[key] === 'string');
     if (!valid) fail('project.catalog: некорректная позиция');
   }
 }

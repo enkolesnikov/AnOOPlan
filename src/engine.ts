@@ -363,7 +363,7 @@ const SECTION_PROBLEM_TEXT: Record<'missing' | 'invalid', string> = {
 };
 
 /** Текстовое обозначение КНС для ведомости: площадь, диаметр, размеры или прочерк. */
-function sectionLabel(route: Route): string {
+export function routeSectionLabel(route: Route): string {
   if (dimensionState(route.trayAreaMm2) === 'valid') return `S=${route.trayAreaMm2} мм²`;
   if (isDiameterRoute(route)) {
     return dimensionState(route.trayWidthMm) === 'valid' ? `Ø${route.trayWidthMm}` : '—';
@@ -513,6 +513,133 @@ export function routeSummary(project: Project): RouteSummaryResult {
     totals.angles.other += angles.other;
   }
   return { routes, groups };
+}
+
+export const ROUTE_SUBSYSTEM_LABELS: Record<NonNullable<Route['subsystem']>, string> = {
+  horizontal: 'Горизонтальная',
+  trunk: 'Магистральная',
+  workplace: 'Рабочее место',
+};
+export const routeSubsystemLabel = (route: Route): string => route.subsystem ? ROUTE_SUBSYSTEM_LABELS[route.subsystem] : 'Не задана';
+
+export interface RouteSectionSuggestion {
+  kind: 'diameter' | 'rectangle';
+  widthMm: number;
+  heightMm: number | null;
+  areaMm2: number;
+  fillPercent: number;
+  label: string;
+}
+
+/** Эквивалентный диаметр кабеля по площади сечения (для проверки проходимости). */
+const cableEquivalentDiameter = (cable: Cable): number | null => {
+  const section = cableSection(cable);
+  if (section.areaMm2 === null) return null;
+  return Math.sqrt(4 * section.areaMm2 / Math.PI);
+};
+
+/**
+ * Подбор минимального стандартного сечения КНС по кабелям трассы:
+ * заполнение не выше рекомендуемых 40 %, для круглых КНС диаметр не меньше
+ * эквивалентного диаметра самого толстого кабеля.
+ */
+export function suggestRouteSection(project: Project, route: Route): RouteSectionSuggestion | null {
+  const fill = trayFill(project);
+  const used = Math.max(0, ...fill.segments.filter(row => row.routeId === route.id && row.usedAreaMm2 !== null).map(row => row.usedAreaMm2 as number));
+  if (!(used > 0)) return null;
+  const routeCables = project.cables.filter(cable => cable.segmentIds.some(id => route.segments.some(segment => segment.id === id)));
+  const maxCableDiameter = Math.max(0, ...routeCables.map(cableEquivalentDiameter).filter((value): value is number => value !== null));
+  if (isDiameterRoute(route)) {
+    for (const diameter of [16, 20, 25, 32, 40, 50, 63, 75, 90, 110]) {
+      const area = Math.PI * diameter * diameter / 4;
+      const percent = used / area * 100;
+      if (diameter >= maxCableDiameter && percent <= TRAY_FILL_RECOMMENDED_PERCENT) {
+        return { kind: 'diameter', widthMm: diameter, heightMm: null, areaMm2: area, fillPercent: percent, label: `Ø${diameter} (заполнение ${Math.round(percent)} %)` };
+      }
+    }
+    return null;
+  }
+  for (const [width, height] of [[50, 50], [100, 50], [100, 80], [150, 50], [150, 80], [200, 50], [200, 80], [300, 50], [300, 100], [400, 100]] as const) {
+    const area = width * height;
+    const percent = used / area * 100;
+    if (percent <= TRAY_FILL_RECOMMENDED_PERCENT) {
+      return { kind: 'rectangle', widthMm: width, heightMm: height, areaMm2: area, fillPercent: percent, label: `${width}×${height} (заполнение ${Math.round(percent)} %)` };
+    }
+  }
+  return null;
+}
+
+export interface KnSLine {
+  name: string;
+  section: string;
+  subsystem: string;
+  unit: string;
+  quantity: number | null;
+  angles: number;
+  article: string;
+  manufacturer: string;
+  price: number | null;
+  cost: number | null;
+  routes: number;
+}
+export interface KnSSpecification {
+  lines: KnSLine[];
+  totals: { group: string; length: number | null; angles: number }[];
+  totalCost: number | null;
+  warnings: string[];
+}
+
+/**
+ * Спецификация КНС: агрегирует трассы по подсистеме, типу и сечению, добавляет
+ * углы коробов и артикулы из справочника цен. Цены не подменяются нулём.
+ */
+export function specificationKnS(project: Project): KnSSpecification {
+  const summary = routeSummary(project);
+  const lines: KnSLine[] = [];
+  const warnings: string[] = [];
+  const catalog = project.catalog ?? [];
+  for (const route of project.routes) {
+    const row = summary.routes.find(item => item.number === route.number && item.type === route.type);
+    if (!row) continue;
+    const subsystem = routeSubsystemLabel(route);
+    const section = routeSectionLabel(route);
+    const existing = lines.find(line => line.name === row.group && line.section === section && line.subsystem === subsystem);
+    const angles = row.group === 'Кабель-канал' ? row.angles.total : 0;
+    if (existing) {
+      existing.quantity = existing.quantity === null || row.length === null ? null : existing.quantity + row.length;
+      existing.angles += angles;
+      existing.routes += 1;
+      existing.cost = existing.quantity === null || existing.price === null ? null : existing.quantity * existing.price;
+      continue;
+    }
+    // Сначала ищем позицию по конкретному типу трассы, затем по группе (например, «Гофра»).
+    const match = catalog.find(item => item.kind === 'tray' && item.name.trim().toLowerCase() === route.type.trim().toLowerCase())
+      ?? catalog.find(item => item.kind === 'tray' && item.name.trim().toLowerCase() === row.group.trim().toLowerCase());
+    lines.push({
+      name: row.group,
+      section,
+      subsystem,
+      unit: 'м',
+      quantity: row.length,
+      angles,
+      article: match?.article ?? '',
+      manufacturer: match?.manufacturer ?? '',
+      price: match?.price ?? null,
+      cost: row.length === null || !match || match.price === null ? null : row.length * match.price,
+      routes: 1,
+    });
+  }
+  const totals: { group: string; length: number | null; angles: number }[] = [];
+  for (const line of lines) {
+    let group = totals.find(item => item.group === line.name);
+    if (!group) { group = { group: line.name, length: 0, angles: 0 }; totals.push(group); }
+    group.length = group.length === null || line.quantity === null ? null : group.length + line.quantity;
+    group.angles += line.angles;
+  }
+  const complete = lines.length > 0 && lines.every(line => line.cost !== null);
+  const totalCost = complete ? lines.reduce((sum, line) => sum + (line.cost as number), 0) : null;
+  if (lines.some(line => line.price === null)) warnings.push('Для части КНС нет цены в справочнике — стоимость не рассчитана.');
+  return { lines, totals, totalCost, warnings };
 }
 
 /** Заполнение лотка по каждому сегменту всех трасс проекта. */
@@ -688,7 +815,7 @@ export function specifications(project: Project) {
         route: route.number,
         segment: `${route.number}.${index + 1}`,
         routeType: route.type,
-        tray: sectionLabel(route),
+        tray: routeSectionLabel(route),
         trayAreaMm2: segmentFill?.trayAreaMm2 ?? null,
         lines: segmentFill?.lines ?? 0,
         areaMm2: segmentFill?.usedAreaMm2 ?? null,

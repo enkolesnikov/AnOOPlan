@@ -664,6 +664,8 @@ check(routeLabels.some(text => text.includes('Высота борта, мм')), 
 check(routeLabels.some(text => text.includes('Площадь сечения, мм²')), 'в свойствах трассы есть поле «Площадь сечения, мм²»');
 const routeProperties = document.querySelector('.properties')?.textContent || '';
 check(routeProperties.includes('Заполнение КНС'), 'в свойствах трассы есть блок «Заполнение КНС»');
+check(routeProperties.includes('Подсистема СКС'), 'в свойствах трассы есть подсистема СКС');
+check(routeProperties.includes('Подобрать стандартное сечение'), 'в свойствах трассы есть подбор сечения');
 // Типы КНС и цвета: выбор типа меняет подписи размеров, цвет — палитра.
 const kindChips = Array.from(document.querySelectorAll('.properties .chip-row .chip')).map(button => (button.textContent || '').trim());
 for (const label of ['Лоток', 'Гофра', 'Труба', 'Кабель-канал']) check(kindChips.includes(label), `в свойствах трассы есть тип КНС «${label}»`);
@@ -815,7 +817,8 @@ const setInputValue = (input, value) => {
 };
 if (orgInput) { setInputValue(orgInput, 'ООО Кабель-Тест'); await sleep(220); }
 const sectionCheckboxes = Array.from(document.querySelectorAll('.section-checkbox'));
-check(sectionCheckboxes.length >= 14, `чекбоксов разделов не меньше 14: ${sectionCheckboxes.length}`);
+check(sectionCheckboxes.length >= 15, `чекбоксов разделов не меньше 15: ${sectionCheckboxes.length}`);
+check(sectionCheckboxes.some(box => (box.parentElement?.textContent || '').includes('Спецификация КНС')), 'есть раздел «Спецификация КНС»');
 check(sectionCheckboxes.length > 0 && sectionCheckboxes.every(input => input.checked), 'по умолчанию выбраны все разделы');
 check(Boolean(document.querySelector('.print-selected')), 'кнопка «Печать выбранных разделов» есть');
 check(Boolean(document.querySelector('.anooplan-save')), 'кнопка «Сохранить проект .anooplan» есть');
@@ -846,7 +849,7 @@ const freshCheckboxes = Array.from(document.querySelectorAll('.section-checkbox'
 check(freshCheckboxes.length >= 13 && freshCheckboxes.every(input => !input.checked), 'панель печати помнит снятый выбор');
 freshCheckboxes[0].click();
 await sleep(220);
-check((document.querySelector('.print-sections-count')?.textContent || '').includes('1 из 14'), `счётчик выбранных разделов: ${document.querySelector('.print-sections-count')?.textContent || '—'}`);
+check((document.querySelector('.print-sections-count')?.textContent || '').includes('1 из 15'), `счётчик выбранных разделов: ${document.querySelector('.print-sections-count')?.textContent || '—'}`);
 const printBeforeSubset = printCalls.length;
 document.querySelector('.print-selected')?.click();
 await sleep(2600);
