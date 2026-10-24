@@ -1,0 +1,86 @@
+import { findRoute } from '../engine';
+import { equipmentColor, equipmentIcon } from '../equipment-icons';
+import { PlanAccessibilityList } from '../PlanAccessibilityList';
+import { EquipmentSymbol } from './equipment-icon';
+import { areaLabel, number } from './format';
+import { equipmentSelect } from './selects';
+import type { Tool } from './types';
+import type { AppUi } from './use-app-controller';
+
+const toolHints: Record<Tool, string> = { select: 'Выберите объект • тяните оборудование и узлы трассы', pan: 'Перетаскивайте план • колесо — масштаб', equipment: 'Клик на плане — добавить оборудование', route: 'Клики — вершины • Enter — завершить • Esc — отменить', calibrate: 'Укажите две точки известного размера на PDF', cable: 'Выбирайте сегменты по порядку от начала к концу', measure: 'Рулетка: две точки на плане → расстояние в метрах', pin: 'Клик на плане — добавить замечание' };
+
+/** Экран плана: тулбар, сетка, SVG-оверлей, подсказки и панель доступности. */
+export function PlanScreen({ ui }: { ui: AppUi }) {
+  const {
+    project, floor, tool, setTool, undo, redo, history, grid, setGrid, snap, setSnap, ortho, setOrtho,
+    gridSize, setGridSize, pdfPages, floorId, mutate, fit, changeZoom, zoom, pan, canvas, renderPlan,
+    draft, setDraft, routeHeight, setRouteHeight, finishRoute, measure, measureMode, setMeasureMode, setMeasure,
+    calibration, setCalibration,
+    setMessage, cableFrom, setCableFrom, cableTo, setCableTo, setCableSegments, cableSegments, finishCable,
+    setError, pdfError, stage, pointerDown, pointerMove, pointerUp, pointerCancel, stagePressDown,
+    moveLongPress, cancelLongPress, zoomAt, armTap, position, startDrag, pinching, selection, setSelection,
+    setTab, setView, pointer, route, cable,
+  } = ui;
+  function measureLabel(): string {
+    if (measureMode === 'area') return measure.length >= 3 ? areaLabel(measure, floor?.metersPerUnit) : '';
+    if (measure.length < 2) return '';
+    const units = Math.hypot(measure[1].x - measure[0].x, measure[1].y - measure[0].y);
+    const scale = floor?.metersPerUnit;
+    return scale && scale > 0 ? `${number(units * scale)} м` : `${number(units)} ед.`;
+  }
+  return (
+<div className="plan-view">
+<div className="drawing-toolbar"><div className="tool-group">{([['select', '↖', 'Выбор'], ['pan', '✥', 'Панорама'], ['equipment', '▣', 'Оборудование'], ['route', '⌁', 'Трасса'], ['cable', '↝', 'Кабель'], ['calibrate', '↔', 'Масштаб'], ['measure', '📏', 'Рулетка']] as const).map(([id, icon, label]) => <button key={id} title={label} className={tool === id ? 'active' : ''} onClick={() => { setTool(id); setDraft([]); setCalibration([]); setMeasure([]); }}><b>{icon}</b><span>{label}</span></button>)}</div><div className="tool-group history"><button title="Отменить Ctrl+Z" aria-label="Отменить" disabled={!undo.length} onClick={() => history(true)}>↶</button><button title="Повторить Ctrl+Shift+Z" aria-label="Повторить" disabled={!redo.length} onClick={() => history(false)}>↷</button></div></div>
+      <div className="drawing-options"><label><input type="checkbox" checked={grid} onChange={e => setGrid(e.target.checked)} />Сетка</label><label><input type="checkbox" checked={snap} onChange={e => setSnap(e.target.checked)} />Привязка</label><label><input type="checkbox" checked={ortho} onChange={e => setOrtho(e.target.checked)} />Ортогонально</label><label>Шаг<input className="mini-input" type="number" min="1" value={gridSize} onChange={e => setGridSize(Math.max(1, Number(e.target.value) || 1))} /></label><span className="grow" />{floor?.pdfId && <label>Страница <input className="mini-input" type="number" min="1" max={pdfPages || 9999} value={floor.page} onChange={e => { const page = Math.max(1, Math.min(pdfPages || 9999, Number(e.target.value) || 1)); if (page !== floor.page && window.confirm('Смена страницы сохраняет объекты и сбрасывает масштаб. Продолжить?')) mutate(p => { const f = p.floors.find(f => f.id === floor.id)!; f.page = page; f.metersPerUnit = null; }); }} /> / {pdfPages || '…'}</label>}<button onClick={fit} aria-label="Вписать план">Вписать</button><button onClick={() => changeZoom(zoom / 1.2)} aria-label="Уменьшить масштаб">−</button><span>{Math.round(zoom * 100)}%</span><button onClick={() => changeZoom(zoom * 1.2)} aria-label="Увеличить масштаб">＋</button><button className={tool === 'pin' ? 'active' : ''} title="Замечание" onClick={() => setTool(tool === 'pin' ? 'select' : 'pin')}>📍 Замечание</button></div>
+      {tool === 'route' && <div className="contextbar"><span>Трасса: {draft.length} вершин</span><label>Высота, м <input type="text" inputMode="decimal" value={routeHeight} onChange={e => setRouteHeight(e.target.value.replace(',', '.'))} /></label><button className="primary" disabled={draft.length < 2} onClick={finishRoute}>Завершить · Enter</button><button onClick={() => setDraft([])}>Сбросить</button></div>}
+      {tool === 'measure' && <div className="contextbar"><span>{measureMode === 'length' ? `Рулетка: точек ${Math.min(measure.length, 2)} из 2` : `Площадь: вершин ${measure.length}`}</span><button className={measureMode === 'length' ? 'primary' : ''} onClick={() => { setMeasureMode('length'); setMeasure([]); setMessage('Рулетка: укажите две точки на плане.'); }}>Длина</button><button className={measureMode === 'area' ? 'primary' : ''} onClick={() => { setMeasureMode('area'); setMeasure([]); setMessage('Площадь: обведите контур по вершинам, минимум три.'); }}>Площадь</button><button onClick={() => setMeasure([])}>Сброс</button><small>{floor?.metersPerUnit ? 'Метры по масштабу листа.' : 'Масштаб не задан — результат в единицах PDF.'}</small></div>}
+      {tool === 'cable' && <div className="contextbar cable-builder"><label>От {equipmentSelect(project, cableFrom, setCableFrom)}</label><span>→</span><label>До {equipmentSelect(project, cableTo, setCableTo)}</label><button onClick={() => { if (!cableFrom || !cableTo) { setError('Сначала выберите «От» и «До».'); return; } const res = findRoute(project, cableFrom, cableTo); if (res.error) setError(res.error); else { setCableSegments(res.segmentIds); setMessage(`Маршрут построен: ${res.segmentIds.length} сегм.`); } }}>Автомаршрут</button><span>{cableSegments.length} сегм.</span><button className="primary" onClick={finishCable}>Создать</button><button onClick={() => setCableSegments([])}>Сброс</button><small>Выберите «От» и «До» — маршрут строится сам. Можно скорректировать сегменты кликами.</small></div>}
+      {pdfError && <div className="banner error">{pdfError}</div>}
+      <div className={`drawing-stage tool-${tool}`} ref={stage}
+        onPointerDown={pointerDown} onPointerMove={pointerMove} onPointerUp={pointerUp} onPointerCancel={pointerCancel}
+        onPointerDownCapture={stagePressDown} onPointerMoveCapture={moveLongPress} onPointerUpCapture={cancelLongPress}
+        onWheel={e => { e.preventDefault(); changeZoom(zoom * (e.deltaY < 0 ? 1.1 : 1 / 1.1)); }}
+        onDoubleClick={e => { if ((e.target as Element).closest('[data-object]')) return; e.preventDefault(); if (zoom < 1.5) zoomAt(e.clientX, e.clientY, zoom * 2.4); else fit(); }}>
+        {floor && <div className="drawing-sheet" style={{ width: floor.width, height: floor.height, transform: `translate(${pan.x}px,${pan.y}px) scale(${zoom})` }}>
+          {floor.pdfId ? <canvas ref={canvas} aria-label={`План: ${floor?.name ?? 'этаж'}`} style={renderPlan ? { position: 'absolute', left: renderPlan.clipX, top: renderPlan.clipY, width: renderPlan.clipWidth, height: renderPlan.clipHeight } : { width: '100%', height: '100%' }} /> : <div className="no-pdf"><span>AnOOPlan / {floor.name.toUpperCase()}</span><p>Рабочее поле без PDF</p><small>{project.name.includes('Учеб') ? 'Синтетическая схема для проверки расчёта' : 'Загрузите план PDF и задайте масштаб по двум точкам'}</small></div>}
+          <svg className="plan-overlay" width={floor.width} height={floor.height} viewBox={`0 0 ${floor.width} ${floor.height}`}>
+            <defs><pattern id="drawing-grid" width={gridSize} height={gridSize} patternUnits="userSpaceOnUse"><path d={`M ${gridSize} 0 L 0 0 0 ${gridSize}`} fill="none" stroke="#63828e" strokeOpacity=".19" strokeWidth={.5 / zoom} /></pattern></defs>
+            {grid && <rect width="100%" height="100%" fill="url(#drawing-grid)" pointerEvents="none" />}
+            {project.routes.flatMap(r => r.segments.map((s, index) => {
+              const visibleA = s.a.floorId === floor.id, visibleB = s.b.floorId === floor.id; if (!visibleA && !visibleB) return null;
+              const chosen = cableSegments.includes(s.id) || cable?.segmentIds.includes(s.id); const selected = selection?.id === r.id;
+              return <g key={s.id} data-object="segment" data-id={s.id} data-route={r.id} className={`route-segment ${chosen ? 'cable-selected' : ''} ${selected ? 'is-selected' : ''}`} onPointerDown={e => { e.stopPropagation(); if (pinching.current) return; if (tool === 'cable') armTap(e, () => setCableSegments(ids => ids.includes(s.id) ? ids.filter(id => id !== s.id) : [...ids, s.id])); else if (tool === 'route') armTap(e, () => { const p = position(e); setDraft(points => [...points, p]); }); else if (tool === 'select') armTap(e, () => setSelection({ kind: 'route', id: r.id })); }}>
+                <line x1={s.a.x} y1={s.a.y} x2={s.b.x} y2={s.b.y} stroke="transparent" strokeWidth={26 / zoom} />
+                <line x1={s.a.x} y1={s.a.y} x2={s.b.x} y2={s.b.y} strokeWidth={(chosen ? 5 : selected ? 4 : 3) / zoom} className="visible-route" pointerEvents="none" strokeDasharray={!visibleA || !visibleB ? `${7 / zoom} ${4 / zoom}` : undefined} />
+                {(!visibleA || !visibleB) && <g transform={`translate(${s.a.x},${s.a.y})`}><circle r={9 / zoom} fill="white" stroke="#875ec5" strokeWidth={2 / zoom} /><text textAnchor="middle" y={4 / zoom} fontSize={12 / zoom} fill="#875ec5">↕</text></g>}
+                {(selected || chosen) && <text x={(s.a.x + s.b.x) / 2 + 6 / zoom} y={(s.a.y + s.b.y) / 2 - 7 / zoom} fontSize={11 / zoom} fill="#126e71" className="svg-label">{tool === 'cable' ? cableSegments.indexOf(s.id) + 1 || '' : `${r.number}.${index + 1}`}</text>}
+              </g>;
+            }))}
+            {route && tool === 'select' && Array.from(new Map(route.segments.flatMap(s => [s.a, s.b]).filter(v => v.floorId === floor.id).map(v => [v.id, v])).values()).map(v => <circle data-object="vertex" data-route={route.id} key={v.id} cx={v.x} cy={v.y} r={5 / zoom} fill="white" stroke="#008e94" strokeWidth={2 / zoom} className="vertex-handle" onPointerDown={e => startDrag(e, 'vertex', route.id, v.id)} />)}
+            {project.equipment.filter(eq => eq.floorId === floor.id).map(eq => <g data-object="equipment" data-id={eq.id} data-icon={equipmentIcon(eq.type)} data-color={equipmentColor(eq)} key={eq.id} transform={`translate(${eq.x},${eq.y})`} className={`equipment-symbol ${selection?.id === eq.id ? 'is-selected' : ''}`} onPointerDown={e => { if (pinching.current) return; if (tool === 'select') { setSelection({ kind: 'equipment', id: eq.id }); startDrag(e, 'equipment', eq.id); } else if (tool === 'route') { e.stopPropagation(); armTap(e, () => setDraft(points => { const p = { x: eq.x, y: eq.y }; const last = points[points.length - 1]; return ortho && last && last.x !== p.x && last.y !== p.y ? [...points, { x: p.x, y: last.y }, p] : [...points, p]; })); } else if (tool === 'cable') { e.stopPropagation(); armTap(e, () => { if (!cableFrom) { setCableFrom(eq.id); setMessage(`Начало: ${eq.number}. Коснитесь конечного устройства.`); } else if (cableTo !== eq.id) { setCableTo(eq.id); const res = findRoute(project, cableFrom, eq.id); if (res.error) { setCableSegments([]); setError(res.error); } else { setCableSegments(res.segmentIds); setMessage(`Конец: ${eq.number}. Маршрут построен автоматически: ${res.segmentIds.length} сегм.`); } } }); } }}>
+              <EquipmentSymbol item={eq} zoom={zoom} />
+            </g>)}
+            {project.pins.filter(pin => pin.floorId === floor.id).map(pin => <g data-object="pin" data-id={pin.id} key={pin.id} transform={`translate(${pin.x},${pin.y})`} className={`pin-symbol ${selection?.id === pin.id ? 'is-selected' : ''}`} onPointerDown={e => { e.stopPropagation(); if (pinching.current) return; if (tool === 'select') { setSelection({ kind: 'pin', id: pin.id }); setTab('pins'); setView('plan'); } }}>
+              <circle r={9 / zoom} fill={pin.status === 'closed' ? '#2f9e63' : '#e78c22'} stroke="#fff" strokeWidth={2 / zoom} />
+              <text x={13 / zoom} y={4 / zoom} fontSize={12 / zoom} className="svg-label" fill="#122936">{pin.number}</text>
+            </g>)}
+            {draft.length > 0 && <g pointerEvents="none"><polyline points={draft.map(p => `${p.x},${p.y}`).join(' ')} fill="none" stroke="#e78c22" strokeWidth={3 / zoom} strokeDasharray={`${6 / zoom} ${3 / zoom}`} />{draft.map((p, i) => <circle key={i} cx={p.x} cy={p.y} r={4 / zoom} fill="#e78c22" />)}</g>}
+            {calibration.map((p, i) => <circle key={i} cx={p.x} cy={p.y} r={6 / zoom} fill="#dc5071" pointerEvents="none" />)}
+            {measure.length > 0 && <g pointerEvents="none">
+              {measureMode === 'area' && measure.length >= 3
+                ? <polygon points={measure.map(point => `${point.x},${point.y}`).join(' ')} fill="#875ec5" fillOpacity={0.16} stroke="#875ec5" strokeWidth={2 / zoom} strokeDasharray={`${6 / zoom} ${4 / zoom}`} />
+                : measure.length === 2 ? <line x1={measure[0].x} y1={measure[0].y} x2={measure[1].x} y2={measure[1].y} stroke="#875ec5" strokeWidth={2 / zoom} strokeDasharray={`${6 / zoom} ${4 / zoom}`} /> : null}
+              {measure.map((point, index) => <circle key={index} cx={point.x} cy={point.y} r={5 / zoom} fill="#875ec5" />)}
+              {measure.length >= (measureMode === 'area' ? 3 : 2) && <text
+                x={(measureMode === 'area' ? measure.reduce((sum, point) => sum + point.x, 0) / measure.length : (measure[0].x + measure[1].x) / 2) + 8 / zoom}
+                y={(measureMode === 'area' ? measure.reduce((sum, point) => sum + point.y, 0) / measure.length : (measure[0].y + measure[1].y) / 2) - 8 / zoom}
+                fontSize={12 / zoom} fill="#875ec5" className="svg-label">{measureLabel()}</text>}
+            </g>}
+          </svg>
+        </div>}
+        <div className="plan-badge"><span className="dot calibrated" />{floor?.name || 'Нет этажей'}<span> / </span>{floor?.metersPerUnit ? `${number(floor.metersPerUnit)} м/ед.` : 'Масштаб не задан'}</div>
+        <div className="plan-legend"><span className="legend-line" /> Трасса <span className="legend-equipment" /> Оборудование <span className="legend-cable" /> Выбранный кабель</div>
+      </div><div className="tool-hint"><span>{toolHints[tool]}</span><small>Координаты PDF: {pointer ? `${number(pointer.x)}; ${number(pointer.y)}` : '—'}</small></div><PlanAccessibilityList project={project} floor={floor} />
+</div>
+  );
+}

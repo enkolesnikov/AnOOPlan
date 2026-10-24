@@ -5,7 +5,6 @@ import { resolve } from 'node:path';
 import { existsSync } from 'node:fs';
 import { Store, type PdfRecord } from './store.js';
 import { ApiError, assertProject, decodePdf, isPdf } from './validation.js';
-import { csv, exportSheets, pdf, xlsx } from './export.js';
 import { validateProject } from '../src/engine.js';
 
 export function createApp(options?: { dataDir: string }) {
@@ -87,17 +86,6 @@ export function createApp(options?: { dataDir: string }) {
       store.save(project);
     });
     warnings(res, project); res.status(201).json(project);
-  });
-  app.get('/api/projects/:id/export', async (req, res, next) => {
-    try {
-      const project = getProject(req.params.id); const sheets = exportSheets(project);
-      switch (req.query.format ?? 'csv') {
-        case 'csv': res.type('text/csv; charset=utf-8').attachment('project.csv').send(csv(sheets)); break;
-        case 'xlsx': res.type('application/vnd.openxmlformats-officedocument.spreadsheetml.sheet').attachment('project.xlsx').send(xlsx(sheets)); break;
-        case 'pdf': res.type('application/pdf').attachment('project.pdf').send(await pdf(project, sheets)); break;
-        default: throw new ApiError(400, 'Формат должен быть csv, xlsx или pdf');
-      }
-    } catch (error) { next(error); }
   });
   app.use('/api', (_req, _res, next) => { next(new ApiError(404, 'API endpoint не найден')); });
   const dist = resolve(process.cwd(), 'dist');

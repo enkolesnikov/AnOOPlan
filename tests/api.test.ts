@@ -4,7 +4,6 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { AddressInfo } from 'node:net';
-import * as XLSX from 'xlsx';
 import { createApp } from '../server/app.js';
 import type { Project } from '../src/model.js';
 
@@ -169,31 +168,6 @@ test('PDF multipart and portable backup restore preserve original bytes; restore
     assert.equal((await b.request('/api/restore', 'POST', conflict)).status, 409);
     assert.equal((await b.request('/api/projects/different')).status, 404);
   } finally { await a.close(); await b.close(); }
-});
-
-test('exports contain journal and specifications, BOM CSV, workbook sheets and PDF font diagnostics', async () => {
-  const h = await harness();
-  try {
-    const p = fixture(); p.cables[0].note = '=1+1';
-    await h.request('/api/projects', 'POST', p);
-    const response = await h.request('/api/projects/project-1/export?format=csv'); assert.equal(response.status, 200);
-    const bytes = Buffer.from(await response.arrayBuffer()); assert.deepEqual([...bytes.subarray(0, 3)], [0xef, 0xbb, 0xbf]);
-    const text = bytes.toString('utf8'); assert.match(text, /Кабельный журнал/); assert.match(text, /Инфраструктура/); assert.match(text, /Заполнение лотков/); assert.match(text, /ВВГ/); assert.match(text, /'\=1\+1/); assert.match(text, /Смета/); assert.match(text, /Коммерческое предложение/); assert.match(text, /Справочник цен/);
-    const workbookResponse = await h.request('/api/projects/project-1/export?format=xlsx'); assert.equal(workbookResponse.status, 200);
-    const wb = XLSX.read(Buffer.from(await workbookResponse.arrayBuffer()), { type: 'buffer' });
-    assert.deepEqual(wb.SheetNames, ['Кабельный журнал', 'Оборудование', 'Кабели', 'Инфраструктура', 'Заполнение лотков', 'Смета', 'Коммерческое предложение', 'Справочник цен', 'Замечания', 'Предупреждения']);
-    assert.ok(wb.SheetNames.includes('Кабельный журнал'));
-    const journal = XLSX.utils.sheet_to_json<any[]>(wb.Sheets['Кабельный журнал'], { header: 1 });
-    const journalHeader = journal[0] as string[];
-    assert.ok(journalHeader.includes('Диаметр, мм')); assert.ok(journalHeader.includes('Сечение, мм²'));
-    const one = journalHeader.indexOf('Итог одного, м'); const withQuantity = journalHeader.indexOf('Итог с количеством, м');
-    assert.ok(one > 0 && withQuantity === one + 1);
-    assert.equal(journal[1][one], 3); assert.equal(journal[1][withQuantity], 6);
-    const result = await h.request('/api/projects/project-1/export?format=pdf');
-    if (result.status === 503) assert.match((await result.json()).error, /PDF_FONT_PATH/);
-    else { assert.equal(result.status, 200); assert.equal(Buffer.from(await result.arrayBuffer()).subarray(0, 5).toString(), '%PDF-'); }
-    assert.equal((await h.request('/api/projects/project-1/export?format=invalid')).status, 400);
-  } finally { await h.close(); }
 });
 
 test('DELETE удаляет проект из хранилища', async () => {

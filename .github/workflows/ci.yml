@@ -28,8 +28,10 @@ jobs:
       - run: npm ci
       - name: Типы
         run: npx tsc --noEmit
-      - name: Юнит-тесты
-        run: npm test
+      - name: Юнит-тесты с покрытием
+        run: npm run coverage
+      - name: Сборка и бюджет стартового бандла
+        run: npm run build && npm run size
       - name: Дымовой тест интерфейса
         run: npm run smoke
       - name: Кэш браузеров Playwright

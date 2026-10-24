@@ -100,7 +100,7 @@ window.AnOOPlanNative = {
 
 // Шрифты для PDF приложение тянет из собственных ассетов — отдаём их как статический сервер.
 const FONT_DIR = join(ROOT, 'src', 'assets', 'fonts');
-const FONT_FILES = ['PT_Sans-Web-Regular.ttf', 'PT_Sans-Web-Bold.ttf'];
+const FONT_FILES = ['AnOOPlanSans-Regular.ttf', 'AnOOPlanSans-Bold.ttf'];
 const fetchStub = async url => {
   const value = String(url);
   if (value.includes('/api/')) {

@@ -1,7 +1,8 @@
-// Шрифты для PDF берутся из самого приложения: PT Sans (OFL) с поддержкой кириллицы,
-// поэтому PDF собирается офлайн, без системных шрифтов и сервера.
-import regularUrl from './assets/fonts/PT_Sans-Web-Regular.ttf?url';
-import boldUrl from './assets/fonts/PT_Sans-Web-Bold.ttf?url';
+// Шрифты для PDF берутся из самого приложения: сабсет PT Sans (OFL) с кириллицей и латиницей,
+// поэтому PDF собирается офлайн, без системных шрифтов и сервера. Сабсет и переименование
+// в «AnOOPlan Sans» сделаны по требованию OFL (Reserved Font Names «PT Sans»/«ParaType»).
+import regularUrl from './assets/fonts/AnOOPlanSans-Regular.ttf?url';
+import boldUrl from './assets/fonts/AnOOPlanSans-Bold.ttf?url';
 
 export interface JournalFonts {
   regular: ArrayBuffer;

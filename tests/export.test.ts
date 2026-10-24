@@ -18,8 +18,8 @@ const toArrayBuffer = (path: string): ArrayBuffer => {
 };
 
 const fonts: JournalFonts = {
-  regular: toArrayBuffer('../src/assets/fonts/PT_Sans-Web-Regular.ttf'),
-  bold: toArrayBuffer('../src/assets/fonts/PT_Sans-Web-Bold.ttf'),
+  regular: toArrayBuffer('../src/assets/fonts/AnOOPlanSans-Regular.ttf'),
+  bold: toArrayBuffer('../src/assets/fonts/AnOOPlanSans-Bold.ttf'),
 };
 
 const SHEETS = ['Кабельный журнал', 'Оборудование', 'Кабели', 'Инфраструктура', 'Заполнение лотков', 'Смета', 'Коммерческое предложение', 'Справочник цен', 'Замечания', 'Предупреждения'];

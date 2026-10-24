@@ -10,8 +10,8 @@ const COMPONENTS = [
   ['PDF.js (pdfjs-dist)', 'Apache-2.0'],
   ['SheetJS (xlsx)', 'Apache-2.0'],
   ['Vite, TypeScript, esbuild', 'MIT'],
-  ['Express, pdfkit (серверная версия)', 'MIT'],
-  ['PT Sans', 'SIL Open Font License 1.1'],
+  ['Express (серверная версия)', 'MIT'],
+  ['PT Sans — сабсет AnOOPlan Sans', 'SIL Open Font License 1.1'],
 ];
 
 export function AboutSheet({ onClose, diagnostics, onExportDiagnostics, onClearDiagnostics }: {
@@ -46,8 +46,8 @@ export function AboutSheet({ onClose, diagnostics, onExportDiagnostics, onClearD
             ? <pre className="diagnostics-log">{diagnostics.slice(-5).map(entry => `${entry.at} [${entry.kind}]${entry.context ? ` (${entry.context})` : ''}\n${entry.message}`).join('\n\n')}</pre>
             : <p className="about-help">Ошибок не зафиксировано.</p>}
 
-          <h3>PT Sans</h3>
-          <p>В приложение встроены шрифты PT Sans Regular и PT Sans Bold. Они используются для кириллицы в PDF и распространяются по SIL Open Font License 1.1. Полный текст лицензии приведён ниже, как требует OFL.</p>
+          <h3>PT Sans (сабсет AnOOPlan Sans)</h3>
+          <p>Для PDF встроены сабсеты шрифтов PT Sans Regular и PT Sans Bold: только латиница, кириллица, цифры и типографские символы. Сабсет уменьшает размер приложения; по требованию OFL модифицированные шрифты переименованы в «AnOOPlan Sans» и не используют зарезервированные имена. Лицензия — SIL Open Font License 1.1, полный текст приведён ниже.</p>
           <pre className="license-text">{oflText}</pre>
 
           <h3>Компоненты с открытым кодом</h3>
