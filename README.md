@@ -12,7 +12,7 @@
 
 [![Скачать APK](https://img.shields.io/badge/%D1%81%D0%BA%D0%B0%D1%87%D0%B0%D1%82%D1%8C-APK-2ea043?logo=android&logoColor=white)](https://github.com/enkolesnikov/AnOOPlan/releases/latest)
 
-- **APK:** [последний релиз](https://github.com/enkolesnikov/AnOOPlan/releases/latest) (`AnOOPlan-1.17.0.apk`) — 1,8 МБ со встроенными шрифтами, Android 7.0+ (minSdk 24, WebView 98+, targetSdk 35), без интернета;
+- **APK:** [последний релиз](https://github.com/enkolesnikov/AnOOPlan/releases/latest) (`AnOOPlan-1.18.0.apk`) — 1,8 МБ со встроенными шрифтами, Android 7.0+ (minSdk 24, WebView 98+, targetSdk 35), без интернета;
 - **Веб-версия:** [enkolesnikov.github.io/AnOOPlan](https://enkolesnikov.github.io/AnOOPlan/);
 - **Исходный проект:** [enkolesnikov/ooplan](https://github.com/enkolesnikov/ooplan).
 
@@ -62,6 +62,9 @@
 - Неполные данные не подменяются нулём — итог помечается как неполный.
 
 **Хранение и экспорт**
+- **Печатные формы**: титульный лист, оглавление, штамп по ГОСТ 2.104 и лист регистрации изменений в PDF.
+- **Печать выбранных разделов**: журнал, ведомости, смета, замечания, планы и фото — можно отметить в панели экспорта.
+- **Обмен**: «Поделиться» PDF/XLSX через системный диалог Android, проект в формате `.anooplan` открывается из файлового менеджера.
 - Два режима хранения — «Сервер» и «Браузер». В локальной версии — SQLite-файл в `data/` и исходные PDF там же; в онлайн-версии — автосохранение проекта в браузере (localStorage).
 - PDF в IndexedDB без лимита 5 МБ: в браузере доступны большие чертежи.
 - Экспорт CSV/XLSX/PDF выполняется на клиенте, в том числе офлайн в APK; резервная копия JSON с исходными PDF.
@@ -97,12 +100,20 @@ npm run dev
 
 APK — это нативная оболочка (WebView) вокруг той же статической сборки, без Gradle и без сервера:
 
-- `com.anooplan.app`, minSdk 24, targetSdk 35, версия 1.17.0;
+- `com.anooplan.app`, minSdk 24, targetSdk 35, версия 1.18.0;
 - ассеты (`dist/`) упакованы в APK и отдаются WebView по origin `https://appassets.local/`, поэтому работают `localStorage`, `IndexedDB` (PDF-планы) и `crypto.randomUUID()`;
 - режим хранения — «Браузер»: проекты автосохраняются на устройстве, PDF читаются из памяти телефона через системный выбор файлов;
 - экспорт CSV и JSON-копии сохраняется в общую папку **Загрузки/AnOOPlan** без запроса опасных разрешений (MediaStore);
 - XLSX и PDF журнала собираются **на самом телефоне**: сервер для выгрузки не нужен;
 - разрешение `INTERNET` не запрашивается: приложение работает полностью офлайн.
+
+### Что нового в 1.18.0
+
+- **Печатные формы в PDF**: титульный лист с организацией, объектом, шифром документа и подписями; страница «Оглавление» с номерами; штамп по ГОСТ 2.104 на каждой странице; лист регистрации изменений.
+- **Печать выбранных разделов**: в панели «Экспорт / копия» отмечаются разделы (журнал, ведомости, смета, замечания, планы, фото), печать собирает PDF только из них.
+- **Поделиться PDF/XLSX**: системный диалог Android (`ACTION_SEND`), файлы раздаются через собственный `ContentProvider`.
+- **Проект `.anooplan`**: сохранение проекта одним файлом (JSON + PDF + фото, MIME `application/vnd.anooplan.project`), ассоциация файла и открытие из файлового менеджера/«Поделиться» с загрузкой в приложение.
+- 190 юнит-тестов, смоук (200 проверок), 2 E2E и подписанный APK.
 
 ### Что нового в 1.17.0
 
@@ -267,7 +278,7 @@ APK — это нативная оболочка (WebView) вокруг той �
 
 ```bash
 bash scripts/fetch-tools.sh   # android.jar (SDK 35) + build-tools 35 + r8.jar с d8 в tools/
-bash scripts/build-apk.sh     # результат: build/AnOOPlan-1.17.0.apk
+bash scripts/build-apk.sh     # результат: build/AnOOPlan-1.18.0.apk
 ```
 
 Нужны `JDK 17+`, `aapt`, `zipalign`, `apksigner`, `zip`, Node.js и Python 3 (генерация иконок).
@@ -296,7 +307,7 @@ adb install -r build/AnOOPlan-1.0.0.apk
 ## Проверки
 
 ```bash
-npm test             # 165 юнит-тестов: расчёт длин и заполнения лотка, автопрокладка, валидация, миграции, API, экспорт, backup
+npm test             # 190 юнит-тестов: расчёт длин и заполнения лотка, автопрокладка, валидация, миграции, API, экспорт, backup
 npm run smoke        # смоук интерфейса на happy-dom
 npm run test:ui      # сборка + 2 Playwright E2E с реальным PDF
 npm run build        # tsc --noEmit + vite build

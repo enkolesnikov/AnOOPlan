@@ -76,15 +76,22 @@ document.body.innerHTML = '<div id="root"></div>';
 
 const saved = [];
 const dirtyStates = [];
+const shareCalls = [];
 let exitCalled = false;
 let vibrations = 0;
 const printCalls = [];
+let pendingSharedFile = '';
 window.AnOOPlanNative = {
   platform: () => 'android',
   saveFile: (name, base64, mime) => {
     saved.push({ name, base64, mime });
     return 'ok:Download/AnOOPlan/' + name;
   },
+  shareFile: (name, base64, mime) => {
+    shareCalls.push({ name, base64, mime });
+    return 'ok:Системное меню «Поделиться»';
+  },
+  takePendingFile: () => pendingSharedFile,
   setDirty: value => dirtyStates.push(value),
   exitNow: () => { exitCalled = true; },
   vibrate: () => { vibrations += 1; },
@@ -472,16 +479,18 @@ if (compiledInput) {
   compiledInput.dispatchEvent(new window.Event('input', { bubbles: true }));
   await sleep(150);
 }
-const printButton = buttons().find(button => (button.textContent || '').trim() === 'Печать A4');
-check(Boolean(printButton), 'кнопка «Печать A4» доступна в приложении');
+const printButton = buttons().find(button => (button.textContent || '').trim() === 'Печать выбранных разделов');
+check(Boolean(printButton), 'кнопка «Печать выбранных разделов» доступна в приложении');
 if (printButton) {
+  const printBaseline = printCalls.length;
   printButton.click();
   await sleep(2500);
-  check(printCalls.length === 1, `мост печати вызван: ${printCalls.length}`);
-  if (printCalls.length) {
-    const bytes = Buffer.from(printCalls[0].base64, 'base64');
+  check(printCalls.length === printBaseline + 1, `мост печати вызван: ${printCalls.length - printBaseline}`);
+  if (printCalls.length > printBaseline) {
+    const lastPrint = printCalls[printCalls.length - 1];
+    const bytes = Buffer.from(lastPrint.base64, 'base64');
     check(bytes.subarray(0, 5).toString() === '%PDF-', 'в печать ушёл корректный PDF');
-    check(printCalls[0].name.length > 0, `имя задания: ${printCalls[0].name}`);
+    check(lastPrint.name.length > 0, `имя задания: ${lastPrint.name}`);
     const pdfjs = await import('pdfjs-dist/legacy/build/pdf.mjs');
     const task = pdfjs.getDocument({ data: new Uint8Array(bytes), useSystemFonts: false });
     const document = await task.promise;
@@ -752,6 +761,123 @@ if (cameraRow) {
     }
   }
 }
+
+console.log('\n6d. Документ, печать и обмен');
+const openExportSheet = async () => {
+  const trigger = buttons().find(button => (button.textContent || '').includes('Экспорт / копия'));
+  if (trigger) trigger.click();
+  await sleep(220);
+};
+const closeSheets = async () => {
+  Array.from(document.querySelectorAll('.sheet-head button[aria-label="Закрыть"]')).forEach(button => button.click());
+  await sleep(150);
+};
+await openExportSheet();
+const documentLabels = Array.from(document.querySelectorAll('.document-fields label')).map(label => label.textContent || '');
+check(Boolean(document.querySelector('.document-fields')), 'в панели экспорта есть поля титульного листа');
+for (const label of ['Организация', 'Объект', 'Шифр документа', 'Город', 'Заголовок документа']) {
+  check(documentLabels.some(text => text.includes(label)), `в титульном листе есть поле «${label}»`);
+}
+check(Boolean(document.querySelector('.change-add')), 'в панели есть кнопка «＋ Изменение»');
+const changeRowsBefore = document.querySelectorAll('.change-row').length;
+document.querySelector('.change-add').click();
+await sleep(220);
+const changeRowsAfter = document.querySelectorAll('.change-row').length;
+check(changeRowsAfter === changeRowsBefore + 1, `лист изменений: добавлена строка (${changeRowsBefore} → ${changeRowsAfter})`);
+const orgLabel = Array.from(document.querySelectorAll('.document-fields label')).find(label => (label.textContent || '').includes('Организация'));
+const orgInput = orgLabel?.querySelector('input');
+check(Boolean(orgInput), 'поле «Организация» редактируется');
+const setInputValue = (input, value) => {
+  const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
+  setter.call(input, value);
+  input.dispatchEvent(new window.Event('input', { bubbles: true }));
+};
+if (orgInput) { setInputValue(orgInput, 'ООО Кабель-Тест'); await sleep(220); }
+const sectionCheckboxes = Array.from(document.querySelectorAll('.section-checkbox'));
+check(sectionCheckboxes.length >= 13, `чекбоксов разделов не меньше 13: ${sectionCheckboxes.length}`);
+check(sectionCheckboxes.length > 0 && sectionCheckboxes.every(input => input.checked), 'по умолчанию выбраны все разделы');
+check(Boolean(document.querySelector('.print-selected')), 'кнопка «Печать выбранных разделов» есть');
+check(Boolean(document.querySelector('.anooplan-save')), 'кнопка «Сохранить проект .anooplan» есть');
+check(Array.from(document.querySelectorAll('.share-pdf, .share-xlsx, .share-anooplan')).length === 3, 'кнопки «Поделиться» показаны при наличии shareFile');
+const anooplanBefore = saved.filter(file => file.name.endsWith('.anooplan')).length;
+document.querySelector('.anooplan-save').click();
+await sleep(900);
+const anooplanFiles = saved.filter(file => file.name.endsWith('.anooplan'));
+check(anooplanFiles.length === anooplanBefore + 1, `файл .anooplan сохранён через мост: ${anooplanFiles.map(file => file.name).pop() || '—'}`);
+let anoPlanFile = null;
+if (anooplanFiles.length) {
+  try { anoPlanFile = JSON.parse(Buffer.from(anooplanFiles[anooplanFiles.length - 1].base64, 'base64').toString('utf8')); } catch { anoPlanFile = null; }
+}
+check(anoPlanFile?.format === 'anooplan', `JSON проекта имеет format==='anooplan': ${anoPlanFile?.format ?? '—'}`);
+check(anoPlanFile?.project?.document?.organization === 'ООО Кабель-Тест', `организация из титула попала в файл: ${anoPlanFile?.project?.document?.organization ?? '—'}`);
+check(Array.isArray(anoPlanFile?.project?.document?.changeLog) && anoPlanFile.project.document.changeLog.length === changeRowsAfter, 'лист изменений попал в файл проекта');
+check(Array.isArray(anoPlanFile?.pdfs) && Array.isArray(anoPlanFile?.photos), 'в файле .anooplan есть массивы pdfs и photos');
+Array.from(document.querySelectorAll('.section-checkbox')).filter(input => input.checked).forEach(input => input.click());
+await sleep(220);
+check(document.querySelectorAll('.section-checkbox:checked').length === 0, 'все разделы можно снять');
+const printBeforeEmpty = printCalls.length;
+document.querySelector('.print-selected')?.click();
+await sleep(500);
+check(printCalls.length === printBeforeEmpty, 'при пустом выборе печать не запускается');
+check((document.querySelector('.statusbar')?.textContent || '').includes('Выберите хотя бы один раздел'), 'показано сообщение о выборе раздела для печати');
+await openExportSheet();
+const freshCheckboxes = Array.from(document.querySelectorAll('.section-checkbox'));
+check(freshCheckboxes.length >= 13 && freshCheckboxes.every(input => !input.checked), 'панель печати помнит снятый выбор');
+freshCheckboxes[0].click();
+await sleep(220);
+check((document.querySelector('.print-sections-count')?.textContent || '').includes('1 из 13'), `счётчик выбранных разделов: ${document.querySelector('.print-sections-count')?.textContent || '—'}`);
+const printBeforeSubset = printCalls.length;
+document.querySelector('.print-selected')?.click();
+await sleep(2600);
+check(printCalls.length === printBeforeSubset + 1, `печать выбранных разделов вызвала мост: ${printCalls.length - printBeforeSubset}`);
+if (printCalls.length >= 2) {
+  const fullSize = Buffer.from(printCalls[0].base64, 'base64').length;
+  const subsetSize = Buffer.from(printCalls[printCalls.length - 1].base64, 'base64').length;
+  check(subsetSize < fullSize, `PDF выбранных разделов меньше полного: ${subsetSize} < ${fullSize} байт`);
+}
+await openExportSheet();
+const shareAnoButton = document.querySelector('.share-anooplan');
+if (shareAnoButton) { shareAnoButton.click(); await sleep(900); }
+const sharedAnoPlan = shareCalls.filter(call => call.name.endsWith('.anooplan')).pop();
+check(Boolean(sharedAnoPlan), '«Поделиться .anooplan» передал файл в системный диалог');
+check(sharedAnoPlan?.mime === 'application/vnd.anooplan.project', `MIME .anooplan: ${sharedAnoPlan?.mime ?? '—'}`);
+await closeSheets();
+check(typeof window.__anooplanOpenSharedProject === 'function', 'нативная оболочка может открыть .anooplan через __anooplanOpenSharedProject');
+window.__anooplanOpenSharedProject('{ это не json');
+await sleep(300);
+check(Boolean(document.querySelector('.banner.error')), 'невалидный .anooplan показал ошибку');
+check(Boolean(document.querySelector('.app-shell')), 'приложение не сломалось после невалидного файла');
+const sharedPayload = {
+  format: 'anooplan',
+  formatVersion: 1,
+  project: {
+    schemaVersion: 2,
+    id: 'shared-project-1',
+    name: 'Общий проект',
+    floors: [{ id: 'shared-floor-1', name: 'Этаж 1', elevation: 0, metersPerUnit: 0.05, page: 1, width: 1000, height: 700 }],
+    equipment: [],
+    routes: [],
+    cables: [],
+    pins: [],
+    updatedAt: new Date().toISOString(),
+    document: { organization: 'ООО Обмен' },
+  },
+  pdfs: [],
+  photos: [],
+  exportedAt: new Date().toISOString(),
+};
+window.__anooplanOpenSharedProject(JSON.stringify(sharedPayload));
+await sleep(600);
+const openedProjectName = document.querySelector('input[aria-label="Название проекта"]')?.value || '';
+check(openedProjectName === 'Общий проект', `проект открыт из файла .anooplan: «${openedProjectName}»`);
+check((document.querySelector('.statusbar')?.textContent || '').includes('открыт из файла'), 'показано сообщение об открытии проекта из файла');
+const saveButtonAfterOpen = document.querySelector('.top-actions button.primary');
+check((saveButtonAfterOpen?.textContent || '').trim() === 'Сохранить', `открытый из файла проект не помечен сохранённым на сервере: ${(saveButtonAfterOpen?.textContent || '—').trim()}`);
+check(!saveButtonAfterOpen?.disabled, 'кнопка «Сохранить» для открытого файла доступна');
+window.__anooplanOpenSharedProject(JSON.stringify(sharedPayload));
+await sleep(400);
+check((document.querySelector('input[aria-label="Название проекта"]')?.value || '') === 'Общий проект', 'повторное открытие .anooplan не ломает загрузку');
+check(Boolean(document.querySelector('.app-shell')) && Boolean(document.querySelector('.statusbar')), 'приложение работает после повторного открытия файла');
 
 console.log('\n8. Выход с сохранением (кнопка «Назад» в Android)');
 const saveAndExit = window.__anooplanSaveAndExit;

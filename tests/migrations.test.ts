@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { CURRENT_SCHEMA_VERSION, migrateProject, ProjectSchemaError } from '../src/migrations';
+import { createDemoProject } from '../src/demo';
 import type { Project } from '../src/model';
 
 function project(): Project {
@@ -262,4 +263,138 @@ test('каталог, дата прайса и смета переживают J
   assert.equal(second.catalogDate, first.catalogDate);
   assert.deepEqual(second.estimate, first.estimate);
   assert.equal(second.catalog?.[1].price, null, 'неизвестная цена остаётся null, а не 0');
+});
+
+test('старый проект без документа загружается: document undefined, новые поля не ломают списки', () => {
+  const migrated = migrateProject(project());
+  assert.equal(migrated.document, undefined);
+  assert.equal(migrated.schemaVersion, 2);
+  for (const document of ['строка', 42, [], true, null]) {
+    const raw = rawProject();
+    raw.document = document;
+    const result = migrateProject(raw);
+    assert.equal(result.document, undefined, `документ ${JSON.stringify(document)}`);
+    assert.equal(result.schemaVersion, 2);
+  }
+});
+
+test('document: поля титульного листа нормализуются (trim, пусто → undefined)', () => {
+  const raw = rawProject();
+  raw.document = {
+    organization: '  ООО «Проект-Монтаж»  ',
+    object: ' Учебный объект ',
+    documentCode: ' АП-2026-01 ',
+    city: ' Екатеринбург ',
+    title: ' Кабельный журнал и смета ',
+    compiledBy: 'Инженер А.И. Петров',
+    checkedBy: 'ГИП С.В. Смирнов',
+    date: '2026-10-01',
+  };
+  assert.deepEqual(migrateProject(raw).document, {
+    compiledBy: 'Инженер А.И. Петров',
+    checkedBy: 'ГИП С.В. Смирнов',
+    date: '2026-10-01',
+    organization: 'ООО «Проект-Монтаж»',
+    object: 'Учебный объект',
+    documentCode: 'АП-2026-01',
+    city: 'Екатеринбург',
+    title: 'Кабельный журнал и смета',
+  });
+
+  const empty = rawProject();
+  empty.document = { organization: '   ', object: '', documentCode: '  ', city: '', title: '\t', compiledBy: 'Иванов' };
+  const document = migrateProject(empty).document!;
+  for (const key of ['organization', 'object', 'documentCode', 'city', 'title'] as const) {
+    assert.equal(document[key], undefined, `пустое поле ${key} должно стать undefined`);
+  }
+  assert.equal(document.compiledBy, 'Иванов', 'старые поля сохраняются как раньше');
+});
+
+test('changeLog: мусор и пустые записи отбрасываются, поля нормализуются', () => {
+  const raw = rawProject();
+  raw.document = {
+    organization: 'ООО «Проект-Монтаж»',
+    changeLog: [
+      null,
+      'строка',
+      { id: '', version: ' 1 ', date: ' 2026-10-01 ', author: ' А.И. Петров ', description: ' Первая редакция ' },
+      { id: 'c2', version: 2, date: null, author: true, description: {} },
+      { id: '  c3  ', version: '2', date: '2026-10-15', author: 'С.В. Смирнов', description: '' },
+    ],
+  };
+  const changeLog = migrateProject(raw).document!.changeLog!;
+  assert.equal(changeLog.length, 2, 'не-объекты и полностью пустые записи отбрасываются');
+  assert.deepEqual(changeLog[0], {
+    id: 'change-3',
+    version: '1',
+    date: '2026-10-01',
+    author: 'А.И. Петров',
+    description: 'Первая редакция',
+  });
+  assert.deepEqual(changeLog[1], {
+    id: 'c3',
+    version: '2',
+    date: '2026-10-15',
+    author: 'С.В. Смирнов',
+    description: '',
+  });
+
+  for (const changeLog of ['нет', null, {}, 5, [], [null], [{ version: '  ' }]]) {
+    const bad = rawProject();
+    bad.document = { changeLog };
+    assert.equal(migrateProject(bad).document?.changeLog, undefined, `changeLog ${JSON.stringify(changeLog)}`);
+  }
+});
+
+test('валидный документ и лист изменений переживают JSON round-trip', () => {
+  const raw = rawProject();
+  raw.document = {
+    organization: 'ООО «Проект-Монтаж»',
+    object: 'Учебный объект: офис на 2 этажа',
+    documentCode: 'АП-2026-01',
+    city: 'Екатеринбург',
+    title: 'Кабельный журнал и смета',
+    compiledBy: 'Инженер А.И. Петров',
+    checkedBy: 'ГИП С.В. Смирнов',
+    date: '2026-10-01',
+    changeLog: [
+      { id: 'ch1', version: '1', date: '2026-10-01', author: 'А.И. Петров', description: 'Первая редакция' },
+      { id: 'ch2', version: '2', date: '2026-10-15', author: 'С.В. Смирнов', description: 'Уточнён справочник цен и смета' },
+    ],
+  };
+  const first = migrateProject(raw);
+  assert.equal(first.document?.organization, 'ООО «Проект-Монтаж»');
+  assert.equal(first.document?.changeLog?.length, 2);
+  const second = migrateProject(JSON.parse(JSON.stringify(first)));
+  assert.deepEqual(second.document, first.document);
+  assert.equal(second.document?.changeLog?.[1].description, 'Уточнён справочник цен и смета');
+});
+
+test('документ демо-проекта переживает загрузку без потерь', () => {
+  const demo = createDemoProject();
+  const loaded = migrateProject(JSON.parse(JSON.stringify(demo)));
+  assert.equal(loaded.document?.organization, 'ООО «Проект-Монтаж»');
+  assert.equal(loaded.document?.documentCode, 'АП-2026-01');
+  assert.equal(loaded.document?.city, 'Екатеринбург');
+  assert.equal(loaded.document?.title, 'Кабельный журнал и смета');
+  assert.equal(loaded.document?.changeLog?.length, 2);
+  assert.deepEqual(loaded.document?.changeLog, demo.document?.changeLog);
+});
+
+test('changeLog разводит дубли id, включая fallback change-N', () => {
+  const raw = rawProject();
+  raw.document = {
+    changeLog: [
+      { id: 'change-2', version: '1', date: '2026-01-01', author: 'A', description: 'Первая' },
+      { version: '2', date: '2026-01-02', author: 'B', description: 'Вторая (без id)' },
+      { id: 'change-2', version: '3', date: '2026-01-03', author: 'C', description: 'Третья (дубль)' },
+    ],
+  };
+  const migrated = migrateProject(raw);
+  const entries = migrated.document?.changeLog ?? [];
+  assert.equal(entries.length, 3);
+  const ids = entries.map(entry => entry.id);
+  assert.equal(new Set(ids).size, ids.length, `дубли id: ${ids.join(', ')}`);
+  assert.equal(entries[0].id, 'change-2');
+  assert.equal(entries[2].description, 'Третья (дубль)');
 });

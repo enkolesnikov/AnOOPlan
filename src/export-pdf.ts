@@ -9,18 +9,67 @@ import type { JournalFonts } from './export-fonts';
 
 export interface JournalPhoto { number: string; name: string; data: ArrayBuffer; mime: string }
 export interface JournalPlan { title: string; png: Uint8Array }
-export interface JournalOptions { photos?: JournalPhoto[]; pinPhotos?: JournalPhoto[]; plans?: JournalPlan[] }
+
+/** Раздел печатной формы; `include` в {@link JournalOptions} фильтрует их набор. */
+export type JournalSectionId =
+  | 'journal'
+  | 'equipment'
+  | 'cables'
+  | 'infrastructure'
+  | 'trayFill'
+  | 'estimate'
+  | 'commercial'
+  | 'pins'
+  | 'warnings'
+  | 'plans'
+  | 'photos'
+  | 'pinPhotos'
+  | 'changeLog';
+
+/** Все разделы печатной формы в порядке вывода (титул и оглавление выводятся всегда). */
+export const DEFAULT_JOURNAL_SECTIONS: JournalSectionId[] = [
+  'journal',
+  'equipment',
+  'cables',
+  'infrastructure',
+  'trayFill',
+  'estimate',
+  'commercial',
+  'pins',
+  'changeLog',
+  'plans',
+  'photos',
+  'pinPhotos',
+  'warnings',
+];
+
+export interface JournalOptions {
+  photos?: JournalPhoto[];
+  pinPhotos?: JournalPhoto[];
+  plans?: JournalPlan[];
+  /** Какие разделы печатать; `undefined` — все ({@link DEFAULT_JOURNAL_SECTIONS}). */
+  include?: JournalSectionId[];
+}
 
 const PAGE = { width: 842, height: 595 };
 const MARGIN = 34;
 const CONTENT = PAGE.width - MARGIN * 2;
 const BRAND = rgb(0.07, 0.16, 0.21);
-const ACCENT = rgb(0, 0.56, 0.58);
 const MUTED = rgb(0.39, 0.46, 0.5);
 const BORDER = rgb(0.83, 0.87, 0.88);
 const ZEBRA = rgb(0.965, 0.973, 0.976);
 const DANGER = rgb(0.86, 0.31, 0.44);
 const WHITE = rgb(1, 1, 1);
+
+/**
+ * Упрощённая основная надпись по ГОСТ 2.104 внизу справа. Контент на страницах
+ * со штампом заканчивается выше него, чтобы таблицы и текст не накладывались.
+ */
+const STAMP = { width: 330, height: 84, bottom: 24 };
+const STAMP_LEFT = PAGE.width - MARGIN - STAMP.width;
+const STAMP_TOP = STAMP.bottom + STAMP.height;
+const CONTENT_BOTTOM = STAMP_TOP + 8;
+
 
 export const formatNumber = (value: number | null): string => {
   if (value === null || value === undefined || !Number.isFinite(value)) return '—';
@@ -34,7 +83,8 @@ const cableDiameter = (cable: Cable): number | null => {
 };
 
 interface Column { title: string; width: number; align?: 'left' | 'right' }
-interface Section { title: string; note?: string; columns: Column[]; rows: string[][] }
+interface Section { id: JournalSectionId; title: string; note?: string; columns: Column[]; rows: string[][]; emptyText?: string }
+interface TocEntry { title: string; page: number }
 
 function wrapText(text: string, font: PDFFont, size: number, maxWidth: number): string[] {
   const lines: string[] = [];
@@ -61,6 +111,14 @@ function wrapText(text: string, font: PDFFont, size: number, maxWidth: number): 
   return lines.length ? lines : [''];
 }
 
+/** Обрезает строку по ширине многоточием (для узких ячеек штампа). */
+function fitText(text: string, font: PDFFont, size: number, maxWidth: number): string {
+  if (font.widthOfTextAtSize(text, size) <= maxWidth) return text;
+  let result = text;
+  while (result.length > 1 && font.widthOfTextAtSize(`${result}…`, size) > maxWidth) result = result.slice(0, -1);
+  return `${result}…`;
+}
+
 class Renderer {
   page!: PDFPage;
   y = 0;
@@ -78,21 +136,60 @@ class Renderer {
   }
 
   ensure(height: number): void {
-    if (this.y - height < MARGIN + 26) this.addPage();
+    if (this.y - height < CONTENT_BOTTOM) this.addPage();
   }
 
-  cover(project: Project): void {
-    this.page.drawRectangle({ x: 0, y: PAGE.height - 92, width: PAGE.width, height: 92, color: BRAND });
-    this.page.drawText('AnOOPlan', { x: MARGIN, y: PAGE.height - 40, size: 10, font: this.bold, color: ACCENT });
-    this.page.drawText(project.name || 'Проект', { x: MARGIN, y: PAGE.height - 72, size: 19, font: this.bold, color: WHITE });
-    const summary = `Этажей: ${project.floors.length} · Оборудования: ${project.equipment.length} · Трасс: ${project.routes.length} · Кабелей: ${project.cables.length}`;
-    this.page.drawText(`Кабельный журнал · ${summary}`, { x: MARGIN, y: PAGE.height - 108, size: 8.5, font: this.regular, color: MUTED });
-    this.page.drawText(`Дата выгрузки: ${new Date().toLocaleString('ru-RU')}`, { x: MARGIN, y: PAGE.height - 120, size: 8.5, font: this.regular, color: MUTED });
-    this.y = PAGE.height - 146;
+  /** Титульный лист (страница 1): рамку и колонтитул дорисует finish(). */
+  titlePage(project: Project): void {
+    const document = project.document ?? {};
+    const page = this.page;
+    const center = (content: string, y: number, size: number, font: PDFFont, color = BRAND): void => {
+      const width = font.widthOfTextAtSize(content, size);
+      page.drawText(content, { x: Math.max(MARGIN, (PAGE.width - width) / 2), y, size, font, color });
+    };
+    const documentTitle = (document.title ?? '').trim() || 'Кабельный журнал и смета';
+    const organization = (document.organization ?? '').trim();
+    const object = (document.object ?? '').trim();
+    const code = (document.documentCode ?? '').trim();
+    const city = (document.city ?? '').trim();
+    const date = (document.date ?? '').trim();
+    const compiledBy = (document.compiledBy ?? '').trim();
+    const checkedBy = (document.checkedBy ?? '').trim();
+
+    if (organization) center(organization, PAGE.height - 92, 13, this.bold);
+    center(`Проект: ${project.name || 'Без названия'}`, PAGE.height - 118, 9.5, this.regular, MUTED);
+
+    const titleLines = wrapText(documentTitle, this.bold, 24, CONTENT);
+    titleLines.forEach((line, index) => center(line, PAGE.height - 250 - index * 30, 24, this.bold));
+    let y = PAGE.height - 250 - titleLines.length * 30 - 10;
+    if (object) {
+      for (const line of wrapText(`Объект: ${object}`, this.regular, 11.5, CONTENT)) {
+        center(line, y, 11.5, this.regular);
+        y -= 16;
+      }
+    }
+    if (code) center(`Шифр: ${code}`, Math.min(y - 6, PAGE.height - 330), 11, this.bold);
+    y = Math.min(y - 28, PAGE.height - 360);
+
+    const signature = (label: string, value: string, lineY: number): void => {
+      page.drawText(`${label}:`, { x: MARGIN + 110, y: lineY, size: 10.5, font: this.bold, color: BRAND });
+      const lineStart = MARGIN + 190;
+      const lineEnd = PAGE.width - MARGIN - 150;
+      page.drawLine({ start: { x: lineStart, y: lineY - 2 }, end: { x: lineEnd, y: lineY - 2 }, thickness: 0.6, color: MUTED });
+      if (value) page.drawText(value, { x: lineStart + 6, y: lineY, size: 10, font: this.regular, color: BRAND });
+      page.drawText('подпись', { x: lineEnd + 8, y: lineY - 1, size: 7.5, font: this.regular, color: MUTED });
+    };
+    signature('Составил', compiledBy, y);
+    signature('Проверил', checkedBy, y - 28);
+    if (date) center(`Дата: ${date}`, y - 68, 10, this.regular);
+    const year = /^\d{4}/.test(date) ? date.slice(0, 4) : String(new Date().getFullYear());
+    center(city ? `${city} · ${year}` : year, PAGE.height - 500, 11, this.regular);
   }
 
-  heading(title: string, note?: string): void {
+  /** Заголовок раздела; возвращает фактический номер страницы, где он начинается. */
+  heading(title: string, note?: string): number {
     this.ensure(56);
+    const page = this.pages.length;
     this.page.drawText(title, { x: MARGIN, y: this.y - 16, size: 13.5, font: this.bold, color: BRAND });
     this.y -= 22;
     if (note) {
@@ -101,6 +198,7 @@ class Renderer {
       this.y -= lines.length * 10.5 + 4;
     }
     this.y -= 4;
+    return page;
   }
 
   paragraph(text: string, color = BRAND): void {
@@ -140,7 +238,7 @@ class Renderer {
       const cells = row.map((value, index) => wrapText(value, this.regular, size, widths[index] - padding * 2));
       const lineCount = Math.max(1, ...cells.map(lines => lines.length));
       const height = lineCount * lineHeight + padding * 1.4;
-      if (this.y - height < MARGIN + 24) {
+      if (this.y - height < CONTENT_BOTTOM) {
         this.addPage();
         drawHeader();
       }
@@ -212,9 +310,10 @@ class Renderer {
     this.y -= 18;
   }
 
-  async photos(items: JournalPhoto[], title = 'Фотографии оборудования'): Promise<void> {
-    if (!items.length) return;
-    this.heading(title, `Снимков в проекте: ${items.length}. Форматы: JPEG и PNG.`);
+  /** Фотографии; возвращает номер страницы заголовка или null, если снимков нет. */
+  async photos(items: JournalPhoto[], title = 'Фотографии оборудования'): Promise<number | null> {
+    if (!items.length) return null;
+    const page = this.heading(title, `Снимков в проекте: ${items.length}. Форматы: JPEG и PNG.`);
     const gap = 16;
     const cellWidth = (CONTENT - gap) / 2;
     const imageHeight = 200;
@@ -244,11 +343,16 @@ class Renderer {
       }
       this.y -= imageHeight + captionHeight + 10;
     }
+    return page;
   }
 
-  async plans(items: JournalPlan[]): Promise<void> {
+  /** Планы этажей; возвращает записи оглавления (по одной на план). */
+  async plans(items: JournalPlan[]): Promise<TocEntry[]> {
+    const entries: TocEntry[] = [];
     for (const item of items) {
-      this.heading(`План: ${item.title}`, 'Подложка этажа и нанесённые трассы с оборудованием — лист для подписи.');
+      const title = `План: ${item.title}`;
+      const page = this.heading(title, 'Подложка этажа и нанесённые трассы с оборудованием — лист для подписи.');
+      entries.push({ title, page });
       try {
         const image = await this.document.embedPng(item.png);
         const maxHeight = 380;
@@ -263,23 +367,116 @@ class Renderer {
         this.paragraph('План не встроен: не удалось подготовить изображение.', DANGER);
       }
     }
+    return entries;
+  }
+
+  /** Оглавление: рисуется в конце, когда известны фактические страницы разделов. */
+  drawContents(page: PDFPage, entries: TocEntry[]): void {
+    page.drawText('Оглавление', { x: MARGIN, y: PAGE.height - MARGIN - 22, size: 16, font: this.bold, color: BRAND });
+    page.drawLine({ start: { x: MARGIN, y: PAGE.height - MARGIN - 34 }, end: { x: PAGE.width - MARGIN, y: PAGE.height - MARGIN - 34 }, thickness: 0.8, color: BORDER });
+    const size = 10.5;
+    let y = PAGE.height - MARGIN - 64;
+    for (let index = 0; index < entries.length; index += 1) {
+      if (y < CONTENT_BOTTOM + 20) {
+        // Оглавление не переносится: при большом числе планов показываем остаток одной строкой.
+        page.drawText(`…ещё разделов: ${entries.length - index}`, { x: MARGIN, y, size: 9, font: this.regular, color: MUTED });
+        break;
+      }
+      const entry = entries[index];
+      page.drawText(entry.title, { x: MARGIN, y, size, font: this.regular, color: BRAND });
+      const numberText = String(entry.page);
+      const numberWidth = this.regular.widthOfTextAtSize(numberText, size);
+      page.drawText(numberText, { x: PAGE.width - MARGIN - numberWidth, y, size, font: this.regular, color: BRAND });
+      const titleWidth = this.regular.widthOfTextAtSize(entry.title, size);
+      page.drawLine({ start: { x: MARGIN + titleWidth + 8, y: y + 3 }, end: { x: PAGE.width - MARGIN - numberWidth - 8, y: y + 3 }, thickness: 0.4, color: BORDER });
+      y -= 23;
+    }
+    if (!entries.length) page.drawText('Разделы не выбраны.', { x: MARGIN, y, size, font: this.regular, color: MUTED });
+  }
+
+  /**
+   * Упрощённая основная надпись по ГОСТ 2.104: подписи, название/шифр/организация,
+   * «Лист N» и «Листов M». Рисуется на всех листах, кроме титульного.
+   */
+  private stamp(page: PDFPage, project: Project, sheet: number, sheets: number): void {
+    const document = project.document ?? {};
+    const x0 = STAMP_LEFT;
+    const x1 = PAGE.width - MARGIN;
+    const y0 = STAMP.bottom;
+    const y1 = STAMP_TOP;
+    const middleX = x0 + 165;
+    const line = (start: { x: number; y: number }, end: { x: number; y: number }, thickness = 0.4): void =>
+      page.drawLine({ start, end, thickness, color: BRAND });
+    page.drawRectangle({ x: x0, y: y0, width: STAMP.width, height: STAMP.height, borderColor: BRAND, borderWidth: 0.6 });
+    line({ x: middleX, y: y0 }, { x: middleX, y: y1 });
+
+    const signatureRows: [string, string][] = [
+      ['Разраб.', (document.compiledBy ?? '').trim() || '—'],
+      ['Пров.', (document.checkedBy ?? '').trim() || '—'],
+      ['Т.контр.', '—'],
+      ['Н.контр.', '—'],
+      ['Утв.', '—'],
+    ];
+    const rowHeight = STAMP.height / signatureRows.length;
+    signatureRows.forEach(([label, value], index) => {
+      const top = y1 - index * rowHeight;
+      const baseline = top - rowHeight + 5;
+      if (index > 0) line({ x: x0, y: top }, { x: middleX, y: top });
+      page.drawText(label, { x: x0 + 3, y: baseline, size: 6.5, font: this.bold, color: BRAND });
+      page.drawText(fitText(value, this.regular, 6.5, middleX - x0 - 78), { x: x0 + 74, y: baseline, size: 6.5, font: this.regular, color: BRAND });
+    });
+
+    // Шапка правой части: «Изм.», «Лист», «№ докум.», «Подп.», «Дата».
+    const headerLabels = ['Изм.', 'Лист', '№ докум.', 'Подп.', 'Дата'];
+    const headerWidths = [25, 25, 52, 30, 33];
+    const headerBottom = y1 - 14;
+    line({ x: middleX, y: headerBottom }, { x: x1, y: headerBottom });
+    let cursor = middleX;
+    headerLabels.forEach((label, index) => {
+      if (index > 0) line({ x: cursor, y: headerBottom }, { x: cursor, y: y1 });
+      page.drawText(label, { x: cursor + 2, y: headerBottom + 4.5, size: 5.8, font: this.regular, color: BRAND });
+      cursor += headerWidths[index];
+    });
+
+    const rightRowHeight = (headerBottom - y0) / 4;
+    const rightRows: { text: string; bold: boolean }[] = [
+      { text: fitText((document.title ?? '').trim() || 'Кабельный журнал и смета', this.bold, 7, x1 - middleX - 8), bold: true },
+      { text: fitText((document.documentCode ?? '').trim() || '—', this.regular, 6.5, x1 - middleX - 8), bold: false },
+      { text: fitText((document.organization ?? '').trim() || '—', this.regular, 6.5, x1 - middleX - 8), bold: false },
+    ];
+    rightRows.forEach((row, index) => {
+      const top = headerBottom - index * rightRowHeight;
+      line({ x: middleX, y: top }, { x: x1, y: top });
+      page.drawText(row.text, { x: middleX + 4, y: top - rightRowHeight + 5.5, size: row.bold ? 7 : 6.5, font: row.bold ? this.bold : this.regular, color: BRAND });
+    });
+    const sheetTop = headerBottom - rightRows.length * rightRowHeight;
+    line({ x: middleX, y: sheetTop }, { x: x1, y: sheetTop });
+    line({ x: middleX + 82, y: y0 }, { x: middleX + 82, y: sheetTop });
+    page.drawText(`Лист ${sheet}`, { x: middleX + 4, y: y0 + 4.5, size: 6.5, font: this.bold, color: BRAND });
+    page.drawText(`Листов ${sheets}`, { x: middleX + 90, y: y0 + 4.5, size: 6.5, font: this.regular, color: BRAND });
   }
 
   finish(project?: Project): void {
     const total = this.pages.length;
     const today = new Date().toLocaleDateString('ru-RU');
-    const title = project ? `AnOOPlan · ${project.name}` : 'AnOOPlan · кабельный план';
     this.pages.forEach((page, index) => {
+      const titlePage = index === 0;
       // Рамка листа и колонтитул с названием проекта — документ можно подписывать постранично.
       page.drawRectangle({ x: 18, y: 18, width: PAGE.width - 36, height: PAGE.height - 36, borderColor: BRAND, borderWidth: 0.8 });
-      page.drawLine({ start: { x: MARGIN, y: MARGIN + 18 }, end: { x: PAGE.width - MARGIN, y: MARGIN + 18 }, thickness: 0.5, color: BORDER });
+      const footerEnd = titlePage ? PAGE.width - MARGIN : STAMP_LEFT - 8;
+      page.drawLine({ start: { x: MARGIN, y: MARGIN + 18 }, end: { x: footerEnd, y: MARGIN + 18 }, thickness: 0.5, color: BORDER });
+      const title = fitText(project ? `AnOOPlan · ${project.name}` : 'AnOOPlan · кабельный план', this.regular, 7.5, 240);
       page.drawText(title, { x: MARGIN, y: MARGIN + 6, size: 7.5, font: this.regular, color: MUTED });
       const middle = `Кабельный журнал · ${today}`;
       const middleWidth = this.regular.widthOfTextAtSize(middle, 7.5);
-      page.drawText(middle, { x: (PAGE.width - middleWidth) / 2, y: MARGIN + 6, size: 7.5, font: this.regular, color: MUTED });
-      const label = `Лист ${index + 1} из ${total}`;
-      const width = this.regular.widthOfTextAtSize(label, 7.5);
-      page.drawText(label, { x: PAGE.width - MARGIN - width, y: MARGIN + 6, size: 7.5, font: this.regular, color: MUTED });
+      page.drawText(middle, { x: titlePage ? (PAGE.width - middleWidth) / 2 : MARGIN + 250, y: MARGIN + 6, size: 7.5, font: this.regular, color: MUTED });
+      if (titlePage) {
+        const label = `Лист ${index + 1} из ${total}`;
+        const width = this.regular.widthOfTextAtSize(label, 7.5);
+        page.drawText(label, { x: PAGE.width - MARGIN - width, y: MARGIN + 6, size: 7.5, font: this.regular, color: MUTED });
+      } else if (project) {
+        this.stamp(page, project, index + 1, total);
+      }
     });
   }
 }
@@ -317,6 +514,7 @@ function buildSections(project: Project, estimateResult: EstimateResult): Sectio
 
   return [
     {
+      id: 'journal',
       title: 'Кабельный журнал',
       note: 'Длина одного кабеля учитывает геометрию трассы, запасы трасс и кабеля, концевые запасы. Неполные данные помечены и не заменяются нулём.',
       columns: [
@@ -339,6 +537,7 @@ function buildSections(project: Project, estimateResult: EstimateResult): Sectio
       rows: journal,
     },
     {
+      id: 'equipment',
       title: 'Оборудование',
       columns: [
         { title: 'Тип', width: 200 },
@@ -349,6 +548,7 @@ function buildSections(project: Project, estimateResult: EstimateResult): Sectio
       rows: specs.equipment.map(row => [row.type, row.model, row.floor, String(row.quantity)]),
     },
     {
+      id: 'cables',
       title: 'Кабельная продукция',
       columns: [
         { title: 'Марка', width: 240 },
@@ -359,6 +559,7 @@ function buildSections(project: Project, estimateResult: EstimateResult): Sectio
       rows: specs.cables.map(row => [row.brand, String(row.lines), formatNumber(row.geometry), formatNumber(row.total)]),
     },
     {
+      id: 'infrastructure',
       title: 'Кабельная инфраструктура',
       columns: [
         { title: 'Тип', width: 180 },
@@ -371,6 +572,7 @@ function buildSections(project: Project, estimateResult: EstimateResult): Sectio
       rows: specs.infrastructure.map(row => [row.type, formatNumber(row.length), String(row.segments), String(row.cables), formatNumber(row.maxFillPercent), String(row.overSegments)]),
     },
     {
+      id: 'trayFill',
       title: 'Заполнение лотков',
       note: 'Заполнение — отношение площади сечения кабелей к площади лотка. Внимание выше 40 %, превышение выше 50 %. «Неполный» означает, что размеры не заданы и не заменены нулём.',
       columns: [
@@ -395,6 +597,7 @@ function buildSections(project: Project, estimateResult: EstimateResult): Sectio
       ]),
     },
     {
+      id: 'estimate',
       title: 'Смета',
       note: `Дата прайса: ${estimateResult.catalogDate ?? '—'}. Неизвестные значения показаны как «—» и не заменяются нулём.`,
       columns: [
@@ -423,6 +626,7 @@ function buildSections(project: Project, estimateResult: EstimateResult): Sectio
       ],
     },
     {
+      id: 'commercial',
       title: 'Коммерческое предложение',
       note: [
         `Дата прайса: ${estimateResult.catalogDate ?? '—'}`,
@@ -441,6 +645,7 @@ function buildSections(project: Project, estimateResult: EstimateResult): Sectio
       ],
     },
     {
+      id: 'pins',
       title: 'Замечания',
       note: 'Пины-замечания по этажам. Статус «закрыто» означает, что замечание отработано.',
       columns: [
@@ -460,6 +665,26 @@ function buildSections(project: Project, estimateResult: EstimateResult): Sectio
         pin.status === 'closed' ? 'закрыто' : 'открыто',
       ]),
     },
+    {
+      id: 'changeLog',
+      title: 'Лист регистрации изменений',
+      note: 'Записи о редакциях документа: изм., содержание, дата и автор.',
+      emptyText: 'Изменений нет.',
+      columns: [
+        { title: 'Изм.', width: 50 },
+        { title: 'Лист/раздел', width: 90 },
+        { title: 'Содержание', width: 330 },
+        { title: 'Дата', width: 110 },
+        { title: 'ФИО', width: 120 },
+      ],
+      rows: (project.document?.changeLog ?? []).map(entry => [
+        entry.version || '—',
+        '—',
+        entry.description || '—',
+        entry.date || '—',
+        entry.author || '—',
+      ]),
+    },
   ];
 }
 
@@ -474,26 +699,44 @@ export async function buildJournalPdf(project: Project, fonts: JournalFonts, opt
   document.setProducer('AnOOPlan');
 
   const renderer = new Renderer(document, regular, bold);
-  renderer.cover(project);
+  // Титульный лист (страница 1) и оглавление (страница 2) выводятся всегда.
+  renderer.titlePage(project);
+  const contentsPage = renderer.addPage();
+  renderer.addPage();
+  const toc: TocEntry[] = [];
 
   const estimateResult = estimate(project);
+  const include = new Set<JournalSectionId>(options.include ?? DEFAULT_JOURNAL_SECTIONS);
   for (const section of buildSections(project, estimateResult)) {
-    renderer.heading(section.title, section.note);
+    if (!include.has(section.id)) continue;
+    const page = renderer.heading(section.title, section.note);
+    toc.push({ title: section.title, page });
     if (section.rows.length) renderer.table(section.columns, section.rows);
-    else renderer.paragraph('Нет записей.', MUTED);
+    else renderer.paragraph(section.emptyText ?? 'Нет записей.', MUTED);
   }
 
-  const warnings = [...new Set([...validateProject(project), ...domainWarnings(project), ...specifications(project).errors, ...estimateResult.warnings])];
-  if (warnings.length) {
-    renderer.heading('Замечания и предупреждения', 'Проверьте данные перед применением документации на объекте.');
-    renderer.list(warnings);
+  if (include.has('plans') && options.plans?.length) toc.push(...await renderer.plans(options.plans));
+  if (include.has('photos') && options.photos?.length) {
+    const page = await renderer.photos(options.photos);
+    if (page !== null) toc.push({ title: 'Фотографии оборудования', page });
+  }
+  if (include.has('pinPhotos') && options.pinPhotos?.length) {
+    const page = await renderer.photos(options.pinPhotos, 'Фотографии замечаний');
+    if (page !== null) toc.push({ title: 'Фотографии замечаний', page });
   }
 
-  await renderer.plans(options.plans ?? []);
-  await renderer.photos(options.photos ?? []);
-  await renderer.photos(options.pinPhotos ?? [], 'Фотографии замечаний');
+  if (include.has('warnings')) {
+    const warnings = [...new Set([...validateProject(project), ...domainWarnings(project), ...specifications(project).errors, ...estimateResult.warnings])];
+    if (warnings.length) {
+      const page = renderer.heading('Замечания и предупреждения', 'Проверьте данные перед применением документации на объекте.');
+      toc.push({ title: 'Замечания и предупреждения', page });
+      renderer.list(warnings);
+    }
+  }
+
   renderer.totals(project);
   renderer.signatures(project);
+  renderer.drawContents(contentsPage, toc);
   renderer.finish(project);
   return document.save();
 }

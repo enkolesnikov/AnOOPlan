@@ -24,6 +24,8 @@ import { useSnapshots, type SnapshotEntry } from './use-snapshots';
 import { usePhotoUrls } from './use-photo-urls';
 import { EQUIPMENT_COLOR_PRESETS, EQUIPMENT_ICON_GLYPHS, equipmentColor, equipmentIcon, equipmentIconLabel } from './equipment-icons';
 import { estimate, isCatalogDate, normalizeCatalog } from './estimate';
+import { ANOOPLAN_EXTENSION, ANOOPLAN_MIME, buildAnoPlanFile, parseAnoPlanFile, serializeAnoPlanFile } from './project-file';
+import type { JournalSectionId } from './export-pdf';
 
 const SNAP_PX = 12;
 const SHEET_SIZES: Record<string, { landscape: number; portrait: number }> = {
@@ -34,6 +36,22 @@ const SHEET_SIZES: Record<string, { landscape: number; portrait: number }> = {
   A0: { landscape: 1189, portrait: 841 },
 };
 const CABLE_SNAP_LIMIT = 100;
+/** Разделы печатной формы: порядок и подписи чекбоксов «Печать выбранных разделов». */
+const JOURNAL_SECTIONS: { id: JournalSectionId; label: string }[] = [
+  { id: 'journal', label: 'Журнал' },
+  { id: 'equipment', label: 'Оборудование' },
+  { id: 'cables', label: 'Кабели' },
+  { id: 'infrastructure', label: 'Инфраструктура' },
+  { id: 'trayFill', label: 'Заполнение лотков' },
+  { id: 'estimate', label: 'Смета' },
+  { id: 'commercial', label: 'Коммерческое предложение' },
+  { id: 'pins', label: 'Замечания' },
+  { id: 'warnings', label: 'Предупреждения' },
+  { id: 'plans', label: 'Планы' },
+  { id: 'photos', label: 'Фото оборудования' },
+  { id: 'pinPhotos', label: 'Фото замечаний' },
+  { id: 'changeLog', label: 'Лист изменений' },
+];
 type Selection = { kind: 'equipment' | 'route' | 'cable' | 'pin'; id: string } | null;
 type Tool = 'select' | 'pan' | 'equipment' | 'route' | 'calibrate' | 'cable' | 'measure' | 'pin';
 type View = 'plan' | 'journal' | 'specs' | 'estimate';
@@ -64,6 +82,10 @@ function blobToBase64(blob: Blob): Promise<string> {
 type NativeBridgeApi = {
   platform?: () => string;
   saveFile?: (name: string, base64: string, mime: string) => string;
+  /** «Поделиться» файлом через системный диалог Android. */
+  shareFile?: (name: string, base64: string, mime: string) => string;
+  /** JSON .anooplan, открытого из системы; пустая строка, если файла нет. */
+  takePendingFile?: () => string;
   setDirty?: (dirty: boolean) => void;
   exitNow?: () => void;
   vibrate?: (milliseconds: number) => void;
@@ -158,6 +180,8 @@ export default function App() {
   const [staticMode, setStaticMode] = useState(false);
   const [exportOpen, setExportOpen] = useState(false);
   const [sheet, setSheet] = useState<{ kind: 'equipment' | 'route' | 'cable' | 'pin'; id: string } | null>(null);
+  // Выбранные для печати разделы; по умолчанию — все.
+  const [printSections, setPrintSections] = useState<JournalSectionId[]>(() => JOURNAL_SECTIONS.map(section => section.id));
   const canvas = useRef<HTMLCanvasElement>(null);
   const stage = useRef<HTMLDivElement>(null);
   const upload = useRef<HTMLInputElement>(null);
@@ -177,6 +201,8 @@ export default function App() {
   projectRef.current = project;
   const floor = project.floors.find(f => f.id === floorId) || project.floors[0];
   const dirty = JSON.stringify(project) !== saved;
+  const dirtyRef = useRef(false);
+  dirtyRef.current = dirty;
   const equipment = selection?.kind === 'equipment' ? project.equipment.find(e => e.id === selection.id) : undefined;
   const route = selection?.kind === 'route' ? project.routes.find(r => r.id === selection.id) : undefined;
   const cable = selection?.kind === 'cable' ? project.cables.find(c => c.id === selection.id) : undefined;
@@ -317,6 +343,15 @@ export default function App() {
       nativeBridge()?.exitNow?.();
     };
   });
+  // Открытие .anooplan из системы: Java вызывает __anooplanOpenSharedProject(jsonText)
+  // и/или отдаёт отложенный файл через мост при запуске.
+  useEffect(() => {
+    const target = window as Window & { __anooplanOpenSharedProject?: (text: string) => void };
+    target.__anooplanOpenSharedProject = (text: string) => { void openSharedProject(text); };
+    const pending = nativeBridge()?.takePendingFile?.();
+    if (pending) void openSharedProject(pending);
+    return () => { delete target.__anooplanOpenSharedProject; };
+  }, []);
   useEffect(() => {
     if (!staticMode) return;
     try {
@@ -795,71 +830,220 @@ export default function App() {
     mutate(p => { const target = p.floors.find(f => f.id === floor.id)!; target.pdfId = result.id; target.page = 1; target.metersPerUnit = null; });
     setMessage(`PDF «${result.name}» загружен. Выберите страницу и откалибруйте масштаб.`);
   }
+  function togglePrintSection(id: JournalSectionId) {
+    setPrintSections(items => {
+      const next = new Set(items);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return JOURNAL_SECTIONS.map(section => section.id).filter(sectionId => next.has(sectionId));
+    });
+  }
   async function printJournal() {
     const current = projectRef.current;
-    const [{ buildJournalPdf }, { loadJournalFonts }] = await Promise.all([import('./export-pdf'), import('./export-fonts')]);
-    const plans = await collectPlans(current, (done, total) => { if (total > 1) setMessage(`Планы: ${done} из ${total}…`); });
-    const bytes = await buildJournalPdf(current, await loadJournalFonts(), { photos: await collectPhotos(current), pinPhotos: await collectPinPhotos(current), plans: plans.plans });
-    nativeBridge()?.printPdf?.(current.name, bytesToBase64(bytes));
-    setMessage(`Открыт системный диалог печати: выберите принтер или «Сохранить в PDF».${plans.warnings.length ? ` ${plans.warnings.join(' ')}` : ''}`);
-  }
-  async function download(kind: 'csv' | 'xlsx' | 'pdf' | 'backup') {
-    if (staticMode) {
-      const current = projectRef.current;
-      const fileName = `${current.name}.${kind === 'backup' ? 'json' : kind}`;
-      let blob: Blob;
-      let planWarnings: string[] = [];
-      if (kind === 'xlsx') {
-        // Офлайн-таблицы: тот же набор листов, что отдаёт серверная версия.
-        const { buildWorkbook } = await import('./export-xlsx');
-        blob = new Blob([buildWorkbook(exportSheets(current)) as unknown as BlobPart], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
-      } else if (kind === 'pdf') {
-        // Офлайн-PDF: pdf-lib + встроенный PT Sans, без сервера и системных шрифтов.
-        const [{ buildJournalPdf }, { loadJournalFonts }] = await Promise.all([import('./export-pdf'), import('./export-fonts')]);
-        const plans = await collectPlans(current, (done, total) => { if (total > 1) setMessage(`Планы: ${done} из ${total}…`); });
-        planWarnings = plans.warnings;
-        blob = new Blob([await buildJournalPdf(current, await loadJournalFonts(), { photos: await collectPhotos(current), pinPhotos: await collectPinPhotos(current), plans: plans.plans }) as unknown as BlobPart], { type: 'application/pdf' });
-      } else if (kind === 'backup') {
-        const ids = [...new Set(current.floors.flatMap(f => f.pdfId && f.pdfId.startsWith('idb:') ? [f.pdfId.slice(4)] : []))];
-        const pdfs: { id: string; name: string; dataBase64: string }[] = [];
-        for (const id of ids) {
-          const pdfBlob = await idbGet(id);
-          if (pdfBlob) pdfs.push({ id: 'idb:' + id, name: 'plan.pdf', dataBase64: await blobToBase64(pdfBlob) });
-        }
-        const photoKeys = [...new Set([...current.equipment, ...current.pins].flatMap(item => item.photos || []))];
-        const photos: { key: string; name: string; mime: string; dataBase64: string }[] = [];
-        for (const key of photoKeys) {
-          try {
-            const photoBlob = await idbGet('photo:' + key);
-            if (photoBlob) photos.push({ key, name: 'photo.jpg', mime: photoBlob.type || 'image/jpeg', dataBase64: await blobToBase64(photoBlob) });
-          } catch { /* фото недоступно — копия всё равно выгружается */ }
-        }
-        blob = new Blob([JSON.stringify({ schemaVersion: 2, project: current, pdfs, photos })], { type: 'application/json' });
-      } else {
-        blob = new Blob([clientCsv(current)], { type: 'text/csv;charset=utf-8' });
-      }
-      const done: Record<string, string> = {
-        csv: 'Экспорт CSV сохранён',
-        xlsx: 'Таблицы Excel сохранены',
-        pdf: 'Журнал PDF сохранён',
-        backup: 'Резервная копия сохранена',
-      };
-      const warning = planWarnings.length ? ` ${planWarnings.join(' ')}` : '';
-      const savedPath = await saveBlobOnDevice(fileName, blob);
-      if (savedPath) {
-        setMessage(`${done[kind]}: ${savedPath}${warning}`);
-        return;
-      }
-      const link = document.createElement('a'); link.href = URL.createObjectURL(blob); link.download = fileName; link.click(); setTimeout(() => URL.revokeObjectURL(link.href), 1000);
-      setMessage(`${done[kind].replace('сохранён', 'готов').replace('сохранены', 'готовы')}.${warning}`);
+    const include = printSections;
+    if (!include.length) {
+      setMessage('Выберите хотя бы один раздел для печати.');
       return;
     }
-    const current = await saveProject();
-    const url = kind === 'backup' ? `/api/projects/${current.id}/backup` : `/api/projects/${current.id}/export?format=${kind}`;
-    const response = await fetch(url); if (!response.ok) throw new Error(await response.text());
-    const blob = await response.blob(); const link = document.createElement('a'); link.href = URL.createObjectURL(blob); link.download = `${current.name}.${kind === 'backup' ? 'json' : kind}`; link.click(); setTimeout(() => URL.revokeObjectURL(link.href), 1000);
-    setMessage(kind === 'backup' ? 'Резервная копия с PDF выгружена.' : `Экспорт ${kind.toUpperCase()} готов.`);
+    const bridge = nativeBridge();
+    if (typeof bridge?.printPdf !== 'function') {
+      setMessage('Печать доступна в мобильном приложении.');
+      return;
+    }
+    const [{ buildJournalPdf }, { loadJournalFonts }] = await Promise.all([import('./export-pdf'), import('./export-fonts')]);
+    const photos = include.includes('photos') ? await collectPhotos(current) : [];
+    const pinPhotos = include.includes('pinPhotos') ? await collectPinPhotos(current) : [];
+    const plans = include.includes('plans')
+      ? await collectPlans(current, (done, total) => { if (total > 1) setMessage(`Планы: ${done} из ${total}…`); })
+      : { plans: [], warnings: [] };
+    const bytes = await buildJournalPdf(current, await loadJournalFonts(), { include, photos, pinPhotos, plans: plans.plans });
+    bridge.printPdf(current.name, bytesToBase64(bytes));
+    setMessage(`Открыт системный диалог печати: разделов ${include.length} из ${JOURNAL_SECTIONS.length}.${plans.warnings.length ? ` ${plans.warnings.join(' ')}` : ''}`);
   }
+  /** PDF/фото текущего проекта для резервной копии и файла .anooplan. */
+  async function collectProjectArchive(current: Project): Promise<{ pdfs: { id: string; name: string; dataBase64: string }[]; photos: { key: string; name: string; mime: string; dataBase64: string }[] }> {
+    const pdfs: { id: string; name: string; dataBase64: string }[] = [];
+    const seenPdf = new Set<string>();
+    for (const stageFloor of current.floors) {
+      const pdfId = stageFloor.pdfId;
+      if (!pdfId || seenPdf.has(pdfId)) continue;
+      seenPdf.add(pdfId);
+      if (pdfId.startsWith('idb:')) {
+        const pdfBlob = await idbGet(pdfId.slice(4));
+        if (pdfBlob) pdfs.push({ id: pdfId, name: 'plan.pdf', dataBase64: await blobToBase64(pdfBlob) });
+        continue;
+      }
+      // data:-подложка (демо/встроенный PDF) уже лежит в проекте — не дублируем её.
+      if (pdfId.startsWith('data:') || staticMode) continue;
+      // Серверный id: вкладываем исходный PDF, чтобы файл .anooplan оставался самодостаточным.
+      try {
+        const response = await fetch('/api/pdfs/' + encodeURIComponent(pdfId));
+        if (!response.ok) continue;
+        pdfs.push({ id: 'server:' + pdfId, name: 'plan.pdf', dataBase64: await blobToBase64(await response.blob()) });
+      } catch { /* сервер недоступен — проект выгружается без этого вложения */ }
+    }
+    const photoKeys = [...new Set([...current.equipment, ...current.pins].flatMap(item => item.photos || []))];
+    const photos: { key: string; name: string; mime: string; dataBase64: string }[] = [];
+    for (const key of photoKeys) {
+      try {
+        const photoBlob = await idbGet('photo:' + key);
+        if (photoBlob) photos.push({ key, name: 'photo.jpg', mime: photoBlob.type || 'image/jpeg', dataBase64: await blobToBase64(photoBlob) });
+      } catch { /* фото недоступно — копия всё равно выгружается */ }
+    }
+    return { pdfs, photos };
+  }
+  /** Единая сборка экспортного файла: используется и «Сохранить», и «Поделиться». */
+  async function buildExportBlob(kind: 'csv' | 'xlsx' | 'pdf' | 'backup'): Promise<{ blob: Blob; fileName: string; warning: string }> {
+    const current = projectRef.current;
+    const extension = kind === 'backup' ? 'json' : kind;
+    if (!staticMode) {
+      const saved = await saveProject();
+      const url = kind === 'backup' ? `/api/projects/${saved.id}/backup` : `/api/projects/${saved.id}/export?format=${kind}`;
+      const response = await fetch(url);
+      if (!response.ok) throw new Error(await response.text());
+      return { blob: await response.blob(), fileName: `${saved.name}.${extension}`, warning: '' };
+    }
+    if (kind === 'xlsx') {
+      const { buildWorkbook } = await import('./export-xlsx');
+      const blob = new Blob([buildWorkbook(exportSheets(current)) as unknown as BlobPart], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+      return { blob, fileName: `${current.name}.xlsx`, warning: '' };
+    }
+    if (kind === 'pdf') {
+      const [{ buildJournalPdf }, { loadJournalFonts }] = await Promise.all([import('./export-pdf'), import('./export-fonts')]);
+      const plans = await collectPlans(current, (done, total) => { if (total > 1) setMessage(`Планы: ${done} из ${total}…`); });
+      const bytes = await buildJournalPdf(current, await loadJournalFonts(), { photos: await collectPhotos(current), pinPhotos: await collectPinPhotos(current), plans: plans.plans });
+      return { blob: new Blob([bytes as unknown as BlobPart], { type: 'application/pdf' }), fileName: `${current.name}.pdf`, warning: plans.warnings.join(' ') };
+    }
+    if (kind === 'backup') {
+      const { pdfs, photos } = await collectProjectArchive(current);
+      return { blob: new Blob([JSON.stringify({ schemaVersion: 2, project: current, pdfs, photos })], { type: 'application/json' }), fileName: `${current.name}.json`, warning: '' };
+    }
+    return { blob: new Blob([clientCsv(current)], { type: 'text/csv;charset=utf-8' }), fileName: `${current.name}.csv`, warning: '' };
+  }
+  async function download(kind: 'csv' | 'xlsx' | 'pdf' | 'backup') {
+    const { blob, fileName, warning } = await buildExportBlob(kind);
+    const done: Record<string, string> = {
+      csv: 'Экспорт CSV сохранён',
+      xlsx: 'Таблицы Excel сохранены',
+      pdf: 'Журнал PDF сохранён',
+      backup: 'Резервная копия сохранена',
+    };
+    const warningText = warning ? ` ${warning}` : '';
+    const savedPath = await saveBlobOnDevice(fileName, blob);
+    if (savedPath) {
+      setMessage(`${done[kind]}: ${savedPath}${warningText}`);
+      return;
+    }
+    const link = document.createElement('a'); link.href = URL.createObjectURL(blob); link.download = fileName; link.click(); setTimeout(() => URL.revokeObjectURL(link.href), 1000);
+    setMessage(`${done[kind].replace('сохранён', 'готов').replace('сохранены', 'готовы')}.${warningText}`);
+  }
+  async function shareBlob(name: string, blob: Blob, mime: string): Promise<void> {
+    const bridge = nativeBridge();
+    if (typeof bridge?.shareFile !== 'function') {
+      setMessage('Поделиться файлом можно только в мобильном приложении.');
+      return;
+    }
+    const base64 = bytesToBase64(new Uint8Array(await blob.arrayBuffer()));
+    const result = bridge.shareFile(name, base64, mime || blob.type || 'application/octet-stream');
+    if (!result.startsWith('ok:')) throw new Error(result.replace(/^err:\s*/, '') || 'Не удалось поделиться файлом');
+    setMessage(`Файл «${name}» передан в системное меню «Поделиться».`);
+  }
+  async function shareExport(kind: 'pdf' | 'xlsx'): Promise<void> {
+    const { blob, fileName } = await buildExportBlob(kind);
+    await shareBlob(fileName, blob, blob.type);
+  }
+  async function buildAnoPlanBlob(): Promise<{ blob: Blob; fileName: string }> {
+    const current = projectRef.current;
+    const { pdfs, photos } = await collectProjectArchive(current);
+    const json = serializeAnoPlanFile(buildAnoPlanFile(current, pdfs, photos));
+    return { blob: new Blob([json], { type: ANOOPLAN_MIME }), fileName: `${current.name}${ANOOPLAN_EXTENSION}` };
+  }
+  async function saveAnoPlan(): Promise<void> {
+    const { blob, fileName } = await buildAnoPlanBlob();
+    const savedPath = await saveBlobOnDevice(fileName, blob);
+    if (savedPath) {
+      setMessage(`Проект сохранён в файл: ${savedPath}`);
+      return;
+    }
+    const link = document.createElement('a'); link.href = URL.createObjectURL(blob); link.download = fileName; link.click(); setTimeout(() => URL.revokeObjectURL(link.href), 1000);
+    setMessage(`Файл ${fileName} сформирован.`);
+  }
+  async function shareAnoPlan(): Promise<void> {
+    const { blob, fileName } = await buildAnoPlanBlob();
+    await shareBlob(fileName, blob, ANOOPLAN_MIME);
+  }
+  async function openSharedProject(text: string): Promise<void> {
+    try {
+      const parsed = parseAnoPlanFile(JSON.parse(text));
+      if (dirtyRef.current && !window.confirm('Есть несохранённые изменения. Открыть файл без сохранения?')) {
+        setMessage('Открытие файла отменено.');
+        return;
+      }
+      if (parsed.kind === 'file') {
+        // Вложения всегда сохраняем под новыми локальными ключами: файл мог прийти
+        // с другого устройства или из серверного режима, поэтому старые id не переиспользуем.
+        const pdfKeys = new Map<string, string>();
+        for (const pdf of parsed.pdfs) {
+          if (!pdf?.id || !pdf.dataBase64) continue;
+          const bytes = (() => {
+            try { return Uint8Array.from(atob(pdf.dataBase64), c => c.charCodeAt(0)); } catch { return null; }
+          })();
+          if (!bytes) continue;
+          const pdfBlob = new Blob([bytes], { type: 'application/pdf' });
+          if (!staticMode) {
+            // Серверный режим: PDF снова загружаем в хранилище сервера, чтобы проект
+            // оставался переносимым, а резервные копии включали подложку.
+            try {
+              const form = new FormData();
+              form.append('file', new File([pdfBlob], 'plan.pdf', { type: 'application/pdf' }));
+              const uploaded = await api<{ id: string }>('/api/pdfs', { method: 'POST', body: form });
+              pdfKeys.set(pdf.id, uploaded.id);
+              continue;
+            } catch { /* сервер недоступен — сохраним PDF локально */ }
+          }
+          try {
+            const localKey = uid();
+            await idbPut(localKey, pdfBlob);
+            pdfKeys.set(pdf.id, 'idb:' + localKey);
+          } catch { /* вложение не сохранилось — проект всё равно открываем */ }
+        }
+        if (pdfKeys.size) {
+          for (const stageFloor of parsed.project.floors) {
+            if (stageFloor.pdfId && pdfKeys.has(stageFloor.pdfId)) stageFloor.pdfId = pdfKeys.get(stageFloor.pdfId)!;
+          }
+        }
+        for (const photo of parsed.photos) {
+          if (!photo?.key || !photo.dataBase64) continue;
+          try {
+            const bytes = Uint8Array.from(atob(photo.dataBase64), c => c.charCodeAt(0));
+            await idbPut('photo:' + photo.key, new Blob([bytes], { type: photo.mime || 'image/jpeg' }));
+          } catch { /* фото не сохранилось — проект открывается */ }
+        }
+        // Открытый файл ещё не сохранён в хранилище: persisted=false, чтобы «Сохранить»
+        // создавал проект, а не делал PUT /api/projects/<чужой id> (404).
+        load(parsed.project, false);
+      } else {
+        load(parsed.project, false);
+      }
+      setMessage(`Проект «${parsed.project.name}» открыт из файла ${ANOOPLAN_EXTENSION}.`);
+    } catch (error) {
+      logDiagnostic('error', error, 'openSharedProject');
+      setError(`Не удалось открыть файл ${ANOOPLAN_EXTENSION}: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+  function documentField(label: string, key: 'organization' | 'object' | 'documentCode' | 'city' | 'title') {
+    return <label className="field">{label}<input type="text" value={project.document?.[key] || ''} onChange={event => mutate(p => { p.document = { ...(p.document || {}), [key]: event.target.value }; })} /></label>;
+  }
+  function changeLogField(index: number, key: 'version' | 'date' | 'author' | 'description', label: string) {
+    const entries = project.document?.changeLog ?? [];
+    return <input type="text" aria-label={`${label} изменения ${index + 1}`} placeholder={label} value={entries[index]?.[key] || ''} onChange={event => mutate(p => { const list = [...(p.document?.changeLog ?? [])]; if (!list[index]) return; list[index] = { ...list[index], [key]: event.target.value }; p.document = { ...(p.document || {}), changeLog: list }; })} />;
+  }
+  function addChangeLogEntry() {
+    mutate(p => { p.document = { ...(p.document || {}), changeLog: [...(p.document?.changeLog ?? []), { id: uid(), version: '', date: '', author: '', description: '' }] }; });
+  }
+  function removeChangeLogEntry(id: string) {
+    mutate(p => { p.document = { ...(p.document || {}), changeLog: (p.document?.changeLog ?? []).filter(entry => entry.id !== id) }; });
+  }
+
   async function restoreProjectFile(file: File): Promise<void> {
     const parsed = JSON.parse(await file.text()) as Record<string, unknown>;
     if (staticMode) {
@@ -1001,7 +1185,27 @@ export default function App() {
       <button title="Отменить Ctrl+Z" aria-label="Отменить" disabled={!undo.length} onClick={() => history(true)}>↶</button>
       <button title="Повторить Ctrl+Shift+Z" aria-label="Повторить" disabled={!redo.length} onClick={() => history(false)}>↷</button>
     </div>
-    {exportOpen && <div className="sheet-backdrop" onClick={() => setExportOpen(false)}><section className="sheet" role="dialog" aria-label="Экспорт и копия" onClick={event => event.stopPropagation()}><div className="sheet-grip" /><div className="sheet-head"><strong>Экспорт и копия</strong><button aria-label="Закрыть" onClick={() => setExportOpen(false)}>×</button></div><div className="sheet-list">{(['csv', 'xlsx', 'pdf', 'backup'] as const).map(format => <button key={format} disabled={busy} onClick={() => { setExportOpen(false); void run(() => download(format)); }}>{format === 'backup' ? 'JSON с исходными PDF' : format.toUpperCase()}</button>)}{typeof nativeBridge()?.printPdf === 'function' && <button onClick={() => { setExportOpen(false); void run(() => printJournal()); }}>Печать A4</button>}<div className="sheet-fields"><label className="field">Составил<input type="text" value={project.document?.compiledBy || ''} onChange={e => mutate(p => { p.document = { ...(p.document || {}), compiledBy: e.target.value }; })} /></label><label className="field">Проверил<input type="text" value={project.document?.checkedBy || ''} onChange={e => mutate(p => { p.document = { ...(p.document || {}), checkedBy: e.target.value }; })} /></label></div><button onClick={() => { setExportOpen(false); void openHistory(); }}>История версий</button><button onClick={() => { setExportOpen(false); restoreInput.current?.click(); }}>Восстановить JSON…</button></div></section></div>}
+    {exportOpen && <div className="sheet-backdrop" onClick={() => setExportOpen(false)}><section className="sheet" role="dialog" aria-label="Экспорт и копия" onClick={event => event.stopPropagation()}>
+      <div className="sheet-grip" />
+      <div className="sheet-head"><strong>Экспорт и копия</strong><button aria-label="Закрыть" onClick={() => setExportOpen(false)}>×</button></div>
+      <div className="sheet-list">
+        <span className="section-label">Файлы</span>
+        {(['csv', 'xlsx', 'pdf', 'backup'] as const).map(format => <button key={format} disabled={busy} onClick={() => { setExportOpen(false); void run(() => download(format)); }}>{format === 'backup' ? 'JSON с исходными PDF' : format.toUpperCase()}</button>)}
+        {typeof nativeBridge()?.shareFile === 'function' && <><span className="section-label">Поделиться</span><button className="share-pdf" disabled={busy} onClick={() => void run(() => shareExport('pdf'))}>Поделиться PDF</button><button className="share-xlsx" disabled={busy} onClick={() => void run(() => shareExport('xlsx'))}>Поделиться XLSX</button><button className="share-anooplan" disabled={busy} onClick={() => void run(() => shareAnoPlan())}>Поделиться .anooplan</button></>}
+        <span className="section-label">Печать: выбранные разделы <span className="print-sections-count">{printSections.length} из {JOURNAL_SECTIONS.length}</span></span>
+        <div className="print-sections">{JOURNAL_SECTIONS.map(section => <label key={section.id} className="print-section"><input type="checkbox" className="section-checkbox" checked={printSections.includes(section.id)} onChange={() => togglePrintSection(section.id)} />{section.label}</label>)}</div>
+        <button className="print-selected" disabled={busy} onClick={() => { setExportOpen(false); void run(() => printJournal()); }}>Печать выбранных разделов</button>
+        <span className="section-label">Титульный лист</span>
+        <div className="document-fields">{documentField('Организация', 'organization')}{documentField('Объект', 'object')}{documentField('Шифр документа', 'documentCode')}{documentField('Город', 'city')}{documentField('Заголовок документа', 'title')}</div>
+        <span className="section-label">Лист регистрации изменений <span>{(project.document?.changeLog ?? []).length}</span></span>
+        <div className="change-list">{(project.document?.changeLog ?? []).map((entry, index) => <div className="change-row" key={entry.id}>{changeLogField(index, 'version', 'Версия')}{changeLogField(index, 'date', 'Дата')}{changeLogField(index, 'author', 'Автор')}{changeLogField(index, 'description', 'Описание')}<button className="change-remove" aria-label={`Удалить изменение ${index + 1}`} onClick={() => removeChangeLogEntry(entry.id)}>×</button></div>)}</div>
+        <button className="change-add" onClick={addChangeLogEntry}>＋ Изменение</button>
+        <div className="sheet-fields"><label className="field">Составил<input type="text" value={project.document?.compiledBy || ''} onChange={e => mutate(p => { p.document = { ...(p.document || {}), compiledBy: e.target.value }; })} /></label><label className="field">Проверил<input type="text" value={project.document?.checkedBy || ''} onChange={e => mutate(p => { p.document = { ...(p.document || {}), checkedBy: e.target.value }; })} /></label></div>
+        <button className="anooplan-save" disabled={busy} onClick={() => void run(() => saveAnoPlan())}>Сохранить проект .anooplan</button>
+        <button onClick={() => { setExportOpen(false); void openHistory(); }}>История версий</button>
+        <button onClick={() => { setExportOpen(false); restoreInput.current?.click(); }}>Восстановить JSON…</button>
+      </div>
+    </section></div>}
     {historyOpen && <div className="sheet-backdrop" onClick={() => setHistoryOpen(false)}><section className="sheet" role="dialog" aria-label="История версий" onClick={event => event.stopPropagation()}><div className="sheet-grip" /><div className="sheet-head"><strong>История версий</strong><button aria-label="Закрыть" onClick={() => setHistoryOpen(false)}>×</button></div><div className="sheet-list"><button onClick={() => void takeSnapshot('вручную').then(() => openHistory()).catch(() => setError('Не удалось сделать снимок: хранилище недоступно.'))}>＋ Сделать снимок сейчас</button>{snapshots === null ? <p className="help">Загружаю…</p> : snapshots.length ? snapshots.map(entry => <div className="snapshot-row" key={entry.key}><button className="snapshot-open" onClick={() => void restoreSnapshot(entry.key)}><strong>{new Date(entry.createdAt).toLocaleString('ru-RU')}</strong><small>{entry.reason} · {entry.project.equipment.length} оборуд. · {entry.project.cables.length} кабелей</small></button><button className="snapshot-delete" aria-label="Удалить снимок" onClick={() => void deleteSnapshot(entry.key)}>🗑</button></div>) : <p className="help">Снимков пока нет. Они создаются автоматически раз в 5 минут при изменениях и при ручном сохранении.</p>}</div></section></div>}
     {sheet && <div className="sheet-backdrop" onClick={() => setSheet(null)}><section className="sheet" role="dialog" aria-label="Действия с объектом" onClick={event => event.stopPropagation()}><div className="sheet-grip" /><div className="sheet-head"><strong>{sheetTitle(sheet)}</strong><button aria-label="Закрыть" onClick={() => setSheet(null)}>×</button></div><div className="sheet-list"><button onClick={() => { setPropsOpen(true); setSheet(null); }}>⚙ Свойства</button><button onClick={() => { copyObject(sheet.kind, sheet.id); setSheet(null); }}>⧉ Копировать</button><button className="danger" onClick={() => removeObject(sheet.kind, sheet.id)}>🗑 Удалить</button></div></section></div>}
     <input hidden ref={photoInput} type="file" accept="image/*" onChange={e => { const file = e.target.files?.[0]; if (file) void run(() => addPhoto(file)); e.target.value = ''; }} />

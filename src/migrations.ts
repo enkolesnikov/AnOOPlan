@@ -1,4 +1,4 @@
-import type { Project } from './model';
+import type { ChangeEntry, Project } from './model';
 import { normalizeEquipmentColor } from './equipment-icons';
 import { isCatalogDate, normalizeCatalog } from './estimate';
 
@@ -115,6 +115,60 @@ function normalizePin(value: unknown): Project['pins'][number] {
   };
 }
 
+const stringValue = (value: unknown): string => (typeof value === 'string' ? value.trim() : '');
+
+/** Запись листа регистрации изменений: мусорные и полностью пустые записи отбрасываются. */
+function normalizeChangeEntry(value: unknown, index: number): ChangeEntry | null {
+  if (!isRecord(value)) return null;
+  const version = stringValue(value.version);
+  const date = stringValue(value.date);
+  const author = stringValue(value.author);
+  const description = stringValue(value.description);
+  if (!version && !date && !author && !description) return null;
+  return {
+    id: stringValue(value.id) || `change-${index + 1}`,
+    version,
+    date,
+    author,
+    description,
+  };
+}
+
+const normalizeDocument = (value: unknown): Project['document'] => {
+  if (!isRecord(value)) return undefined;
+  const document: Project['document'] = {
+    // Старые поля сохраняем как раньше; новые строки титульного листа нормализуем.
+    compiledBy: typeof value.compiledBy === 'string' ? value.compiledBy : undefined,
+    checkedBy: typeof value.checkedBy === 'string' ? value.checkedBy : undefined,
+    date: typeof value.date === 'string' ? value.date : undefined,
+    organization: stringValue(value.organization) || undefined,
+    object: stringValue(value.object) || undefined,
+    documentCode: stringValue(value.documentCode) || undefined,
+    city: stringValue(value.city) || undefined,
+    title: stringValue(value.title) || undefined,
+  };
+  if (Array.isArray(value.changeLog)) {
+    const changeLog = value.changeLog
+      .map((entry, index) => normalizeChangeEntry(entry, index))
+      .filter((entry): entry is ChangeEntry => entry !== null);
+    // Fallback-id `change-N` может совпасть с явным id: дубли ломают удаление строк в интерфейсе.
+    const used = new Set<string>();
+    const unique = changeLog.map((entry, index) => {
+      let id = entry.id;
+      if (used.has(id)) {
+        let suffix = index + 2;
+        while (used.has(`change-${suffix}`)) suffix += 1;
+        id = `change-${suffix}`;
+      }
+      used.add(id);
+      return { ...entry, id };
+    });
+    // Пустой список не храним: «нет изменений» — это отсутствие поля, а не массив-заглушка.
+    if (unique.length) document.changeLog = unique;
+  }
+  return document;
+};
+
 function normalizeCable(value: unknown): Project['cables'][number] {
   if (!isRecord(value)) throw new ProjectSchemaError('В проекте повреждён список кабелей.');
   return {
@@ -185,14 +239,8 @@ export function migrateProject(input: unknown): Project {
   // нормализуются, а старые проекты грузятся как раньше.
   project.catalog = normalizeCatalog(raw.catalog);
   if (isCatalogDate(raw.catalogDate)) project.catalogDate = raw.catalogDate;
-  if (isRecord(raw.document)) {
-    const document = raw.document;
-    project.document = {
-      compiledBy: typeof document.compiledBy === 'string' ? document.compiledBy : undefined,
-      checkedBy: typeof document.checkedBy === 'string' ? document.checkedBy : undefined,
-      date: typeof document.date === 'string' ? document.date : undefined,
-    };
-  }
+  const document = normalizeDocument(raw.document);
+  if (document) project.document = document;
   if (isRecord(raw.estimate)) {
     const source = raw.estimate;
     project.estimate = {

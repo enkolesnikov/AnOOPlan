@@ -128,6 +128,23 @@ export function assertProject(input: unknown, pdfExists: (id: string) => boolean
     }
     if (estimate.note !== undefined && typeof estimate.note !== 'string') fail('project.estimate: некорректное примечание');
   }
+  // Документ и лист регистрации изменений необязательны: старые проекты без них валидны,
+  // а заданные поля должны быть строками (иначе 422).
+  if (p.document !== undefined) {
+    const document = object(p.document, 'project.document');
+    for (const key of ['compiledBy', 'checkedBy', 'date', 'organization', 'object', 'documentCode', 'city', 'title']) {
+      if (document[key] !== undefined && typeof document[key] !== 'string') fail(`project.document.${key}: некорректная строка`);
+    }
+    if (document.changeLog !== undefined) {
+      if (!Array.isArray(document.changeLog) || document.changeLog.length > 100000) fail('project.document.changeLog: некорректная запись');
+      for (const item of document.changeLog) {
+        const entry = item && typeof item === 'object' && !Array.isArray(item) ? item as Record<string, unknown> : null;
+        const valid = entry !== null
+          && ['id', 'version', 'date', 'author', 'description'].every(key => typeof entry[key] === 'string');
+        if (!valid) fail('project.document.changeLog: некорректная запись');
+      }
+    }
+  }
 }
 
 export function decodePdf(value: unknown): Buffer {

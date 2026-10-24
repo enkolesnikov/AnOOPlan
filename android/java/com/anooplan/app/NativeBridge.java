@@ -2,6 +2,7 @@ package com.anooplan.app;
 
 import android.content.ContentValues;
 import android.content.Context;
+import android.content.Intent;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Environment;
@@ -30,6 +31,9 @@ public class NativeBridge {
         void onExitRequested();
 
         void onPrintRequested(String name, byte[] pdf);
+
+        /** JSON открываемого из системы файла .anooplan; null, если файла нет. */
+        String takePendingFile();
     }
 
     private final Context context;
@@ -130,6 +134,54 @@ public class NativeBridge {
         } catch (Exception e) {
             Toast.makeText(context, "Не удалось подготовить печать: " + e.getMessage(), Toast.LENGTH_LONG).show();
         }
+    }
+
+    /**
+     * «Поделиться»: пишет файл в cache/share и открывает системный chooser через
+     * {@link ShareProvider}. @return "ok:<имя файла>" или "err:<текст>".
+     */
+    @JavascriptInterface
+    public String shareFile(String name, String base64, String mime) {
+        try {
+            byte[] data = Base64.decode(base64, Base64.DEFAULT);
+            if (data.length == 0) return "err: пустой файл";
+            String fileName = name == null || name.trim().isEmpty() ? "anooplan.dat" : name.trim();
+            fileName = fileName.replaceAll("[\\\\/:*?\"<>|\r\n\t]", "_");
+            File dir = ShareProvider.shareDir(context);
+            if (!dir.exists() && !dir.mkdirs()) return "err: не удалось создать папку для отправки";
+            File file = new File(dir, fileName);
+            FileOutputStream out = new FileOutputStream(file);
+            try {
+                out.write(data);
+                out.flush();
+            } finally {
+                out.close();
+            }
+            String mimeType = mime == null || mime.trim().isEmpty() ? "application/octet-stream" : mime.trim();
+            Uri uri = ShareProvider.uriFor(context, file);
+            Intent send = new Intent(Intent.ACTION_SEND)
+                    .setType(mimeType)
+                    .putExtra(Intent.EXTRA_STREAM, uri)
+                    .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+            Intent chooser = Intent.createChooser(send, "Поделиться");
+            chooser.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            context.startActivity(chooser);
+            return "ok:" + fileName;
+        } catch (Exception e) {
+            return "err:" + e.getClass().getSimpleName() + ": " + e.getMessage();
+        }
+    }
+
+    /**
+     * Забирает JSON файла .anooplan, открытого через «Открыть с помощью»/«Поделиться».
+     * Пустая строка — файла нет. Нужен на случай, когда нативная часть не успела
+     * вызвать window.__anooplanOpenSharedProject до готовности интерфейса.
+     */
+    @JavascriptInterface
+    public String takePendingFile() {
+        if (host == null) return "";
+        String text = host.takePendingFile();
+        return text == null ? "" : text;
     }
 
     /** Короткая вибрация: попадание в привязку, долгое нажатие. */

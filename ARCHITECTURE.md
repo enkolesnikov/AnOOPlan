@@ -20,7 +20,9 @@ interface Cable { id:string; number:string; name:string; brand:string; purpose:s
 interface Pin { id:string; number:string; floorId:string; x:number; y:number; comment:string; status:'open'|'closed'; photos?:string[]; createdAt:string; updatedAt:string }
 interface PriceItem { id:string; kind:'equipment'|'cable'|'tray'; name:string; unit:string; price:number|null; note:string }
 interface ProjectEstimate { laborPercent:number|null; note?:string }
-interface Project { schemaVersion:1|2; id:string; name:string; floors:Floor[]; equipment:Equipment[]; routes:Route[]; cables:Cable[]; pins:Pin[]; updatedAt:string; catalog?:PriceItem[]; catalogDate?:string|null; estimate?:ProjectEstimate }
+interface ChangeEntry { id:string; version:string; date:string; author:string; description:string }
+interface ProjectDocument { compiledBy?:string; checkedBy?:string; date?:string; organization?:string; object?:string; documentCode?:string; city?:string; title?:string; changeLog?:ChangeEntry[] }
+interface Project { schemaVersion:1|2; id:string; name:string; floors:Floor[]; equipment:Equipment[]; routes:Route[]; cables:Cable[]; pins:Pin[]; updatedAt:string; document?:ProjectDocument; catalog?:PriceItem[]; catalogDate?:string|null; estimate?:ProjectEstimate }
 ```
 
 Сегменты связаны совпадающими координатами и этажом с допуском 1e-6; height также совпадает. Кабель содержит упорядоченный список ID сегментов, каждый физический сегмент допускается один раз. Направление сегмента определяется обходом цепочки. Концы кабеля должны совпадать в плане с началом/концом цепочки на соответствующем этаже; вертикальные подводы от высоты оборудования до высоты трассы учитываются отдельно. Межэтажный сегмент разрешён только при совпадающих x,y (общая система координат этажей), учитывает отметки полов. Неизвестные высоты/масштаб и разрывы означают неполный расчёт; итог null.
@@ -61,6 +63,18 @@ interface Project { schemaVersion:1|2; id:string; name:string; floors:Floor[]; e
 
 `estimate(project)` собирает смету по четырём разделам: «Оборудование» (количество по модели × цена из справочника), «Кабели» (итоговые метры одного кабеля × количество × цена: ручная `cable.pricePerMeter` приоритетнее справочника по марке), «Лотки» (длина по типу трассы × цена) и «Работы» (`Project.estimate.laborPercent` % от стоимости материалов). Итог = материалы + работы. Пустая или отсутствующая цена/количество делают строку, раздел и итог `null` с пометкой «неполная смета»: неизвестное не подменяется нулём. Предупреждения сметы попадают в лист «Предупреждения» и PDF. Выгрузка: XLSX/CSV — листы/разделы «Смета», «Коммерческое предложение» и «Справочник цен»; PDF — секции «Смета» и «Коммерческое предложение».
 
+## Печатные формы PDF
+
+`buildJournalPdf(project, fonts, options)` собирает документ в порядке: титульный лист → «Оглавление» → выбранные разделы → планы/фото/предупреждения → итоги и подписи. Титульный лист берёт данные из `Project.document` (организация, объект, шифр, город, заголовок) и подписи «Составил/Проверил»; пустые поля не печатаются как «undefined». Оглавление заполняется после рендера: при выводе заголовка каждой секции запоминается фактическая страница, затем зарезервированная страница оглавления дорисовывается в конце. На каждой странице, кроме титульной, рисуется упрощённый штамп по ГОСТ 2.104 (Изм./Лист/№ докум./Подп./Дата/Разраб./Пров./Т.контр./Н.контр./Утв., обозначение, организация, «Лист N / Листов M»). Лист регистрации изменений печатается из `Project.document.changeLog`.
+
+`JournalOptions.include` — список `JournalSectionId`: `journal`, `equipment`, `cables`, `infrastructure`, `trayFill`, `estimate`, `commercial`, `pins`, `warnings`, `plans`, `photos`, `pinPhotos`, `changeLog`. `undefined` — все разделы; панель «Экспорт / копия» передаёт отмеченные пользователем разделы в печать. Титульный лист и оглавление выводятся всегда.
+
+## Формат .anooplan и обмен
+
+`.anooplan` — JSON-файл проекта (`src/project-file.ts`): `{ format:'anooplan', formatVersion:1, project, pdfs[], photos[], exportedAt }`. `buildAnoPlanFile` собирает файл из проекта и вложений (PDF в base64, фото), `serializeAnoPlanFile` — в JSON, `parseAnoPlanFile` принимает новый формат, прежнюю резервную копию с полем `project` и «голый» JSON проекта, нормализуя проект через миграции; повреждённый файл даёт `ProjectSchemaError`. MIME — `application/vnd.anooplan.project`, расширение `.anooplan`.
+
+Нативная оболочка: `NativeBridge.shareFile(name, base64, mime)` пишет файл в `cache/share`, раздаёт его через собственный `ShareProvider` (`content://com.anooplan.app.share/<имя>`) и открывает системный `ACTION_SEND`-chooser — без androidx FileProvider. Файлы `.anooplan`, открытые через «Открыть с помощью»/«Поделиться», перехватываются intent-фильтрами в манифесте (`VIEW`/`SEND`, MIME `application/vnd.anooplan.project`, а также `file://.../*.anooplan`), читаются в `MainActivity` (лимит 40 МБ) и передаются в интерфейс: `window.__anooplanOpenSharedProject(json)` после `onPageFinished` либо через `takePendingFile()` при монтировании. Интерфейс разбирает файл и загружает проект вместе с PDF и фото; сетевых разрешений у приложения по-прежнему нет.
+
 ## API
 - GET /api/projects → {id,name,updatedAt}[]
 - POST /api/projects тело Project → Project (создание; повтор ID → 409)
@@ -91,6 +105,7 @@ interface Project { schemaVersion:1|2; id:string; name:string; floors:Floor[]; e
 `src/equipment-icons.ts` — иконки и цвета оборудования (общий набор для плана, PDF и списка).
 `src/App.tsx`, `src/styles.css` — интерфейс; расчёты импортируются из движка и мемоизируются.
 `src/sheets.ts`, `src/export-xlsx.ts`, `src/export-pdf.ts`, `src/client-csv.ts` — выгрузки.
+`src/project-file.ts` — формат `.anooplan` (сборка/разбор файла проекта); `android/java/.../ShareProvider.java` — раздача файлов для ACTION_SEND.
 `src/migrations.ts` — схема и нормализация; `src/idb.ts`, `src/local-projects.ts`, `src/storage-gc.ts` — хранение.
 `server/**` — API и SQLite, использует те же модель и движок. `tests/**` — node:test; `scripts/smoke-dom.mjs` — смоук интерфейса.
 

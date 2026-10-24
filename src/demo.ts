@@ -157,5 +157,19 @@ export function createDemoProject(): Project {
     ],
     catalogDate: DEMO_CATALOG_DATE,
     estimate: { laborPercent: 25, note: 'Цены действительны 30 дней' },
+    document: {
+      organization: 'ООО «Проект-Монтаж»',
+      object: 'Учебный объект: офис на 2 этажа',
+      documentCode: 'АП-2026-01',
+      city: 'Екатеринбург',
+      title: 'Кабельный журнал и смета',
+      compiledBy: 'Инженер А.И. Петров',
+      checkedBy: 'ГИП С.В. Смирнов',
+      date: '2026-10-01',
+      changeLog: [
+        { id: uid(), version: '1', date: '2026-10-01', author: 'А.И. Петров', description: 'Первая редакция' },
+        { id: uid(), version: '2', date: '2026-10-15', author: 'С.В. Смирнов', description: 'Уточнён справочник цен и смета' },
+      ],
+    },
   };
 }

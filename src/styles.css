@@ -594,6 +594,24 @@ input[inputmode="decimal"] { text-align: left; }
 /* ── Смета, шаблоны и история версий ─────────────────────────────────── */
 .sheet-fields { display: flex; gap: 8px; padding: 10px 0 4px; }
 .sheet-fields .field { flex: 1; margin: 0; }
+/* ── Печатные формы и обмен (1.18.0) ─────────────────────────────────── */
+.sheet-list .section-label { margin-top: 8px; }
+.print-sections { display: flex; flex-wrap: wrap; gap: 4px 14px; padding: 6px 2px; }
+.print-section { display: flex; align-items: center; gap: 6px; font-size: 13px; }
+.print-section input { width: 18px; height: 18px; accent-color: var(--accent); }
+.print-sections-count { color: var(--muted); font-weight: 400; text-transform: none; letter-spacing: 0; }
+.print-selected { border-color: var(--accent); color: var(--accent-2); font-weight: 600; }
+.document-fields { display: flex; flex-direction: column; gap: 8px; padding: 4px 0; }
+.change-list { display: flex; flex-direction: column; gap: 6px; padding: 4px 0; }
+.change-row { display: grid; grid-template-columns: 68px 96px 120px minmax(0, 1fr) 34px; gap: 6px; align-items: center; }
+.change-row input { min-width: 0; }
+.sheet-list .change-remove { padding: 4px; min-height: 32px; }
+.change-add { border-style: dashed; }
+.sheet-list .anooplan-save { border-color: var(--accent); }
+@media (max-width: 640px) {
+  .change-row { grid-template-columns: 1fr 1fr; }
+  .sheet-list .change-remove { justify-self: end; }
+}
 .chip-row { display: flex; flex-wrap: wrap; gap: 6px; margin: 2px 0 10px; }
 .chip { padding: 5px 10px; font-size: 12px; border-radius: 999px; border: 1px solid var(--border); background: var(--surface-3); min-height: 32px; }
 .document-summary {

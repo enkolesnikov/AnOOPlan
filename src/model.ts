@@ -50,7 +50,28 @@ export interface ProjectEstimate {
   laborPercent: number | null;
   note?: string;
 }
-export interface ProjectDocument { compiledBy?:string; checkedBy?:string; date?:string }
+/** Запись листа регистрации изменений (печатные формы 1.18.0). */
+export interface ChangeEntry {
+  id: string;
+  /** Номер изменения/версия, например «1». */
+  version: string;
+  /** Дата изменения; свободная строка, обычно YYYY-MM-DD. */
+  date: string;
+  /** Кто внёс изменение. */
+  author: string;
+  /** Что изменено. */
+  description: string;
+}
+
+export interface ProjectDocument {
+  compiledBy?:string; checkedBy?:string; date?:string;
+  /** Титульный лист: организация, объект, шифр документа, город. */
+  organization?:string; object?:string; documentCode?:string; city?:string;
+  /** Заголовок документа на титульном листе; по умолчанию «Кабельный журнал и смета». */
+  title?:string;
+  /** Лист регистрации изменений. */
+  changeLog?:ChangeEntry[];
+}
 export interface Project {
   schemaVersion:1|2; id:string; name:string; floors:Floor[]; equipment:Equipment[];
   routes:Route[]; cables:Cable[]; pins:Pin[]; updatedAt:string; document?:ProjectDocument;

@@ -59,19 +59,19 @@ const bareProject = (): Project => {
   return project;
 };
 
-async function pdfText(bytes: Uint8Array): Promise<{ text: string; pages: number }> {
+async function pdfText(bytes: Uint8Array): Promise<{ text: string; pages: number; pageTexts: string[] }> {
   const pdfjs = await import('pdfjs-dist/legacy/build/pdf.mjs');
   const task = pdfjs.getDocument({ data: new Uint8Array(bytes), useSystemFonts: false });
   const document = await task.promise;
-  let text = '';
+  const pageTexts: string[] = [];
   for (let index = 1; index <= document.numPages; index += 1) {
     const page = await document.getPage(index);
     const content = await page.getTextContent();
-    text += content.items.map(item => ('str' in item ? item.str : '')).join(' ') + '\n';
+    pageTexts.push(content.items.map(item => ('str' in item ? item.str : '')).join(' '));
   }
   const pages = document.numPages;
   await task.destroy();
-  return { text, pages };
+  return { text: pageTexts.join('\n'), pages, pageTexts };
 }
 
 test('листы выгрузки совпадают по набору с серверными', () => {
@@ -402,9 +402,11 @@ test('PDF прикладывает план этажа и подписывает
     'base64',
   ));
   const bytes = await buildJournalPdf(project, fonts, { plans: [{ title: project.floors[0].name, png }] });
-  const { text } = await pdfText(bytes);
+  const { text, pages } = await pdfText(bytes);
   assert.ok(text.includes(`План: ${project.floors[0].name}`), 'нет раздела с планом');
-  assert.ok(text.includes('Лист 1 из'), 'нет подписи листа');
+  assert.ok(text.includes('Листов'), 'нет штампа с числом листов');
+  assert.ok(text.includes(`Лист ${pages}`), 'нет номера последнего листа');
+  assert.ok(text.includes('Лист 1 из'), 'нет подписи титульного листа');
   assert.ok(text.includes(project.name), 'нет названия проекта в колонтитуле');
 });
 
@@ -500,4 +502,97 @@ test('без справочника цен и процента работ сме
   assert.ok(text.includes('нет цены в справочнике'), 'нет предупреждения о цене в PDF');
   assert.ok(text.includes('Работы (не задан)'), 'в PDF-смете нет строки «Работы (не задан)»');
   assert.ok(!text.includes('Итого: Работы'), 'в PDF работы не дублируются');
+});
+
+
+test('PDF: титульный лист с реквизитами документа', async () => {
+  const project = createDemoProject();
+  const document = project.document!;
+  const { pageTexts, text } = await pdfText(await buildJournalPdf(project, fonts));
+  const title = pageTexts[0];
+  for (const value of [document.organization!, document.object!, document.documentCode!, document.title!, document.compiledBy!, document.checkedBy!]) {
+    assert.ok(title.includes(value), `на титульном листе нет «${value}»`);
+  }
+  assert.ok(title.includes('Екатеринбург · 2026'), 'на титуле нет города и года');
+  assert.ok(title.includes('Составил') && title.includes('Проверил'), 'на титуле нет блока подписей');
+  assert.ok(title.includes(`Дата: ${document.date}`), 'на титуле нет даты документа');
+  assert.ok(!title.includes('Разраб.'), 'на титульном листе не должно быть штампа');
+  assert.ok(text.includes(project.name), 'название проекта не попало в PDF');
+  assert.ok(pageTexts.length > 3, 'титул, оглавление и разделы должны занимать больше страниц');
+});
+
+test('PDF: оглавление с названиями разделов и фактическими номерами страниц', async () => {
+  const project = createDemoProject();
+  const { pageTexts } = await pdfText(await buildJournalPdf(project, fonts));
+  const contents = pageTexts[1];
+  assert.ok(contents.includes('Оглавление'), 'нет страницы оглавления');
+  const expected = ['Кабельный журнал', 'Оборудование', 'Кабельная продукция', 'Кабельная инфраструктура', 'Заполнение лотков', 'Смета', 'Коммерческое предложение', 'Замечания', 'Лист регистрации изменений'];
+  for (const title of expected) {
+    assert.ok(contents.includes(title), `в оглавлении нет «${title}»`);
+    const after = contents.slice(contents.indexOf(title) + title.length);
+    const match = /^\s*(\d+)/.exec(after);
+    assert.ok(match, `у «${title}» нет номера страницы в оглавлении`);
+    const tocPage = Number(match![1]);
+    const actualPage = pageTexts.findIndex((page, index) => index >= 2 && page.includes(title)) + 1;
+    assert.ok(actualPage > 2, `раздел «${title}» не найден в содержимом`);
+    assert.equal(tocPage, actualPage, `неверный номер страницы для «${title}»`);
+  }
+});
+
+test('PDF: штамп ГОСТ 2.104 на каждой странице кроме титула', async () => {
+  const project = createDemoProject();
+  const { pageTexts } = await pdfText(await buildJournalPdf(project, fonts));
+  const labels = ['Изм.', 'Лист', '№ докум.', 'Подп.', 'Дата', 'Разраб.', 'Пров.', 'Т.контр.', 'Н.контр.', 'Утв.', 'Листов'];
+  for (let index = 1; index < pageTexts.length; index += 1) {
+    for (const label of labels) {
+      assert.ok(pageTexts[index].includes(label), `на странице ${index + 1} нет поля «${label}»`);
+    }
+    assert.ok(pageTexts[index].includes(`Лист ${index + 1}`), `неверный номер листа на странице ${index + 1}`);
+    assert.ok(pageTexts[index].includes(`Листов ${pageTexts.length}`), `неверное число листов на странице ${index + 1}`);
+  }
+  assert.ok(!pageTexts[0].includes('Разраб.'), 'на титульном листе не должно быть штампа');
+});
+
+test('PDF: лист регистрации изменений с записями демо и без записей', async () => {
+  const project = createDemoProject();
+  const changes = project.document!.changeLog!;
+  const { text } = await pdfText(await buildJournalPdf(project, fonts));
+  assert.ok(text.includes('Лист регистрации изменений'), 'нет листа регистрации изменений');
+  for (const entry of changes) {
+    assert.ok(text.includes(entry.description), `нет описания изменения «${entry.description}»`);
+    assert.ok(text.includes(entry.author), `нет автора изменения «${entry.author}»`);
+    assert.ok(text.includes(entry.date), `нет даты изменения «${entry.date}»`);
+  }
+  const noChanges = createDemoProject();
+  noChanges.document = { ...noChanges.document, changeLog: [] };
+  const { text: emptyText } = await pdfText(await buildJournalPdf(noChanges, fonts));
+  assert.ok(emptyText.includes('Изменений нет.'), 'без записей должно быть «Изменений нет.»');
+});
+
+test('PDF: include фильтрует печатаемые разделы и сокращает документ', async () => {
+  const project = createDemoProject();
+  const full = await pdfText(await buildJournalPdf(project, fonts));
+  const journalOnly = await pdfText(await buildJournalPdf(project, fonts, { include: ['journal'] }));
+  assert.ok(journalOnly.pages < full.pages, 'с фильтром разделов страниц должно быть меньше');
+  assert.ok(journalOnly.text.includes('Кабельный журнал'), 'выбранный раздел не напечатан');
+  for (const absent of ['Оборудование', 'Заполнение лотков', 'Коммерческое предложение', 'Лист регистрации изменений', 'Итого по смете']) {
+    assert.ok(!journalOnly.text.includes(absent), `раздел/строка «${absent}» не должны печататься`);
+  }
+  assert.ok(!journalOnly.pageTexts[1].includes('Смета'), 'оглавление должно фильтроваться вместе с разделами');
+  assert.ok(journalOnly.pageTexts[1].includes('Кабельный журнал'), 'в оглавлении нет выбранного раздела');
+});
+
+test('PDF: include:[] — титул, оглавление и страница итогов/подписей', async () => {
+  const project = createDemoProject();
+  const { pages, pageTexts, text } = await pdfText(await buildJournalPdf(project, fonts, { include: [] }));
+  assert.equal(pages, 3, 'титул, оглавление и страница итогов/подписей');
+  assert.ok(pageTexts[0].includes(project.document!.organization!), 'на титуле нет организации');
+  assert.ok(pageTexts[1].includes('Оглавление'), 'нет оглавления');
+  assert.ok(pageTexts[1].includes('Разделы не выбраны.'), 'пустое оглавление должно быть явным');
+  for (const absent of ['Оборудование', 'Смета', 'Заполнение лотков', 'Лист регистрации изменений']) {
+    assert.ok(!pageTexts[1].includes(absent), `в оглавлении не должно быть «${absent}»`);
+    assert.ok(!pageTexts[2].includes(absent), `на странице итогов не должно быть раздела «${absent}»`);
+  }
+  assert.ok(text.includes('Итого кабеля по журналу'), 'итоги печатаются всегда');
+  assert.ok(text.includes('Составил'), 'подписи печатаются всегда');
 });

@@ -47,3 +47,45 @@ test('Android 15 edge-to-edge: MainActivity учитывает системны�
   assert.match(activity, /root\.addView\(webView/);
   assert.match(activity, /setContentView\(root\)/);
 });
+
+test('обмен: ACTION_SEND, провайдер файлов и открытие .anooplan', () => {
+  const manifest = read('android/AndroidManifest.xml');
+  // Провайдер для раздачи PDF/XLSX/.anooplan другим приложениям (без androidx).
+  assert.match(manifest, /<provider[\s\S]*android:name="\.ShareProvider"/);
+  assert.match(manifest, /android:authorities="com\.anooplan\.app\.share"/);
+  assert.match(manifest, /android:grantUriPermissions="true"/);
+  // Открытие проекта .anooplan из файлового менеджера и из «Поделиться».
+  assert.match(manifest, /android:name="android\.intent\.action\.VIEW"/);
+  assert.match(manifest, /android:name="android\.intent\.action\.SEND"/);
+  assert.match(manifest, /android:mimeType="application\/vnd\.anooplan\.project"/);
+  assert.ok(manifest.includes('.anooplan'), 'в манифесте нет связи с расширением .anooplan');
+  // Приложение по-прежнему полностью офлайн.
+  assert.doesNotMatch(manifest, /android\.permission\.INTERNET/);
+
+  const provider = read('android/java/com/anooplan/app/ShareProvider.java');
+  assert.match(provider, /extends ContentProvider/);
+  assert.match(provider, /ParcelFileDescriptor\.MODE_READ_ONLY/);
+  assert.match(provider, /application\/vnd\.anooplan\.project/);
+  assert.doesNotMatch(provider, /getExternalStorage|WRITE_EXTERNAL_STORAGE/);
+
+  const bridge = read('android/java/com/anooplan/app/NativeBridge.java');
+  assert.match(bridge, /public String shareFile\(/);
+  assert.match(bridge, /Intent\.ACTION_SEND/);
+  assert.match(bridge, /Intent\.createChooser/);
+  assert.match(bridge, /public String takePendingFile\(/);
+
+  // Повторное открытие файла при запущенном приложении не создаёт второй экземпляр.
+  assert.match(manifest, /android:launchMode="singleTop"/);
+
+  const activity = read('android/java/com/anooplan/app/MainActivity.java');
+  assert.match(activity, /Intent\.ACTION_VIEW/);
+  assert.match(activity, /Intent\.ACTION_SEND/);
+  assert.match(activity, /__anooplanOpenSharedProject/);
+  assert.match(activity, /MAX_PROJECT_FILE_BYTES/);
+  assert.match(activity, /onNewIntent/);
+  assert.match(activity, /onPageFinished/);
+
+  // Сборка компилирует все Java-файлы каталога, включая новый провайдер.
+  const script = read('scripts/build-apk.sh');
+  assert.match(script, /find "\$ANDROID_DIR\/java" -name '\*\.java'/);
+});
