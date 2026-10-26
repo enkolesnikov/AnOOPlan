@@ -18,7 +18,6 @@ export type NativeBridgeApi = {
   printPdf?: (name: string, base64: string) => void;
 };
 export const nativeBridge = (): NativeBridgeApi | null => (window as unknown as { AnOOPlanNative?: NativeBridgeApi }).AnOOPlanNative ?? null;
-export const isNativeApp = (): boolean => typeof nativeBridge()?.saveFile === 'function';
 /** Uint8Array → base64 чанками, чтобы не переполнить стек на больших PDF. */
 export function bytesToBase64(bytes: Uint8Array): string {
   let binary = '';

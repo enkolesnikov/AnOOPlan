@@ -1,0 +1,15 @@
+{
+  "entry": [
+    "tests/**/*.test.ts",
+    "tests/e2e/**/*.spec.ts",
+    "scripts/*.mjs"
+  ],
+  "project": [
+    "src/**/*.{ts,tsx}",
+    "server/**/*.ts",
+    "tests/**/*.ts",
+    "scripts/*.mjs"
+  ],
+  "ignoreExportsUsedInFile": true,
+  "ignoreBinaries": ["du"]
+}

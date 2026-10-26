@@ -5,6 +5,8 @@
 // требовать правок: правила, конфликтующие с их текущим стилем, точечно отключены
 // с пояснением в отчёте. Для остального кода правила действуют.
 import js from '@eslint/js';
+import jsxA11y from 'eslint-plugin-jsx-a11y';
+import reactHooks from 'eslint-plugin-react-hooks';
 import globals from 'globals';
 import tseslint from 'typescript-eslint';
 
@@ -24,6 +26,26 @@ export default tseslint.config(
   },
   js.configs.recommended,
   ...tseslint.configs.recommended,
+  // Доступность JSX: роли, alt, aria, клавиатурные обработчики. Правила
+  // проверены на текущем коде — новых нарушений быть не должно.
+  jsxA11y.flatConfigs.recommended,
+  {
+    rules: {
+      // Числовое поле — наш контрол: label оборачивает <NumberField>, внутри которого <input>.
+      'jsx-a11y/label-has-associated-control': ['error', { controlComponents: ['NumberField'], depth: 3 }],
+    },
+  },
+  // Хуки: rules-of-hooks — ошибка (сломанный порядок хуков), exhaustive-deps —
+  // предупреждение. Полный recommended v7 включает правила React Compiler, они
+  // требуют отдельной миграции и пока не включаются.
+  {
+    files: ['src/**/*.{ts,tsx}'],
+    plugins: { 'react-hooks': reactHooks },
+    rules: {
+      'react-hooks/rules-of-hooks': 'error',
+      'react-hooks/exhaustive-deps': 'warn',
+    },
+  },
   {
     files: ['src/**/*.{ts,tsx}'],
     languageOptions: {

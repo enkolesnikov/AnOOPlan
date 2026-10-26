@@ -21,8 +21,8 @@ export function AboutSheet({ onClose, diagnostics, onExportDiagnostics, onClearD
   onClearDiagnostics: () => void;
 }) {
   return (
-    <div className="sheet-backdrop about-backdrop" onClick={onClose}>
-      <section className="sheet about-sheet" role="dialog" aria-label="О программе и лицензии" onClick={event => event.stopPropagation()}>
+    <div className="sheet-backdrop about-backdrop" onPointerDown={event => { if (event.target === event.currentTarget) onClose(); }}>
+      <section className="sheet about-sheet" role="dialog" aria-label="О программе и лицензии">
         <div className="sheet-grip" />
         <div className="sheet-head">
           <strong>О программе / Лицензии</strong>

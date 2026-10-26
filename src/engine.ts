@@ -380,9 +380,6 @@ const SECTION_PROBLEM_TEXT: Record<'missing' | 'invalid', string> = {
   invalid: 'неверное сечение КНС',
 };
 
-/** Текстовое обозначение КНС для ведомости: площадь, диаметр, размеры или прочерк. */
-export { routeSectionLabel, segmentSectionLabel } from './route-kinds';
-
 const validQuantity = (cable: Cable): boolean => Number.isInteger(cable.quantity) && cable.quantity > 0;
 
 /** Длина трассы в метрах: сумма физических длин сегментов; null, если геометрия неполная. */

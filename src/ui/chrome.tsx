@@ -29,11 +29,11 @@ export function Footer({ ui }: { ui: AppUi }) {
   );
 }
 
-/** Затемнение под открытыми панелями. */
+/** Затемнение под открытыми панелями: кнопка, чтобы панели закрывались и с клавиатуры. */
 export function Scrim({ ui }: { ui: AppUi }) {
   const { menuOpen, propsOpen, setMenuOpen, setPropsOpen } = ui;
   return (
-<div className="scrim" onClick={() => { setMenuOpen(false); setPropsOpen(false); }} />
+<button type="button" className="scrim" aria-label="Закрыть панели" onClick={() => { setMenuOpen(false); setPropsOpen(false); }} />
   );
 }
 

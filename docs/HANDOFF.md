@@ -55,7 +55,7 @@
 - **Инженерный долг:** `tests/fixtures.ts` (10 тестовых файлов), `eslint.config.js` + `npm run lint`
   в CI, lcov в `coverage/lcov.info` и шаг загрузки в Codacy при наличии секрета `CODACY_PROJECT_TOKEN`,
   декомпозиция `src/ui/sidebar.tsx` и `src/ui/estimate-screen.tsx`.
-- **Проверки:** 245 юнит-теста, 231 проверка смоука, 2 E2E, покрытие 95,6/87,6/95,5 %, JS 428,0 КБ /
+- **Проверки:** 245 юнит-теста, 231 проверка смоука, 2 E2E, покрытие 95,7/87,6/95,5 %, JS 428,0 КБ /
   CSS 34,8 КБ, `npm audit` 0 high; APK 2.5.0 собран и подписан в `android-release.yml`.
 - **Релиз:** тег `v2.5.0` на коммите `cd7bc81`; CI и CodeQL зелёные (CI — 123 с). GitHub Release
   `AnOOPlan 2.5.0` опубликован: APK `AnOOPlan-2.5.0.apk` 1 468 802 Б (1,4 МБ), versionCode 34,
@@ -405,7 +405,7 @@ Android-инструменты; JDK на VPS уже установлен. Есл
   IndexedDB, localStorage, CSV, многостраничный план, пины, диагностика, миграции схемы, конфигурация
   Android (intent-фильтры, ShareProvider, fontScale/textZoom) и релиза. Общие фикстуры — `tests/fixtures.ts`.
 - Покрытие: `npm run coverage` (`--experimental-test-coverage`, без новых зависимостей) —
-  95,6 % строк / 87,6 % веток / 95,5 % функций по модулям, которые импортируются тестами; lcov пишется
+  95,7 % строк / 87,6 % веток / 95,5 % функций по модулям, которые импортируются тестами; lcov пишется
   в `coverage/lcov.info` (27 файлов) и загружается в Codacy в CI при наличии `CODACY_PROJECT_TOKEN`.
   UI-файлы (`src/ui/`, хуки) в метрику почти не входят — их покрывают смоук и E2E; прямые тесты хуков
   остаются кандидатом на 3.0.0.

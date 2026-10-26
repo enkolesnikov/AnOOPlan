@@ -166,4 +166,3 @@ export function useExport(s: WorkspaceState, io: ProjectIo) {
   }
   return { printJournal, download, shareExport, saveAnoPlan, shareAnoPlan, exportDiagnostics };
 }
-export type ExportActions = ReturnType<typeof useExport>;

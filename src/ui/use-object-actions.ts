@@ -177,4 +177,3 @@ export function useObjectActions(s: WorkspaceState) {
     applySheetScale, addRiser, segmentField, uploadPdf, togglePrintSection,
   };
 }
-export type ObjectActions = ReturnType<typeof useObjectActions>;

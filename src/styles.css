@@ -442,7 +442,7 @@ td small { display: block; color: var(--muted); font-size: 12px; }
 .menu-toggle { display: none; }
 .props-fab { display: none; }
 .properties-close { display: none; }
-.scrim { display: none; }
+.scrim { display: none; border: 0; padding: 0; border-radius: 0; }
 .sidebar-project { display: none; }
 .field.mobile-only { display: none; }
 
@@ -464,7 +464,7 @@ td small { display: block; color: var(--muted); font-size: 12px; }
     min-width: 40px; min-height: 40px; padding: 4px 8px;
     border: none; background: transparent; color: var(--muted); font-size: 24px;
   }
-  .scrim { display: block; position: fixed; inset: 0; z-index: 58; background: rgba(12, 29, 39, .45); }
+  .scrim { display: block; position: fixed; inset: 0; z-index: 58; background: rgba(12, 29, 39, .45); cursor: default; }
   .desk-only { display: none; }
   .sidebar-project { display: flex; flex-direction: column; gap: 6px; padding: 10px; border-top: 1px solid var(--border-soft); }
   .sidebar-project button { text-align: left; }

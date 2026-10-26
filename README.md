@@ -131,7 +131,7 @@ APK — это нативная оболочка (WebView) вокруг той �
 - **Инженерный долг:** общие фикстуры тестов (`tests/fixtures.ts`), ESLint-конфиг и `npm run lint` в CI,
   загрузка покрытия в Codacy по project token (`CODACY_PROJECT_TOKEN`, добавляется владельцем в секреты),
   декомпозиция крупных UI-компонентов.
-- 245 юнит-теста, смоук (231 проверка), 2 E2E; покрытие 95,6 % строк / 87,6 % веток / 95,5 % функций.
+- 245 юнит-теста, смоук (231 проверка), 2 E2E; покрытие 95,7 % строк / 87,6 % веток / 95,5 % функций.
 
 ### Что нового в 2.4.0
 
@@ -405,11 +405,14 @@ adb install -r build/AnOOPlan-1.0.0.apk
 ```bash
 npm test             # 245 юнит-теста: расчёт длин и заполнения КНС, автопрокладка, валидация, миграции, API, экспорт, backup
 npm run coverage     # тесты с покрытием и порогами (в CI), lcov для Codacy
-npm run lint         # ESLint: стиль и типовые ошибки (в CI)
+npm run lint         # ESLint + jsx-a11y + react-hooks: стиль, доступность, хуки (в CI)
 npm run size         # бюджет стартового бандла (после npm run build)
 npm run status       # версии, размеры, аудит и ориентировочные счётчики
 npm run smoke        # смоук интерфейса на happy-dom (231 проверка)
 npm run test:ui      # сборка + 2 Playwright E2E с реальным PDF
+npm run test:visual  # 4 визуальных эталона UI (вне CI: зависит от шрифтов машины)
+npm run test:visual:update  # пересоздать эталоны после осознанного изменения UI
+npm run knip         # мёртвый код и неиспользуемые экспорты
 npm run build        # tsc --noEmit + vite build
 ```
 
