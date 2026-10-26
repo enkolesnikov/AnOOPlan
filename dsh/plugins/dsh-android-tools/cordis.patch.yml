@@ -1,0 +1,12 @@
+# Android/ADB-обёртка для DSH. Установка: node dsh/install.mjs
+- insert:
+    - id: android-tools
+      name: dsh-android-tools
+      config:
+        adbPath: /root/android-sdk/platform-tools/adb
+        emulatorPath: /root/android-sdk/emulator/emulator
+        avdHome: /root/Anooplan/build/avd-home
+        emulatorHome: /root/Anooplan/build/android-home
+        defaultAvd: AnOOPlan25
+        screenshotDir: /root/Anooplan/build
+        root: /root/Anooplan

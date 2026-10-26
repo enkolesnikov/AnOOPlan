@@ -134,4 +134,10 @@ export default tseslint.config(
       'no-console': 'off',
     },
   },
+  {
+    // DSH-плагин и установщик — Node-скрипты вне бандла приложения.
+    files: ['dsh/**/*.{js,mjs}'],
+    languageOptions: { globals: { ...globals.node } },
+    rules: { 'no-console': 'off' },
+  },
 );

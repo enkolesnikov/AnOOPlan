@@ -220,9 +220,10 @@ CI ≤130 с; сценарий «сбой → восстановление» п�
 | Playwright `toHaveScreenshot` | `npm run test:visual` | 4 эталона: план, сегмент КНС, тёмная тема, схема трасс; вне CI (шрифты раннера) |
 | `knip` | `npm run knip` | мёртвый код/экспорты; после чистки 0 находок |
 | Чек-лист релиза | [RELEASE.md](RELEASE.md) | версия/манифест, APK, скриншоты, тег, workflow, assets |
+| DSH-плагины | `node dsh/install.mjs` | android/github/anooplan инструменты агента вне бандла |
 
-Осталось по желанию: `lefthook`/`husky` на pre-commit (низкий), GitHub-плагин для агента,
-визуальные эталоны в CI на фиксированном образе. `.npmrc` содержит `legacy-peer-deps=true`
+Осталось по желанию: `lefthook`/`husky` на pre-commit (низкий), визуальные эталоны в CI
+на фиксированном образе. `.npmrc` содержит `legacy-peer-deps=true`
 из-за `jsx-a11y` (официально ESLint ≤9, под 10 работает) — убрать, когда плагин обновится.
 
 Cloud-инструменты (Sentry/Firebase/Codecov/Storybook) не добавляем: офлайн-контракт и бюджет.

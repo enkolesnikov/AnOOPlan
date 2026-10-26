@@ -1,0 +1,8 @@
+# GitHub-инструменты для DSH. Установка: node dsh/install.mjs
+- insert:
+    - id: github-tools
+      name: dsh-github-tools
+      config:
+        repoSlug: enkolesnikov/AnOOPlan
+        apiBase: https://api.github.com
+        root: /root/Anooplan

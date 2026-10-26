@@ -1,0 +1,17 @@
+{
+  "profile": "web",
+  "external": [
+    { "name": "dshmarket", "version": "1.70.1", "purpose": "plugin marketplace UI" },
+    { "name": "@feng0531/dsh-code-review", "version": "0.86.1", "purpose": "independent code review" },
+    { "name": "@lemoncat7/dsh-ssh", "version": "1.11.6", "purpose": "SSH access to VPS" },
+    { "name": "@michengai/dsh-automation", "version": "1.0.10", "purpose": "scheduled tasks" },
+    { "name": "@goodandready/dsh-messenger-gateway", "version": "0.4.20", "purpose": "Telegram notifications" },
+    { "name": "@goodandready/dsh-russian-lang", "version": "0.4.5", "purpose": "Russian UI localization" },
+    { "name": "dsh-session-report", "version": "local", "purpose": "turn report to Telegram (owner's local plugin)" }
+  ],
+  "selfWritten": [
+    { "name": "dsh-anooplan-tools", "version": "0.1.0", "path": "plugins/dsh-anooplan-tools" },
+    { "name": "dsh-android-tools", "version": "0.1.0", "path": "plugins/dsh-android-tools" },
+    { "name": "dsh-github-tools", "version": "0.1.0", "path": "plugins/dsh-github-tools" }
+  ]
+}
