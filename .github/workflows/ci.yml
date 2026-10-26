@@ -54,4 +54,5 @@ jobs:
       - name: Браузер для E2E
         run: npx playwright install --with-deps chromium
       - name: E2E с реальным PDF
-        run: npm run test:ui
+        # dist уже собран шагом «Сборка и бюджет»: не пересобираем, иначе CI теряет ~13 с.
+        run: npx playwright test
