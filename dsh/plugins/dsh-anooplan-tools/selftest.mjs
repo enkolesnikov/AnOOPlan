@@ -12,13 +12,7 @@ const tools = [];
 apply({ tools: { register: tool => tools.push(tool) } }, { root: repoRoot });
 
 const names = tools.map(tool => tool.name);
-assert.deepEqual(names, [
-  'anooplan_apk_check',
-  'anooplan_android_check',
-  'anooplan_visual_check',
-  'anooplan_release_status',
-]);
-
+assert.deepEqual(names, ['anooplan_apk_check', 'anooplan_visual_check']);
 for (const tool of tools) {
   assert.equal(typeof tool.description, 'string');
   assert.equal(typeof tool.execute, 'function');

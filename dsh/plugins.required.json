@@ -10,7 +10,7 @@
     { "name": "dsh-session-report", "version": "local", "purpose": "turn report to Telegram (owner's local plugin)" }
   ],
   "selfWritten": [
-    { "name": "dsh-anooplan-tools", "version": "0.1.0", "path": "plugins/dsh-anooplan-tools" },
+    { "name": "dsh-anooplan-tools", "version": "0.2.0", "path": "plugins/dsh-anooplan-tools" },
     { "name": "dsh-android-tools", "version": "0.1.0", "path": "plugins/dsh-android-tools" },
     { "name": "dsh-github-tools", "version": "0.1.0", "path": "plugins/dsh-github-tools" }
   ]

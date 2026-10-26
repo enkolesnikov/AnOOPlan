@@ -39,11 +39,10 @@ dsh/
 
 - `anooplan_apk_check` — версия/versionCode против `package.json` и манифеста,
   `INTERNET`, сертификат SHA-256, вес;
-- `anooplan_android_check` — установка APK на эмулятор, тёмная тема/`font_scale`,
-  запуск, ожидание готовности WebView и скриншот в `build/` (переживает
-  системный ANR-диалог эмулятора);
-- `anooplan_visual_check` — прогон визуальных эталонов `npm run test:visual`;
-- `anooplan_release_status` — активы GitHub Release по тегу.
+- `anooplan_visual_check` — прогон визуальных эталонов `npm run test:visual`.
+
+Устройство/эмулятор и релизы GitHub намеренно не дублируются здесь: для этого есть
+`android_*` и `github_*` инструменты ниже.
 
 ### `dsh-android-tools` — обёртка adb/эмулятора
 

@@ -8,8 +8,8 @@
  *
  * @module dsh-anooplan-tools/core
  */
-import { execFileSync, spawnSync } from 'node:child_process';
-import { existsSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
+import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import { isAbsolute, relative, resolve } from 'node:path';
 
 export const DEFAULT_CERT_SHA256 = '6431374cf6a7d385c4c47f0f2bf54fcb5ee5b2c7120f057b18c4062af92fe097';
@@ -45,11 +45,6 @@ function toolPath(root, config, tool) {
   const dir = config.buildToolsDir || 'tools/build-tools/35.0.0';
   const candidate = isAbsolute(dir) ? resolve(dir, tool) : resolve(root, dir, tool);
   return existsSync(candidate) ? candidate : tool;
-}
-
-function adbPath(config) {
-  const candidate = config.adbPath || '/root/android-sdk/platform-tools/adb';
-  return existsSync(candidate) ? candidate : 'adb';
 }
 
 export function newestApk(root) {
@@ -172,144 +167,6 @@ export function apkCheck(config, requestedApk) {
   };
 }
 
-function sleep(ms) {
-  return new Promise(done => setTimeout(done, ms));
-}
-
-/**
- * Ждёт, пока WebView приложения действительно отрисует интерфейс: холодный
- * старт занимает 10–15 с, фиксированная пауза даёт пустой скриншот.
- *
- * Если поверх приложения висит системный ANR-диалог эмулятора («System UI isn't
- * responding»), нажимаем «Wait» по bounds из accessibility-дерева и продолжаем.
- */
-async function waitForAppUi(adb, serial, timeoutMs) {
-  const started = Date.now();
-  while (Date.now() - started < timeoutMs) {
-    const focus = run(adb, ['-s', serial, 'shell', 'dumpsys', 'window', 'windows']);
-    if (focus.ok && focus.stdout.includes(PKG_NAME)) {
-      const dump = run(adb, ['-s', serial, 'shell', 'uiautomator', 'dump', '/sdcard/anooplan-check.xml'], { timeout: 15_000 });
-      if (dump.ok) {
-        const xml = run(adb, ['-s', serial, 'shell', 'cat', '/sdcard/anooplan-check.xml']).stdout ?? '';
-        if (/isn.t responding|не отвечает/i.test(xml)) {
-          const waitButton = /text="(?:Wait|Подождать|Ждать)"[^>]*bounds="\[(\d+),(\d+)\]\[(\d+),(\d+)\]"/.exec(xml);
-          if (waitButton !== null) {
-            const x = Math.round((Number(waitButton[1]) + Number(waitButton[3])) / 2);
-            const y = Math.round((Number(waitButton[2]) + Number(waitButton[4])) / 2);
-            run(adb, ['-s', serial, 'shell', 'input', 'tap', String(x), String(y)]);
-            await sleep(2_000);
-            continue;
-          }
-          return { ready: false, systemDialog: true };
-        }
-        if (/(Новый проект|Учебный проект|План)/.test(xml)) {
-          await sleep(500);
-          return { ready: true, systemDialog: false };
-        }
-      }
-    }
-    await sleep(2_000);
-  }
-  return { ready: false, systemDialog: false };
-}
-
-function connectedDevices(adb) {
-  const result = run(adb, ['devices']);
-  if (!result.ok) return { devices: [], error: result.stderr.trim() || 'adb devices недоступен' };
-  const devices = [];
-  for (const line of result.stdout.split('\n')) {
-    const match = /^(\S+)\t(\S+)$/.exec(line.trim());
-    if (match && match[2] === 'device') devices.push(match[1]);
-  }
-  return { devices, error: null };
-}
-
-function dumpsysVersion(adb, serial) {
-  const result = run(adb, ['-s', serial, 'shell', 'dumpsys', 'package', PKG_NAME]);
-  if (!result.ok) return { versionName: null, versionCode: null };
-  return {
-    versionName: /versionName=(\S+)/.exec(result.stdout)?.[1] ?? null,
-    versionCode: /versionCode=(\d+)/.exec(result.stdout)?.[1] ?? null,
-  };
-}
-
-/**
- * Установка последнего APK на подключённый эмулятор/устройство + опциональная
- * смена тёмной темы/масштаба шрифта и скриншот в build/.
- */
-export async function androidCheck(config, options = {}) {
-  const root = config.root;
-  const adb = adbPath(config);
-  const { devices, error } = connectedDevices(adb);
-  if (error) return { ok: false, problems: [error] };
-  if (devices.length === 0) {
-    return { ok: false, problems: ['Нет подключённого устройства: adb devices пуст. Запустите эмулятор.'] };
-  }
-  const serial = options.serial || devices[0];
-  const problems = [];
-  const planned = apkFile(root, config, options.apk);
-  if (planned.error) return { ok: false, problems: [planned.error] };
-
-  let installed = false;
-  if (options.install !== false) {
-    const install = run(adb, ['-s', serial, 'install', '-r', planned.path], { timeout: 180_000 });
-    installed = install.ok;
-    if (!install.ok) problems.push(`adb install: ${install.stderr.trim() || install.stdout.trim()}`);
-  }
-
-  const theme = typeof options.dark === 'boolean' ? (options.dark ? 'dark' : 'light') : null;
-  if (theme) {
-    const result = run(adb, ['-s', serial, 'shell', 'cmd', 'uimode', 'night', theme === 'dark' ? 'yes' : 'no']);
-    if (!result.ok) problems.push(`uimode: ${result.stderr.trim()}`);
-  }
-
-  const fontScale = typeof options.fontScale === 'number' ? options.fontScale : null;
-  if (fontScale !== null) {
-    if (fontScale < 0.85 || fontScale > 1.6) problems.push('fontScale вне диапазона 0.85–1.6');
-    else {
-      const result = run(adb, ['-s', serial, 'shell', 'settings', 'put', 'system', 'font_scale', String(fontScale)]);
-      if (!result.ok) problems.push(`font_scale: ${result.stderr.trim()}`);
-    }
-  }
-
-  const stop = run(adb, ['-s', serial, 'shell', 'am', 'force-stop', PKG_NAME]);
-  if (!stop.ok) problems.push(`force-stop: ${stop.stderr.trim()}`);
-  const start = run(adb, ['-s', serial, 'shell', 'am', 'start', '-n', `${PKG_NAME}/.MainActivity`]);
-  if (!start.ok) problems.push(`am start: ${start.stderr.trim()}`);
-
-  const ui = await waitForAppUi(adb, serial, options.waitMs ?? 40_000);
-  if (!ui.ready) problems.push('интерфейс не подтвердил загрузку за отведённое время');
-  if (ui.systemDialog) problems.push('на экране остался системный диалог эмулятора');
-  const uiReady = ui.ready;
-  const version = dumpsysVersion(adb, serial);
-
-  let screenshot = null;
-  if (options.screenshot !== false) {
-    const shot = spawnSync(adb, ['-s', serial, 'exec-out', 'screencap', '-p'], { maxBuffer: 64 * 1024 * 1024 });
-    if (shot.status === 0 && shot.stdout?.length) {
-      const stamp = new Date().toISOString().replace(/[:.]/g, '-');
-      screenshot = resolve(root, 'build', `device-check-${stamp}.png`);
-      writeFileSync(screenshot, shot.stdout);
-    } else {
-      problems.push(`screencap: ${String(shot.stderr ?? 'ошибка')}`);
-    }
-  }
-
-  return {
-    ok: problems.length === 0,
-    serial,
-    apk: relative(root, planned.path),
-    installed,
-    theme,
-    fontScale,
-    uiReady,
-    versionName: version.versionName,
-    versionCode: version.versionCode,
-    screenshot: screenshot ? relative(root, screenshot) : null,
-    problems,
-  };
-}
-
 /** Прогон визуальных эталонов (npm run test:visual) с хвостом вывода. */
 export function visualCheck(config, options = {}) {
   const root = config.root;
@@ -329,40 +186,4 @@ export function visualCheck(config, options = {}) {
     tail,
     problems: result.ok ? [] : [`npm run ${script} завершился с ошибкой`],
   };
-}
-
-/** Статус GitHub Release: тег, активы, размеры. Токен — из окружения. */
-export async function releaseStatus(config, options = {}) {
-  const tag = options.tag || 'latest';
-  const token = process.env.GH_TOKEN || process.env.GITHUB_TOKEN || '';
-  const url = tag === 'latest'
-    ? `https://api.github.com/repos/${config.repoSlug}/releases/latest`
-    : `https://api.github.com/repos/${config.repoSlug}/releases/tags/${encodeURIComponent(tag)}`;
-  const headers = {
-    Accept: 'application/vnd.github+json',
-    'User-Agent': 'dsh-anooplan-tools',
-    'X-GitHub-Api-Version': '2022-11-28',
-  };
-  if (token) headers.Authorization = `Bearer ${token}`;
-  try {
-    const response = await fetch(url, { headers, signal: AbortSignal.timeout(20_000) });
-    if (!response.ok) {
-      return { ok: false, problems: [`GitHub API ${response.status} для ${tag}`], tag };
-    }
-    const release = await response.json();
-    return {
-      ok: true,
-      tag: release.tag_name,
-      name: release.name,
-      draft: release.draft,
-      prerelease: release.prerelease,
-      publishedAt: release.published_at,
-      url: release.html_url,
-      bodyLines: String(release.body ?? '').split('\n').length,
-      assets: (release.assets ?? []).map(asset => ({ name: asset.name, size: asset.size })),
-      problems: [],
-    };
-  } catch (error) {
-    return { ok: false, problems: [`GitHub API: ${error.message}`], tag };
-  }
 }

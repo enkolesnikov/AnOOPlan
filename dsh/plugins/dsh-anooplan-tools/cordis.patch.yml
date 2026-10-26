@@ -7,8 +7,6 @@
       name: dsh-anooplan-tools
       config:
         root: /root/Anooplan
-        adbPath: /root/android-sdk/platform-tools/adb
         buildToolsDir: tools/build-tools/35.0.0
         expectedCertSha256: 6431374cf6a7d385c4c47f0f2bf54fcb5ee5b2c7120f057b18c4062af92fe097
         maxApkBytes: 1600000
-        repoSlug: enkolesnikov/AnOOPlan

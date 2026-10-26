@@ -80,8 +80,9 @@
   области; `planMemoryWarning` показывает баннер с мегапикселями и советом «Вписать».
 - **Инструменты (после 2.5.0):** ESLint + `jsx-a11y`/`react-hooks` (исправлены 19 a11y-нарушений),
   `npm run knip` (0 находок), `npm run test:visual` (4 эталона), чек-лист `docs/RELEASE.md`; CI — ~98 с.
-  Локальные DSH-плагины агента — `dsh/` (`dsh-anooplan-tools`, `dsh-android-tools`,
-  `dsh-github-tools`; установка `node dsh/install.mjs`); в бандл приложения не входят.
+  Локальные DSH-плагины агента — `dsh/` (`dsh-anooplan-tools` — APK/визуальные эталоны,
+  `dsh-android-tools` — adb/эмулятор, `dsh-github-tools` — релизы/CI/issues; установка
+  `node dsh/install.mjs`); в бандл приложения не входят.
 - **Инженерный долг:** `tests/fixtures.ts` (10 тестовых файлов), `eslint.config.js` + `npm run lint`
   в CI, lcov в `coverage/lcov.info` и шаг загрузки в Codacy при наличии секрета `CODACY_PROJECT_TOKEN`,
   декомпозиция `src/ui/sidebar.tsx` и `src/ui/estimate-screen.tsx`.

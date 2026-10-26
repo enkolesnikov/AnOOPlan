@@ -443,8 +443,7 @@ npm run build        # tsc --noEmit + vite build
 
 Для работы над проектом используются локальные плагины DeepSeek Harness — папка [`dsh/`](dsh/README.md):
 
-- `dsh-anooplan-tools` — проверка APK, установка на эмулятор с темой/шрифтом и скриншотом,
-  визуальные эталоны, статус релиза;
+- `dsh-anooplan-tools` — проверка APK и визуальные эталоны;
 - `dsh-android-tools` — обёртка adb: устройства, запуск эмулятора, установка, скриншоты,
   тема/размер шрифта, logcat;
 - `dsh-github-tools` — релизы, загрузка ассетов, workflow-runs, issues.

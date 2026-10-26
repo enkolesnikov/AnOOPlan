@@ -1,8 +1,8 @@
 {
   "name": "dsh-anooplan-tools",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
-  "description": "Local DSH tools for AnOOPlan: APK check, Android device check, visual regression, GitHub release status",
+  "description": "Local DSH tools for AnOOPlan: APK check and visual regression (device/release moved to android/github tools)",
   "type": "module",
   "main": "./lib/index.js",
   "exports": {
