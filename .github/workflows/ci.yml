@@ -52,7 +52,9 @@ jobs:
           path: ~/.cache/ms-playwright
           key: playwright-${{ runner.os }}-v1
       - name: Браузер для E2E
-        run: npx playwright install --with-deps chromium
+        # Без --with-deps: системные библиотеки Chromium уже есть в образе ubuntu-24.04,
+        # а apt-установка зависимостей иногда растягивалась на минуты (срыв бюджета CI).
+        run: npx playwright install chromium
       - name: E2E с реальным PDF
         # dist уже собран шагом «Сборка и бюджет»: не пересобираем, иначе CI теряет ~13 с.
         run: npx playwright test
