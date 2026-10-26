@@ -14,7 +14,7 @@
 - Веб-версия: <https://enkolesnikov.github.io/AnOOPlan/> — та же сборка, что и APK; публикуется
   вручную по запросу (приоритет — Android).
 - Текущая версия: **2.5.0**, versionCode 34, `com.anooplan.app`, minSdk 24, targetSdk 35.
-  APK ~1,5 МБ, WebView 98+, 244 юнит-теста + 231 проверка смоука + 2 E2E.
+  APK ~1,5 МБ, WebView 98+, 245 юнит-теста + 231 проверка смоука + 2 E2E.
 - Возможности: PDF-планы и калибровка, оборудование с иконками и цветом, трассы, кабели и автопрокладка,
   журнал, справочник цен и смета с коммерческим предложением, печатные формы (титул, оглавление,
   штамп ГОСТ, лист изменений), печать выбранных разделов, обмен PDF/XLSX и проектом `.anooplan`,
@@ -44,15 +44,18 @@
   строки по сечениям (углы коробов — на основном сечении), а `suggestSegmentSection` подбирает сечение
   для переопределённого сегмента.
 - **Доступность:** `MainActivity` читает `Configuration.fontScale` и передаёт `textZoom` 85–160 %
-  (раньше жёстко 100 %); CSS поддерживает тёмную тему (`prefers-color-scheme: dark`), высокий контраст
+  (раньше жёстко 100 %), `onConfigurationChanged` обновляет его при смене размера шрифта без перезапуска;
+  CSS поддерживает тёмную тему (`prefers-color-scheme: dark`), высокий контраст
   (`prefers-contrast: more`, `forced-colors`), reduced-motion и переносы вместо обрезки; `theme-color` —
-  light/dark. Эталонные правила — `src/a11y.ts`.
+  light/dark. Тёмная тема в APK включается ресурсами (`android/res/values-night/styles.xml`): WebView
+  определяет схему по теме приложения, а не только по `uiMode`; поэтому `uiMode` убран из
+  `configChanges`, а смена темы пересоздаёт Activity. Эталонные правила — `src/a11y.ts`.
 - **Память рендера:** `PLAN_MAX_PIXELS = 8_000_000` (≈32 МБ RGBA) вместо 12 Мпикс; A1/A0 — по видимой
   области; `planMemoryWarning` показывает баннер с мегапикселями и советом «Вписать».
 - **Инженерный долг:** `tests/fixtures.ts` (10 тестовых файлов), `eslint.config.js` + `npm run lint`
   в CI, lcov в `coverage/lcov.info` и шаг загрузки в Codacy при наличии секрета `CODACY_PROJECT_TOKEN`,
   декомпозиция `src/ui/sidebar.tsx` и `src/ui/estimate-screen.tsx`.
-- **Проверки:** 244 юнит-теста, 231 проверка смоука, 2 E2E, покрытие 95,7/87,6/95,5 %, JS 428,0 КБ /
+- **Проверки:** 245 юнит-теста, 231 проверка смоука, 2 E2E, покрытие 95,6/87,6/95,5 %, JS 428,0 КБ /
   CSS 34,8 КБ, `npm audit` 0 high; APK 2.5.0 собран и подписан в `android-release.yml`.
 
 ### Состояние на 2026-10-25 (2.4.0)
@@ -153,7 +156,7 @@ APK всегда работает в режиме «Браузер»: запро
 | Совместимость | `src/compat.ts`, `src/polyfills.ts`, `src/pdf-worker.ts` | фолбэки WebView, полифилл `Promise.withResolvers` |
 | Оболочка Android | `android/java/com/anooplan/app/` | `MainActivity`, `AssetServer`, `NativeBridge`, `PdfPrinter`, `ShareProvider` |
 | Сборка APK | `scripts/build-apk.sh`, `scripts/fetch-tools.sh` | aapt + javac + d8 + zipalign + apksigner, **без Gradle** |
-| Тесты | `tests/*.test.ts`, `tests/e2e/`, `scripts/smoke-dom.mjs` | 244 юнит-теста (~10 с), смоук happy-dom (231 проверка) и 2 Playwright E2E; общие фикстуры — `tests/fixtures.ts`; покрытие ~95 % строк |
+| Тесты | `tests/*.test.ts`, `tests/e2e/`, `scripts/smoke-dom.mjs` | 245 юнит-теста (~10 с), смоук happy-dom (231 проверка) и 2 Playwright E2E; общие фикстуры — `tests/fixtures.ts`; покрытие ~95 % строк |
 | CI | `.github/workflows/ci.yml` | на push: lint, `tsc`, покрытие с порогами + lcov, сборка + бюджет бандла, смоук, E2E; Codacy — при наличии секрета; Pages и неподписанный APK — вручную |
 | Релиз-скрипты | `scripts/status.mjs`, `coverage.mjs`, `check-size.mjs` | статус проекта, пороги покрытия (+lcov для Codacy) и бюджета бандла без новых зависимостей |
 
@@ -258,10 +261,15 @@ APK всегда работает в режиме «Браузер»: запро
     `suggestSegmentSection`. Не заводить отдельные «лотковые» подтипы и не переносить размеры в кабель.
 26. **Доступность (2.5.0).** Android WebView не применяет системный «Размер шрифта» сам: `MainActivity`
     читает `Configuration.fontScale`, округляет и зажимает в 85–160 %, вызывает `setTextZoom`; эталон —
-    `resolveTextZoom` в `src/a11y.ts`, тест сверяет Java и TS. Тёмная тема — только `prefers-color-scheme`
-    (без ручного переключателя), высокий контраст — `prefers-contrast: more`/`forced-colors`, анимации
-    отключаются `prefers-reduced-motion`. Крупный текст переносится, интерактивные элементы используют
-    `min-height`. План остаётся белой «бумагой» в обеих темах.
+    `resolveTextZoom` в `src/a11y.ts`, тест сверяет Java и TS. `fontScale` остаётся в `configChanges`,
+    и `onConfigurationChanged` повторно вызывает `setTextZoom` — крупный шрифт применяется без
+    перезапуска. Тёмная тема — только `prefers-color-scheme` (без ручного переключателя), причём
+    WebView берёт схему из **темы приложения**: со светлым `Theme.Material.Light` ночной режим
+    игнорировался (проверено на Android 15). Поэтому объявлен `android/res/values-night/styles.xml`
+    с тёмным `AppTheme`, а `uiMode` убран из `configChanges` — смена темы пересоздаёт Activity.
+    Высокий контраст — `prefers-contrast: more`/`forced-colors`, анимации отключаются
+    `prefers-reduced-motion` (это поведение было и до 2.5.0). Крупный текст переносится, интерактивные
+    элементы используют `min-height`. План остаётся белой «бумагой» в обеих темах.
 27. **Память рендера плана (2.5.0).** Бюджет 8 Мпикс (≈32 МБ RGBA) вместо 12; клип A1/A0 по видимой
     области, canvas-стороны округляются вниз, чтобы не превысить бюджет. Если лист не влезает,
     `planMemoryWarning` показывает баннер с мегапикселями и советом «Вписать» — тихое понижение качества
@@ -289,7 +297,7 @@ APK всегда работает в режиме «Браузер»: запро
 
 ```bash
 npm ci                      # зависимости (Node 22.5+, проверено на Node 24)
-npm test                    # 244 теста (движок, КНС/сегменты, иконки, смета, формы, миграции, API, экспорт)
+npm test                    # 245 тестов (движок, КНС/сегменты, иконки, смета, формы, миграции, API, экспорт)
 npm run lint                # ESLint (0 ошибок), шаг CI перед тестами
 npm run coverage            # тесты с покрытием и порогами + coverage/lcov.info (используется в CI)
 npm run size                # бюджет стартового бандла (после npm run build)
@@ -383,7 +391,7 @@ Android-инструменты; JDK на VPS уже установлен. Есл
 
 ## Тесты и что ими не покрыто
 
-- 244 юнит-теста: движок, заполнение КНС и сегментные размеры (`tests/tray-fill.test.ts`), типы и
+- 245 юнит-теста: движок, заполнение КНС и сегментные размеры (`tests/tray-fill.test.ts`), типы и
   цвета КНС (`tests/route-kinds.test.ts`), доступность (textZoom, тёмная тема, контраст —
   `tests/a11y.test.ts`, `tests/android-config.test.ts`), память рендера (`tests/render-plan.test.ts`),
   страницы плана и note в PDF (`tests/plan-pages.test.ts`, `tests/export.test.ts`), иконки и цвет
@@ -392,7 +400,7 @@ Android-инструменты; JDK на VPS уже установлен. Есл
   IndexedDB, localStorage, CSV, многостраничный план, пины, диагностика, миграции схемы, конфигурация
   Android (intent-фильтры, ShareProvider, fontScale/textZoom) и релиза. Общие фикстуры — `tests/fixtures.ts`.
 - Покрытие: `npm run coverage` (`--experimental-test-coverage`, без новых зависимостей) —
-  95,7 % строк / 87,6 % веток / 95,5 % функций по модулям, которые импортируются тестами; lcov пишется
+  95,6 % строк / 87,6 % веток / 95,5 % функций по модулям, которые импортируются тестами; lcov пишется
   в `coverage/lcov.info` (27 файлов) и загружается в Codacy в CI при наличии `CODACY_PROJECT_TOKEN`.
   UI-файлы (`src/ui/`, хуки) в метрику почти не входят — их покрывают смоук и E2E; прямые тесты хуков
   остаются кандидатом на 2.6.0.
@@ -556,7 +564,7 @@ Android-инструменты; JDK на VPS уже установлен. Есл
 ## Первые шаги в новой сессии
 
 1. Клонировать репозиторий / открыть `/root/Anooplan`, `git checkout main && git pull`.
-2. `npm ci && npm run lint && npm test && npm run smoke` — убедиться, что база зелёная (244/231);
+2. `npm ci && npm run lint && npm test && npm run smoke` — убедиться, что база зелёная (245/231);
    `npm run coverage` и `npm run size` — пороги (93/85/92 %, JS ≤460 КБ, CSS ≤40 КБ).
 3. `bash scripts/fetch-tools.sh && bash scripts/build-apk.sh` — собрать APK 2.5.0 локально
    (на VPS keystore уже на месте); проверить версию/versionCode, сертификат и отсутствие `INTERNET`,

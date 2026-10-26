@@ -161,6 +161,27 @@ test('доступность: MainActivity масштабирует текст �
   }
 });
 
+test('доступность: тёмная тема APK через values-night и textZoom при смене шрифта', () => {
+  const activity = read('android/java/com/anooplan/app/MainActivity.java');
+  const manifest = read('android/AndroidManifest.xml');
+  // WebView определяет prefers-color-scheme по теме приложения. Проверено на Android 15:
+  // со светлой темой (Theme.Material.Light) APK оставался светлым даже в ночном режиме,
+  // с values-night/styles.xml — переключается. Без этого CSS-тёмная тема в APK не работает.
+  const night = read('android/res/values-night/styles.xml');
+  assert.match(night, /<style name="AppTheme" parent="@android:style\/Theme\.Material\.NoActionBar">/);
+  assert.doesNotMatch(night, /Theme\.Material\.Light/, 'ночной AppTheme не должен наследовать светлую тему');
+  // Смена системного размера шрифта не пересоздаёт Activity — WebView обновляем вручную.
+  assert.match(activity, /import android\.content\.res\.Configuration;/);
+  assert.match(activity, /onConfigurationChanged\(Configuration newConfig\)[\s\S]*setTextZoom\(\s*textZoomPercent\(/);
+  // uiMode не в configChanges: смена темы пересоздаёт Activity и применяет values-night.
+  assert.match(manifest, /android:configChanges="[^"]*fontScale[^"]*"/);
+  assert.doesNotMatch(
+    manifest,
+    /android:configChanges="[^"]*uiMode[^"]*"/,
+    'uiMode не перехватываем: иначе тёмная тема применится только после перезапуска',
+  );
+});
+
 test('доступность: theme-color с media и color-scheme в index.html', () => {
   const html = read('index.html');
   assert.match(html, /<meta name="color-scheme" content="light dark"/);

@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!--
+      Тёмная системная тема. WebView определяет prefers-color-scheme по теме приложения:
+      при светлой теме он всегда сообщает странице светлую схему, даже если uiMode = night.
+      Поэтому в ночном режиме берём тёмный родительский стиль — иначе CSS-тёмная тема
+      (styles.css, @media (prefers-color-scheme: dark)) в APK не включается.
+      Цвета панелей задаёт MainActivity, здесь важен сам тёмный вариант темы.
+    -->
+    <style name="AppTheme" parent="@android:style/Theme.Material.NoActionBar">
+        <item name="android:windowBackground">@color/brand</item>
+        <item name="android:statusBarColor">@color/brand</item>
+        <item name="android:navigationBarColor">@color/brand_2</item>
+        <item name="android:windowLightStatusBar">false</item>
+        <item name="android:windowActionBar">false</item>
+        <item name="android:windowNoTitle">true</item>
+    </style>
+</resources>

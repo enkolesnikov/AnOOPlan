@@ -167,6 +167,15 @@ interface Project { schemaVersion:1|2; id:string; name:string; floors:Floor[]; e
 `forced-colors: active` не навязывает свои цвета, `prefers-reduced-motion: reduce` отключает анимации.
 `<meta name="theme-color">` задан для light/dark по значениям `THEME_COLOR_LIGHT/DARK`.
 
+**Тёмная тема в APK.** WebView определяет `prefers-color-scheme` по теме приложения, а не только по
+системному `uiMode`: со светлым `Theme.Material.Light` страница остаётся светлой даже в ночном режиме
+(проверено на Android 15). Поэтому в `android/res/values-night/styles.xml` объявлен тёмный `AppTheme`
+(`Theme.Material.NoActionBar`), а `uiMode` исключён из `android:configChanges` — смена системной темы
+пересоздаёт Activity и подхватывает ночные ресурсы. `fontScale` остаётся в `configChanges`, и
+`onConfigurationChanged` заново вызывает `WebSettings.setTextZoom`, поэтому размер шрифта применяется
+без перезапуска приложения. Эталон правил масштаба — `src/a11y.ts`; `tests/android-config.test.ts`
+сверяет Java, манифест, CSS и ночные ресурсы.
+
 **Память рендера.** Бюджет подложки — `PLAN_MAX_PIXELS = 8_000_000` (≈32 МБ RGBA) вместо 12 Мпикс:
 A4–A3 рисуются целиком, A1/A0 — по видимой области с понижением разрешения; `canvasWidth·canvasHeight`
 гарантированно не превышает бюджет (`floor` при округлении). Если полный лист при текущем DPR не

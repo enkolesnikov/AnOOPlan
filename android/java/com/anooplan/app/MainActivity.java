@@ -8,6 +8,7 @@ import android.content.ContentValues;
 import android.content.DialogInterface;
 import android.content.Intent;
 import android.content.pm.ApplicationInfo;
+import android.content.res.Configuration;
 import android.database.Cursor;
 import android.graphics.Color;
 import android.graphics.Insets;
@@ -87,6 +88,23 @@ public class MainActivity extends Activity implements NativeBridge.Host {
         return Math.min(TEXT_ZOOM_MAX, Math.max(TEXT_ZOOM_MIN, percent));
     }
 
+    /**
+     * Смена системного размера шрифта приходит без пересоздания Activity
+     * (см. {@code android:configChanges} в манифесте). WebView запоминает textZoom
+     * в своих настройках, поэтому переносим новый масштаб вручную: иначе крупный
+     * шрифт применится только после перезапуска приложения.
+     *
+     * Тема здесь не обновляется: {@code uiMode} не входит в configChanges, поэтому
+     * при смене системной темы Activity пересоздаётся и берёт тёмный {@code values-night}.
+     */
+    @Override
+    public void onConfigurationChanged(Configuration newConfig) {
+        super.onConfigurationChanged(newConfig);
+        if (webView != null) {
+            webView.getSettings().setTextZoom(textZoomPercent(newConfig.fontScale));
+        }
+    }
+
     @SuppressLint("SetJavaScriptEnabled")
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -144,6 +162,9 @@ public class MainActivity extends Activity implements NativeBridge.Host {
         // применяет: отдаём ему fontScale из конфигурации, иначе крупный шрифт
         // игнорируется и интерфейс остаётся нечитаемо мелким (доступность).
         settings.setTextZoom(textZoomPercent(getResources().getConfiguration().fontScale));
+        // Тёмная тема WebView определяется темой приложения: в ночном режиме ресурсы
+        // берут android/res/values-night/styles.xml, и prefers-color-scheme становится dark.
+        // Отдельный setForceDark/setAlgorithmicDarkeningAllowed не нужен.
         settings.setCacheMode(WebSettings.LOAD_DEFAULT);
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             // Приложение офлайн: не отправляем запросы в сервис безопасного просмотра.
