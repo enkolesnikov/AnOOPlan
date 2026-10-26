@@ -1,3 +1,4 @@
+import { useMemo } from 'react';
 import type { Project, Route, Segment, Vertex } from '../model';
 import type { TrayFillResult } from '../engine';
 import { suggestSegmentSection } from '../engine';
@@ -31,7 +32,8 @@ export function SegmentEditor({ project, route, segment, index, fill, mutate, se
   const row = fill.segments.find(entry => entry.segmentId === segment.id);
   const overridden = hasSectionOverride(segment);
   const diameter = isDiameterRoute(route);
-  const suggestion = suggestSegmentSection(project, route, segment);
+  // Дорогой расчёт (trayFill по всему проекту) не пересчитываем на каждый рендер панели.
+  const suggestion = useMemo(() => suggestSegmentSection(project, route, segment), [project, route, segment]);
   const segmentName = `${route.number}.${index + 1}`;
 
   function applySuggestion() {

@@ -47,11 +47,11 @@ export function PropsFab({ ui }: { ui: AppUi }) {
 
 /** Плавающие кнопки отмены и повтора. */
 export function HistoryFab({ ui }: { ui: AppUi }) {
-  const { undo, redo, history } = ui;
+  const { undo, redo, history, undoLabel, redoLabel } = ui;
   return (
     <div className="history-fab">
-      <button title="Отменить Ctrl+Z" aria-label="Отменить" disabled={!undo.length} onClick={() => history(true)}>↶</button>
-      <button title="Повторить Ctrl+Shift+Z" aria-label="Повторить" disabled={!redo.length} onClick={() => history(false)}>↷</button>
+      <button title={undoLabel ? `Отменить: ${undoLabel} (Ctrl+Z)` : 'Отменить Ctrl+Z'} aria-label="Отменить" disabled={!undo.length} onClick={() => history(true)}>↶</button>
+      <button title={redoLabel ? `Повторить: ${redoLabel} (Ctrl+Shift+Z)` : 'Повторить Ctrl+Shift+Z'} aria-label="Повторить" disabled={!redo.length} onClick={() => history(false)}>↷</button>
     </div>
   );
 }

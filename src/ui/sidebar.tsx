@@ -1,3 +1,4 @@
+import { useEffect, useRef } from 'react';
 import { createDemoProject } from '../demo';
 import { readDiagnostics } from '../diagnostics';
 import { readLocalProjects } from '../local-projects';
@@ -7,6 +8,7 @@ import { number } from './format';
 import { routeColor, routeKindOf } from '../route-kinds';
 import { routeAngleStats, routeLength, routeSummary } from '../engine';
 import { freshFloor, freshProject } from './project-factory';
+import { matchesQuery, searchCaption } from './search';
 import type { AppUi } from './use-app-controller';
 
 type Tab = AppUi['tab'];
@@ -92,16 +94,49 @@ function CableRow({ ui, item }: { ui: AppUi; item: AppUi['project']['cables'][nu
   </button>;
 }
 
-/** Список объектов активной вкладки (этажи/оборудование/трассы/кабели/замечания). */
+/** Поле поиска по объектам активной вкладки; Ctrl+K фокусирует его. */
+function SearchBox({ ui }: { ui: AppUi }) {
+  const { search, setSearch } = ui;
+  const inputRef = useRef<HTMLInputElement>(null);
+  useEffect(() => {
+    const focus = () => { inputRef.current?.focus(); inputRef.current?.select(); };
+    window.addEventListener('cableplan:focus-search', focus);
+    return () => window.removeEventListener('cableplan:focus-search', focus);
+  }, []);
+  return <div className="sidebar-search">
+    <input
+      ref={inputRef}
+      type="search"
+      value={search}
+      placeholder="Поиск: №, тип, примечание"
+      aria-label="Поиск по объектам"
+      onChange={event => setSearch(event.target.value)}
+      onKeyDown={event => { if (event.key === 'Escape') { setSearch(''); inputRef.current?.blur(); } }}
+    />
+    {search ? <button type="button" aria-label="Очистить поиск" onClick={() => { setSearch(''); inputRef.current?.focus(); }}>×</button> : null}
+  </div>;
+}
+
+/** Список объектов активной вкладки с фильтром по поисковой строке. */
 function ObjectList({ ui }: { ui: AppUi }) {
-  const { tab, project, listPressDown, moveLongPress, cancelLongPress } = ui;
+  const { tab, project, listPressDown, moveLongPress, cancelLongPress, search } = ui;
+  const floors = project.floors.filter(item => matchesQuery(search, [item.name]));
+  const equipment = project.equipment.filter(item => matchesQuery(search, [item.number, item.name, item.type, item.note]));
+  const routes = project.routes.filter(item => matchesQuery(search, [item.number, item.type, item.note, item.subsystem]));
+  const pins = project.pins.filter(item => matchesQuery(search, [item.number, item.comment]));
+  const cables = project.cables.filter(item => matchesQuery(search, [item.number, item.brand, item.name, item.purpose, item.note]));
+  const found = tab === 'floors' ? floors.length : tab === 'equipment' ? equipment.length : tab === 'routes' ? routes.length : tab === 'pins' ? pins.length : cables.length;
+  const total = project[tab].length;
+  const caption = searchCaption(search, found, total);
+  const emptyText = search.trim() ? `Ничего не найдено по «${search.trim()}».` : 'Объектов пока нет.';
   return <div className="object-list" onPointerDown={listPressDown} onPointerMove={moveLongPress} onPointerUp={cancelLongPress} onPointerCancel={cancelLongPress} onPointerLeave={cancelLongPress}>
-    {tab === 'floors' ? project.floors.map((item, index) => <FloorRow key={item.id} ui={ui} floor={item} index={index} />)
-      : tab === 'equipment' ? project.equipment.map(item => <EquipmentRow key={item.id} ui={ui} item={item} />)
-        : tab === 'routes' ? project.routes.map(item => <RouteRow key={item.id} ui={ui} item={item} />)
-          : tab === 'pins' ? project.pins.map(item => <PinRow key={item.id} ui={ui} item={item} />)
-            : project.cables.map(item => <CableRow key={item.id} ui={ui} item={item} />)}
-    {project[tab].length === 0 && <div className="empty-list">Объектов пока нет.<br />Добавьте их на плане.</div>}
+    {caption ? <div className="search-count">{caption}</div> : null}
+    {tab === 'floors' ? floors.map((item, index) => <FloorRow key={item.id} ui={ui} floor={item} index={index} />)
+      : tab === 'equipment' ? equipment.map(item => <EquipmentRow key={item.id} ui={ui} item={item} />)
+        : tab === 'routes' ? routes.map(item => <RouteRow key={item.id} ui={ui} item={item} />)
+          : tab === 'pins' ? pins.map(item => <PinRow key={item.id} ui={ui} item={item} />)
+            : cables.map(item => <CableRow key={item.id} ui={ui} item={item} />)}
+    {found === 0 && <div className="empty-list">{emptyText}{!search.trim() && <><br />Добавьте их на плане.</>}</div>}
   </div>;
 }
 
@@ -146,6 +181,7 @@ export function Sidebar({ ui }: { ui: AppUi }) {
   return (
     <aside className={`sidebar ${menuOpen ? 'open' : ''}`}>
       <SidebarTitle floors={project.floors.length} />
+      <SearchBox ui={ui} />
       <StructureTabs project={project} tab={tab} onTab={setTab} />
       {tab === 'routes' && project.routes.length > 0 && <RouteSummary project={project} />}
       <ObjectList ui={ui} />

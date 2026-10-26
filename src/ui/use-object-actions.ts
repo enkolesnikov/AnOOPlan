@@ -24,13 +24,13 @@ export function useObjectActions(s: WorkspaceState) {
       const item = source.equipment.find(e => e.id === id); if (!item) return;
       const used = new Set(source.equipment.map(e => e.number));
       const next: Equipment = { ...clone(item), id: uid(), number: uniqueNumber(item.number, used), x: item.x + gridSize, y: item.y + gridSize, photos: [] };
-      mutate(p => p.equipment.push(next)); setSelection({ kind: 'equipment', id: next.id }); setMessage(`Копия оборудования: ${next.number}.`);
+      mutate(p => p.equipment.push(next), 'Дублирование'); setSelection({ kind: 'equipment', id: next.id }); setMessage(`Копия оборудования: ${next.number}.`);
       return;
     }
     if (kind === 'pin') {
       const item = source.pins.find(pin => pin.id === id); if (!item) return;
       const next: Pin = { ...clone(item), id: uid(), number: nextPinNumber(projectRef.current), x: item.x + gridSize, y: item.y + gridSize, photos: [], createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() };
-      mutate(p => p.pins.push(next)); setSelection({ kind: 'pin', id: next.id }); setTab('pins'); setMessage(`Копия замечания: ${next.number}.`);
+      mutate(p => p.pins.push(next), 'Дублирование'); setSelection({ kind: 'pin', id: next.id }); setTab('pins'); setMessage(`Копия замечания: ${next.number}.`);
       return;
     }
     if (kind === 'route') {
@@ -40,13 +40,13 @@ export function useObjectActions(s: WorkspaceState) {
       next.id = uid(); next.number = uniqueNumber(item.number, used);
       const vertexIds = new Map<string, string>();
       next.segments.forEach(segment => { segment.id = uid(); [segment.a, segment.b].forEach(vertex => { if (!vertexIds.has(vertex.id)) vertexIds.set(vertex.id, uid()); vertex.id = vertexIds.get(vertex.id)!; vertex.x += gridSize; vertex.y += gridSize; }); });
-      mutate(p => p.routes.push(next)); setSelection({ kind: 'route', id: next.id }); setMessage(`Копия трассы: ${next.number}.`);
+      mutate(p => p.routes.push(next), 'Дублирование'); setSelection({ kind: 'route', id: next.id }); setMessage(`Копия трассы: ${next.number}.`);
       return;
     }
     const item = source.cables.find(c => c.id === id); if (!item) return;
     const used = new Set(source.cables.map(c => c.number));
     const next: Cable = { ...clone(item), id: uid(), number: uniqueNumber(item.number, used) };
-    mutate(p => p.cables.push(next)); setSelection({ kind: 'cable', id: next.id }); setMessage(`Копия кабеля: ${next.number}.`);
+    mutate(p => p.cables.push(next), 'Дублирование'); setSelection({ kind: 'cable', id: next.id }); setMessage(`Копия кабеля: ${next.number}.`);
   }
   function removeObject(kind: ObjectKind, id: string) {
     const source = projectRef.current;
@@ -66,7 +66,7 @@ export function useObjectActions(s: WorkspaceState) {
       if (kind === 'route') p.routes = p.routes.filter(r => r.id !== id);
       if (kind === 'pin') p.pins = p.pins.filter(pin => pin.id !== id);
       p.cables = p.cables.filter(c => c.id !== (kind === 'cable' ? id : '') && !affected.some(a => a.id === c.id));
-    });
+    }, 'Удаление');
     void purgePhotoBlobs(photoKeys, idbDelete);
     setSelection(null); setSheet(null); setPropsOpen(false);
   }
@@ -118,7 +118,7 @@ export function useObjectActions(s: WorkspaceState) {
   }
   function setItem(key: string, value: unknown) {
     if (!selection) return;
-    mutate(p => { const collection = selection.kind === 'equipment' ? p.equipment : selection.kind === 'route' ? p.routes : p.cables; const item = collection.find(i => i.id === selection.id); if (item) Object.assign(item, { [key]: value }); });
+    mutate(p => { const collection = selection.kind === 'equipment' ? p.equipment : selection.kind === 'route' ? p.routes : p.cables; const item = collection.find(i => i.id === selection.id); if (item) Object.assign(item, { [key]: value }); }, 'Правка поля');
   }
 
   function applySheetScale() {
@@ -132,7 +132,7 @@ export function useObjectActions(s: WorkspaceState) {
       return;
     }
     const metersPerUnit = meters / floor.width;
-    mutate(p => { const target = p.floors.find(f => f.id === floor.id); if (target) target.metersPerUnit = metersPerUnit; });
+    mutate(p => { const target = p.floors.find(f => f.id === floor.id); if (target) target.metersPerUnit = metersPerUnit; }, 'Масштаб');
     setMessage(`Масштаб по листу ${sheetFormat} 1:${denominator}: ${number(metersPerUnit)} м/ед. PDF (${number(meters)} м по ширине листа). Проверьте контрольным размером.`);
   }
   function addRiser() {
@@ -142,12 +142,12 @@ export function useObjectActions(s: WorkspaceState) {
     const previous = route.segments[route.segments.length - 1]?.b;
     const a: Vertex = previous ? clone(previous) : { id: uid(), floorId: floor.id, x: 100, y: 100, height: 2.5 };
     const b: Vertex = { ...a, id: uid(), floorId: other.id };
-    mutate(p => p.routes.find(r => r.id === route.id)!.segments.push({ id: uid(), a, b, mode: 'orthogonal', reservePercent: 0, reserveFixed: 0 }));
+    mutate(p => p.routes.find(r => r.id === route.id)!.segments.push({ id: uid(), a, b, mode: 'orthogonal', reservePercent: 0, reserveFixed: 0 }), 'Стояк');
     setMessage('Стояк добавлен. Уточните целевой этаж, x/y и высоты в свойствах сегмента.');
   }
   function segmentField(segment: Segment, endpoint: 'a' | 'b', key: keyof Vertex, value: unknown) {
     if (!route) return;
-    mutate(p => { const target = p.routes.find(r => r.id === route.id)!.segments.find(s => s.id === segment.id)!; Object.assign(target[endpoint], { [key]: value }); });
+    mutate(p => { const target = p.routes.find(r => r.id === route.id)!.segments.find(s => s.id === segment.id)!; Object.assign(target[endpoint], { [key]: value }); }, 'Правка сегмента');
   }
 
   async function uploadPdf(file: File) {

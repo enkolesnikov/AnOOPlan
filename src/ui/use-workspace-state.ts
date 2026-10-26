@@ -29,6 +29,7 @@ export function useWorkspaceState() {
   const [diagnostics, setDiagnostics] = useState<DiagnosticEntry[]>([]);
   const [propsOpen, setPropsOpen] = useState(false);
   const [tab, setTab] = useState<StructureTab>('floors');
+  const [search, setSearch] = useState('');
   const [zoom, setZoom] = useState(.8);
   const [pan, setPan] = useState({ x: 35, y: 35 });
   const [grid, setGrid] = useState(true);
@@ -116,7 +117,7 @@ export function useWorkspaceState() {
   }, [project]);
   const issueCount = Array.isArray(issues) ? issues.length : 0;
 
-  const { undo, redo, commit, mutate, history, reset: resetHistory, record: recordHistory } = useProjectHistory(projectRef, setProject, setError, () => {
+  const { undo, redo, undoLabel, redoLabel, commit, mutate, history, reset: resetHistory, record: recordHistory } = useProjectHistory(projectRef, setProject, setError, () => {
     setSelection(null);
     setDraft([]);
   });
@@ -143,7 +144,7 @@ export function useWorkspaceState() {
   return {
     project, setProject, floorId, setFloorId, selection, setSelection, tool, setTool, view, setView,
     menuOpen, setMenuOpen, aboutOpen, setAboutOpen, diagnostics, setDiagnostics, propsOpen, setPropsOpen,
-    tab, setTab, zoom, setZoom, pan, setPan, grid, setGrid, snap, setSnap, ortho, setOrtho, gridSize, setGridSize,
+    tab, setTab, search, setSearch, zoom, setZoom, pan, setPan, grid, setGrid, snap, setSnap, ortho, setOrtho, gridSize, setGridSize,
     draft, setDraft, calibration, setCalibration, measure, setMeasure, measureMode, setMeasureMode,
     sheetFormat, setSheetFormat, sheetScale, setSheetScale, cableSegments, setCableSegments,
     cableFrom, setCableFrom, cableTo, setCableTo, routeHeight, setRouteHeight,
@@ -154,7 +155,7 @@ export function useWorkspaceState() {
     drag, pointers, snapVibe, tap, pinching, pressStart, longPressTimer,
     projectRef, floor, dirty, dirtyRef, equipment, route, cable, pin, dimension, photoOwner,
     cableSectionResult, calculation, issues, cableCalcs, fill, cableFill, routeFillWorst, totals, issueCount,
-    undo, redo, commit, mutate, history, resetHistory, recordHistory,
+    undo, redo, undoLabel, redoLabel, commit, mutate, history, resetHistory, recordHistory,
     pdfPages, renderPlan, pdfError, pdfNote,
     historyOpen, setHistoryOpen, snapshots, setSnapshots, takeSnapshot, openHistory, restoreSnapshot, deleteSnapshot,
     photoUrls, load,

@@ -15,7 +15,7 @@ export function useAppController() {
   const plan = usePlanEditing(state);
   const objects = useObjectActions(state);
   const exports = useExport(state, io);
-  useAppEffects(state, io, plan);
+  useAppEffects(state, io, plan, objects);
   return { ...state, ...io, ...plan, ...objects, ...exports };
 }
 

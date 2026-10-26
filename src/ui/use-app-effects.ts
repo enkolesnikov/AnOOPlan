@@ -8,14 +8,20 @@ import type { ProjectIo } from './use-project-io';
 import type { WorkspaceState } from './use-workspace-state';
 
 /** Жизненный цикл приложения: автосохранение, снимки, уборка, нативный мост и горячие клавиши. */
-export function useAppEffects(s: WorkspaceState, io: ProjectIo, plan: PlanEditing) {
+export function useAppEffects(
+  s: WorkspaceState,
+  io: ProjectIo,
+  plan: PlanEditing,
+  objects: { copySelection: () => void; removeSelection: () => void },
+) {
   const {
     dirty, dirtyRef, project, projectRef, staticMode, setStaticMode, floor, persisted,
     draft, setDraft, setCalibration, setMeasure, setCableSegments, setTool,
-    undo, redo, history, setMessage, load, takeSnapshot,
+    undo, redo, history, setMessage, load, takeSnapshot, selection, gridSize, mutate, setMenuOpen,
   } = s;
   const { saveProject, run, openSharedProject } = io;
-  const { finishRoute } = plan;
+  const { finishRoute, fit } = plan;
+  const { copySelection, removeSelection } = objects;
   useEffect(() => { const handler = (e: BeforeUnloadEvent) => { if (dirty) { e.preventDefault(); e.returnValue = ''; } }; window.addEventListener('beforeunload', handler); return () => window.removeEventListener('beforeunload', handler); }, [dirty]);
   useEffect(() => { setDraft([]); setCalibration([]); setMeasure([]); }, [floor?.id, floor?.pdfId]);
   useEffect(() => { fetch('/api/health').then(r => { if (!r.ok) setStaticMode(true); }).catch(() => setStaticMode(true)); }, []);
@@ -72,10 +78,35 @@ export function useAppEffects(s: WorkspaceState, io: ProjectIo, plan: PlanEditin
     } catch { /* ignore */ }
   }, [staticMode]);
   useEffect(() => {
+    const tools = ['select', 'pan', 'equipment', 'route', 'dimension', 'cable', 'calibrate', 'measure'] as const;
     const key = (e: KeyboardEvent) => {
       if ((e.target as HTMLElement).matches('input,select,textarea')) return;
-      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') { e.preventDefault(); void run(async () => { await saveProject(); }); }
-      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') { e.preventDefault(); history(!e.shiftKey); }
+      const ctrl = e.ctrlKey || e.metaKey;
+      if (ctrl && e.key.toLowerCase() === 's') { e.preventDefault(); void run(async () => { await saveProject(); }); return; }
+      if (ctrl && e.key.toLowerCase() === 'z') { e.preventDefault(); history(!e.shiftKey); return; }
+      if (ctrl && e.key.toLowerCase() === 'k') {
+        e.preventDefault();
+        setMenuOpen(true);
+        window.dispatchEvent(new Event('cableplan:focus-search'));
+        return;
+      }
+      if (ctrl && e.key.toLowerCase() === 'd') { e.preventDefault(); copySelection(); return; }
+      if (e.key === 'Delete') { e.preventDefault(); removeSelection(); return; }
+      if (e.key.toLowerCase() === 'f') { e.preventDefault(); fit(); return; }
+      if (/^[1-8]$/.test(e.key)) { setTool(tools[Number(e.key) - 1]); return; }
+      if (e.key.startsWith('Arrow') && selection !== null && (selection.kind === 'equipment' || selection.kind === 'pin')) {
+        e.preventDefault();
+        const step = e.shiftKey ? 10 : Math.max(1, gridSize);
+        const dx = e.key === 'ArrowLeft' ? -step : e.key === 'ArrowRight' ? step : 0;
+        const dy = e.key === 'ArrowUp' ? -step : e.key === 'ArrowDown' ? step : 0;
+        mutate(p => {
+          const item = selection.kind === 'equipment'
+            ? p.equipment.find(entry => entry.id === selection.id)
+            : p.pins.find(entry => entry.id === selection.id);
+          if (item) { item.x += dx; item.y += dy; }
+        }, 'Сдвиг');
+        return;
+      }
       if (e.key === 'Escape') { setDraft([]); setCalibration([]); setCableSegments([]); setMeasure([]); setTool('select'); }
       if (e.key === 'Enter' && draft.length > 1) finishRoute();
     }; window.addEventListener('keydown', key); return () => window.removeEventListener('keydown', key);
