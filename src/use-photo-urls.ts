@@ -4,9 +4,11 @@ import { idbGet } from './idb';
 /** Миниатюры фотографий выбранного оборудования из IndexedDB. */
 export function usePhotoUrls(photos: string[] | undefined, ownerId: string | undefined): Record<string, string> {
   const [photoUrls, setPhotoUrls] = useState<Record<string, string>>({});
+  // Ключ стабилен при том же наборе фото: массив приходит новым на каждый рендер.
+  const photosKey = photos?.join('\u0000') ?? '';
 
   useEffect(() => {
-    const keys = photos || [];
+    const keys = photosKey ? photosKey.split('\u0000') : [];
     if (!keys.length) { setPhotoUrls({}); return; }
     let cancelled = false;
     const created: string[] = [];
@@ -25,7 +27,7 @@ export function usePhotoUrls(photos: string[] | undefined, ownerId: string | und
       setPhotoUrls(map);
     })();
     return () => { cancelled = true; created.forEach(url => URL.revokeObjectURL(url)); };
-  }, [ownerId, photos?.length]);
+  }, [ownerId, photosKey]);
 
   return photoUrls;
 }

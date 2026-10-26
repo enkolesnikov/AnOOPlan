@@ -33,13 +33,15 @@ export function usePdfBackground({ floor, enabled, viewRef, zoom, pan, canvas, s
   const [pdfNote, setPdfNote] = useState('');
   const [renderTick, setRenderTick] = useState(0);
   const pdfCache = useRef<{ key: string; canvas: HTMLCanvasElement } | null>(null);
+  const floorRef = useRef(floor); floorRef.current = floor;
+  const mutateRef = useRef(mutate); mutateRef.current = mutate;
 
   useEffect(() => { setPdfPages(0); setPdfError(''); setPdfNote(''); }, [floor?.id, floor?.pdfId]);
 
   useEffect(() => {
-    if (!floor?.pdfId || !enabled) return;
-    const currentFloor = floor;
-    const pdfId = floor.pdfId;
+    const currentFloor = floorRef.current;
+    if (!currentFloor?.pdfId || !enabled) return;
+    const pdfId = currentFloor.pdfId;
     const { zoom: currentZoom, pan: currentPan } = viewRef.current;
     const stageElement = stage.current;
     const viewWidth = stageElement?.clientWidth || currentFloor.width * currentZoom;
@@ -84,7 +86,7 @@ export function usePdfBackground({ floor, enabled, viewRef, zoom, pan, canvas, s
         const page = await document.getPage(Math.min(Math.max(1, currentFloor.page), document.numPages)); if (cancelled) return;
         const viewport = page.getViewport({ scale: 1 });
         if (Math.abs(viewport.width - currentFloor.width) > .01 || Math.abs(viewport.height - currentFloor.height) > .01) {
-          mutate(p => { const floorTarget = p.floors.find(f => f.id === currentFloor.id)!; floorTarget.width = viewport.width; floorTarget.height = viewport.height; });
+          mutateRef.current(p => { const floorTarget = p.floors.find(f => f.id === currentFloor.id)!; floorTarget.width = viewport.width; floorTarget.height = viewport.height; });
         }
         const draw = async (renderPlanValue: PlanRender) => {
           const offscreen = window.document.createElement('canvas');
@@ -122,7 +124,7 @@ export function usePdfBackground({ floor, enabled, viewRef, zoom, pan, canvas, s
       }
     })();
     return () => { cancelled = true; renderTask?.cancel(); loadingTask?.destroy(); };
-  }, [floor?.pdfId, floor?.page, floor?.id, enabled, renderTick]);
+  }, [floor?.pdfId, floor?.page, floor?.id, floor?.width, floor?.height, enabled, renderTick, canvas, stage, viewRef]);
 
   // Большие листы перерисовываются по видимой области после жеста (с задержкой).
   useEffect(() => {

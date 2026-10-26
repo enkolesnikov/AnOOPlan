@@ -13,8 +13,8 @@
 - Релизы с APK: <https://github.com/enkolesnikov/AnOOPlan/releases>
 - Веб-версия: <https://enkolesnikov.github.io/AnOOPlan/> — та же сборка, что и APK; публикуется
   вручную по запросу (приоритет — Android).
-- Текущая версия: **2.6.1**, versionCode 36, `com.anooplan.app`, minSdk 24, targetSdk 35.
-  APK ~1,5 МБ, WebView 98+, 255 юнит-тестов + 231 проверка смоука + 2 E2E.
+- Текущая версия: **2.6.2**, versionCode 37, `com.anooplan.app`, minSdk 24, targetSdk 35.
+  APK ~1,5 МБ, WebView 98+, 256 юнит-тестов + 231 проверка смоука + 2 E2E.
 - Возможности: PDF-планы и калибровка, оборудование с иконками и цветом, трассы, кабели и автопрокладка,
   журнал, справочник цен и смета с коммерческим предложением, печатные формы (титул, оглавление,
   штамп ГОСТ, лист изменений), печать выбранных разделов, обмен PDF/XLSX и проектом `.anooplan`,
@@ -30,11 +30,29 @@
 - **Доступность:** системный размер шрифта Android (textZoom 85–160 %), тёмная тема, высокий контраст,
   reduced-motion; бюджет памяти рендера плана — 8 Мпикс с предупреждением.
 - Подпись: SHA-256 сертификата `6431374cf6a7d385c4c47f0f2bf54fcb5ee5b2c7120f057b18c4062af92fe097`.
-- Текущий релиз: [v2.6.1 «Мультивыбор и списки»](https://github.com/enkolesnikov/AnOOPlan/releases/tag/v2.6.1) —
-  подписанный APK `AnOOPlan-2.6.1.apk` (versionCode 36), описание из аннотации тега и **3 скриншота**
-  (`01-bulk-select.png`, `02-context-menu.png`, `03-mobile-bulk.png`) в assets.
-- Предыдущий релиз: [v2.6.0 «Быстрый проект»](https://github.com/enkolesnikov/AnOOPlan/releases/tag/v2.6.0) —
-  APK `AnOOPlan-2.6.0.apk` (versionCode 35), 3 скриншота в assets.
+- Текущий релиз: [v2.6.2 «Техдолг»](https://github.com/enkolesnikov/AnOOPlan/releases/tag/v2.6.2) —
+  подписанный APK `AnOOPlan-2.6.2.apk` (versionCode 37), описание из аннотации тега и 1 скриншот
+  подтверждения (`01-confirmation.png`) в assets.
+- Предыдущий релиз: [v2.6.1 «Мультивыбор и списки»](https://github.com/enkolesnikov/AnOOPlan/releases/tag/v2.6.1) —
+  APK `AnOOPlan-2.6.1.apk` (versionCode 36), 3 скриншота в assets.
+
+### Состояние на 2026-10-27 (2.6.2)
+
+- **Движок разложен:** `src/engine.ts` — фасад; реализация в `src/engine/geometry.ts`,
+  `tray-fill.ts`, `routes.ts`, `suggest.ts`, `specification.ts`. Публичный API сверен с HEAD:
+  23 функции + 15 типов, ничего не потеряно; тесты/smoke/E2E зелёные.
+- **Прямые тесты UI-хуков:** `tests/hooks.test.ts` (react-dom + happy-dom) для `useProjectHistory`;
+  покрывает склейку ввода 600 мс, подписи, undo/redo. Тест поймал баг: в redo попадало уже
+  восстановленное состояние (исправлено захватом текущего проекта до подмены `projectRef`).
+- **Lint 0 предупреждений:** в `use-app-effects` нестабильные `saveProject/takeSnapshot/load/
+  openSharedProject/setMessage` вынесены в refs, deps дополнены; `use-pdf-background` использует
+  `floorRef/mutateRef`; `use-photo-urls` — стабильный `photosKey`. Убраны `.export-menu` и дубль
+  `.tool-group button`.
+- **Проверки:** 256 тестов, 231 смоук, 2 E2E, 4 визуальных эталона; покрытие 95,0/87,9/95,5 %;
+  JS 436,5 КБ / CSS 35,6 КБ; APK `AnOOPlan-2.6.2.apk` 1 472 898 Б, versionCode 37, сертификат
+  прежний, `INTERNET` нет; интерфейс не менялся (1 скриншот подтверждения).
+- **Осталось:** `properties-panel.tsx`, `MainActivity`, распил `AppUi` (2.7.0/3.0.0);
+  Codacy token — владелец; фичи 2.7.0 — шаблоны/импорт XLSX.
 
 ### Состояние на 2026-10-27 (2.6.1)
 
@@ -359,7 +377,7 @@ APK всегда работает в режиме «Браузер»: запро
 
 ```bash
 npm ci                      # зависимости (Node 22.5+, проверено на Node 24)
-npm test                    # 255 тестов (движок, КНС/сегменты, иконки, смета, формы, миграции, API, экспорт)
+npm test                    # 256 тестов (движок, КНС/сегменты, иконки, смета, формы, миграции, API, экспорт)
 npm run lint                # ESLint (0 ошибок), шаг CI перед тестами
 npm run coverage            # тесты с покрытием и порогами + coverage/lcov.info (используется в CI)
 npm run size                # бюджет стартового бандла (после npm run build)
@@ -454,7 +472,7 @@ Android-инструменты; JDK на VPS уже установлен. Есл
 
 ## Тесты и что ими не покрыто
 
-- 255 юнит-тестов: движок, заполнение КНС и сегментные размеры (`tests/tray-fill.test.ts`), типы и
+- 256 юнит-тестов: движок, заполнение КНС и сегментные размеры (`tests/tray-fill.test.ts`), типы и
   цвета КНС (`tests/route-kinds.test.ts`), доступность (textZoom, тёмная тема, контраст —
   `tests/a11y.test.ts`, `tests/android-config.test.ts`), память рендера (`tests/render-plan.test.ts`),
   страницы плана и note в PDF (`tests/plan-pages.test.ts`, `tests/export.test.ts`), иконки и цвет
@@ -519,7 +537,6 @@ Android-инструменты; JDK на VPS уже установлен. Есл
   пространственные — по запросу.
 - `src/ui/` использует один coarse-объект `AppUi`: типизация слабее отдельных пропсов; распилить на
   под-объекты `state/files/plan/objects`.
-- Прямые тесты `src/ui`-хуков не сделаны (их покрывают смоук и E2E).
 - В справочнике UI редактируются артикул/производитель; `series`/`size` сохраняются/импортируются,
   но отдельными полями не редактируются.
 - Codacy: шаг загрузки покрытия готов, но нужен секрет `CODACY_PROJECT_TOKEN` от владельца — без него
@@ -532,15 +549,14 @@ Android-инструменты; JDK на VPS уже установлен. Есл
 **P2**
 - Векторный план в PDF вместо растра 1600 px.
 - Сравнение снимков версий (diff).
-- Неиспользуемые стили `.export-menu` в `styles.css`.
 - Диагностика: показывать занятое место и версию WebView в интерфейсе, а не только в экспорте.
 - Заполнение КНС считается по площади внешнего сечения без коэффициента укладки/пучков и без учёта
   радиуса изгиба; для плоских кабелей нужен явный ввод площади. Сегментные размеры сделаны в 2.5.0;
   коэффициент укладки не вводится без решения владельца.
 - В схеме трасс углы коробов при смешанных сечениях относятся к основному сечению (наибольший метраж) —
   если понадобится разбивка углов по участкам, это отдельная задача.
-- Декомпозиция: `engine.ts`, `export-pdf.ts`, `properties-panel.tsx`, `MainActivity` остаются крупными
-  (CodeFactor); в 2.5.0 разобраны `sidebar.tsx` и `estimate-screen.tsx`.
+- Декомпозиция: `engine.ts` разобран в 2.6.2 (`src/engine/*`); `export-pdf.ts`, `properties-panel.tsx`,
+  `MainActivity` остаются крупными (CodeFactor); в 2.5.0 разобраны `sidebar.tsx`/`estimate-screen.tsx`.
 - Заполнение в ведомостях показывается по сегментам, но `warnings` сегментов не дублируются
   в таблице (видны в свойствах трассы и в общем списке предупреждений).
 - Иконки оборудования фиксированы (6 типов, маппинг по подстроке типа): нет загрузки своих SVG
@@ -634,7 +650,7 @@ Android-инструменты; JDK на VPS уже установлен. Есл
 ## Первые шаги в новой сессии
 
 1. Клонировать репозиторий / открыть `/root/Anooplan`, `git checkout main && git pull`.
-2. `npm ci && npm run lint && npm test && npm run smoke` — убедиться, что база зелёная (255/231);
+2. `npm ci && npm run lint && npm test && npm run smoke` — убедиться, что база зелёная (256/231);
    `npm run coverage` и `npm run size` — пороги (93/85/92 %, JS ≤460 КБ, CSS ≤40 КБ).
 3. `bash scripts/fetch-tools.sh && bash scripts/build-apk.sh` — собрать APK 2.6.0 локально
    (на VPS keystore уже на месте); проверить версию/versionCode, сертификат и отсутствие `INTERNET`,

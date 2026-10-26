@@ -50,15 +50,18 @@ export function useProjectHistory(
     if (!source.length) return;
     const next = source[source.length - 1];
     const label = (back ? undoLabels : redoLabels).at(-1) ?? 'Действие';
+    // Фиксируем текущее состояние до подмены projectRef: иначе state-updater
+    // прочитает уже восстановленный проект и в противоположный стек попадёт не то.
+    const current = clone(projectRef.current);
     if (back) {
       setUndo(source.slice(0, -1));
       setUndoLabels(items => items.slice(0, -1));
-      setRedo(items => pushLimited(items, clone(projectRef.current), HISTORY_LIMIT));
+      setRedo(items => pushLimited(items, current, HISTORY_LIMIT));
       setRedoLabels(items => pushLimited(items, label, HISTORY_LIMIT));
     } else {
       setRedo(source.slice(0, -1));
       setRedoLabels(items => items.slice(0, -1));
-      setUndo(items => pushLimited(items, clone(projectRef.current), HISTORY_LIMIT));
+      setUndo(items => pushLimited(items, current, HISTORY_LIMIT));
       setUndoLabels(items => pushLimited(items, label, HISTORY_LIMIT));
     }
     const restored = clone(next);

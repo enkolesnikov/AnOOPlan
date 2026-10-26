@@ -12,7 +12,7 @@
 
 [![Скачать APK](https://img.shields.io/badge/%D1%81%D0%BA%D0%B0%D1%87%D0%B0%D1%82%D1%8C-APK-2ea043?logo=android&logoColor=white)](https://github.com/enkolesnikov/AnOOPlan/releases/latest)
 
-- **APK:** [последний релиз](https://github.com/enkolesnikov/AnOOPlan/releases/latest) (`AnOOPlan-2.6.1.apk`) — около 1,5 МБ со встроенными сабсетами шрифтов, Android 7.0+ (minSdk 24, WebView 98+, targetSdk 35), без интернета;
+- **APK:** [последний релиз](https://github.com/enkolesnikov/AnOOPlan/releases/latest) (`AnOOPlan-2.6.2.apk`) — около 1,5 МБ со встроенными сабсетами шрифтов, Android 7.0+ (minSdk 24, WebView 98+, targetSdk 35), без интернета;
 - **Веб-версия:** [enkolesnikov.github.io/AnOOPlan](https://enkolesnikov.github.io/AnOOPlan/) — та же сборка, публикуется вручную по запросу (приоритет — Android);
 - **Исходный проект:** [enkolesnikov/ooplan](https://github.com/enkolesnikov/ooplan).
 
@@ -113,6 +113,23 @@ APK — это нативная оболочка (WebView) вокруг той �
 - экспорт CSV и JSON-копии сохраняется в общую папку **Загрузки/AnOOPlan** без запроса опасных разрешений (MediaStore);
 - XLSX и PDF журнала собираются **на самом телефоне**: сервер для выгрузки не нужен;
 - разрешение `INTERNET` не запрашивается: приложение работает полностью офлайн.
+
+### Что нового в 2.6.2
+
+Технический релиз без изменения интерфейса и поведения приложения:
+
+- **Декомпозиция движка.** `src/engine.ts` (1014 строк) разложен на `src/engine/geometry`,
+  `tray-fill`, `routes`, `suggest`, `specification`; `src/engine.ts` остаётся фасадом с прежним
+  публичным API (23 функции + 15 типов — сверено с HEAD).
+- **Прямой тест UI-хука.** `tests/hooks.test.ts` рендерит `useProjectHistory` через react-dom
+  в happy-dom и проверяет склейку ввода, подписи и undo/redo. Тест выявил и помог исправить
+  реальный баг: в стек redo попадало уже восстановленное состояние, а не текущее.
+- **Чистый lint.** 0 предупреждений: нестабильные функции в эффектах вынесены в refs, зависимости
+  дополнены; убраны неиспользуемый `.export-menu` и дубль правила `.tool-group button`.
+- 256 тестов, 231 смоук, 2 E2E, 4 визуальных эталона; покрытие 95,0 % строк / 87,9 % веток /
+  95,5 % функций; JS 436,5 КБ + CSS 35,6 КБ.
+- **Осталось техдолгом:** декомпозиция `properties-panel.tsx` и `MainActivity`, распил `AppUi`,
+  Codacy-токен для покрытия.
 
 ### Что нового в 2.6.1
 
@@ -438,7 +455,7 @@ adb install -r build/AnOOPlan-1.0.0.apk
 
 
 ```bash
-npm test             # 255 юнит-тестов: расчёт длин и заполнения КНС, автопрокладка, валидация, миграции, API, экспорт, backup
+npm test             # 256 юнит-тестов: расчёт длин и заполнения КНС, автопрокладка, валидация, миграции, API, экспорт, backup
 npm run coverage     # тесты с покрытием и порогами (в CI), lcov для Codacy
 npm run lint         # ESLint + jsx-a11y + react-hooks: стиль, доступность, хуки (в CI)
 npm run size         # бюджет стартового бандла (после npm run build)
