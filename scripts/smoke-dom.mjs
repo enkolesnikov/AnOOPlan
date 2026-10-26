@@ -301,8 +301,12 @@ const catalogPrices = Array.from(document.querySelectorAll('.catalog-price input
 check(catalogPrices.includes('28500') && catalogPrices.includes('6500'), `в справочнике есть цены 28500 и 6500: ${catalogPrices.slice(0, 6).join(', ')}`);
 const catalogExport = Array.from(document.querySelectorAll('.catalog-actions button')).find(button => (button.textContent || '').includes('Экспорт справочника'));
 check(Boolean(catalogExport), 'кнопка «Экспорт справочника» есть');
-const catalogImport = Array.from(document.querySelectorAll('.catalog-actions button')).find(button => (button.textContent || '').includes('Импорт справочника'));
-check(Boolean(catalogImport), 'кнопка «Импорт справочника» есть');
+const catalogImport = Array.from(document.querySelectorAll('.catalog-actions button')).find(button => (button.textContent || '').includes('Импорт JSON'));
+check(Boolean(catalogImport), 'кнопка «Импорт JSON» есть');
+const catalogTableImport = Array.from(document.querySelectorAll('.catalog-actions button')).find(button => (button.textContent || '').includes('Импорт XLSX/CSV'));
+check(Boolean(catalogTableImport), 'кнопка «Импорт XLSX/CSV» есть');
+const catalogSeries = document.querySelector('.catalog-series input');
+check(Boolean(catalogSeries), 'поле «Серия» в справочнике есть');
 check(Boolean(document.querySelector('input.catalog-import-input[type="file"]')), 'скрытое поле импорта JSON подключено');
 const catalogSavedBefore = saved.filter(file => file.name.endsWith('.json')).length;
 let exportedCatalog = null;

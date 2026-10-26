@@ -1,6 +1,6 @@
 import { AboutSheet } from './About';
 import { clearDiagnostics } from './diagnostics';
-import { CommandBar, Footer, HiddenInputs, HistoryFab, PropsFab, ProjectsModal, Scrim, Topbar } from './ui/chrome';
+import { CommandBar, Footer, HiddenInputs, HistoryFab, Onboarding, PropsFab, ProjectsModal, Scrim, TemplatesModal, Topbar } from './ui/chrome';
 import { ExportSheet, HistorySheet, ObjectActionSheet } from './ui/sheets';
 import { useAppController } from './ui/use-app-controller';
 import { Workspace } from './ui/workspace';
@@ -31,5 +31,7 @@ export default function App() {
     {ui.sheet && <ObjectActionSheet ui={ui} />}
     <HiddenInputs ui={ui} />
     {ui.projects && <ProjectsModal ui={ui} />}
+    {ui.templatesOpen && <TemplatesModal ui={ui} />}
+    {ui.onboardingOpen && <Onboarding ui={ui} />}
   </div>;
 }

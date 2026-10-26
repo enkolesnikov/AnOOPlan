@@ -53,6 +53,8 @@ export function useWorkspaceState() {
   const [saved, setSaved] = useState('');
   const [persisted, setPersisted] = useState(false);
   const [projects, setProjects] = useState<{ id: string; name: string; updatedAt: string }[] | null>(null);
+  const [templatesOpen, setTemplatesOpen] = useState(false);
+  const [onboardingOpen, setOnboardingOpen] = useState(false);
   const [pointer, setPointer] = useState<Point | null>(null);
   const [staticMode, setStaticMode] = useState(false);
   const [exportOpen, setExportOpen] = useState(false);
@@ -152,7 +154,8 @@ export function useWorkspaceState() {
     sheetFormat, setSheetFormat, sheetScale, setSheetScale, cableSegments, setCableSegments,
     cableFrom, setCableFrom, cableTo, setCableTo, routeHeight, setRouteHeight,
     message, setMessage, error, setError, busy, setBusy, saved, setSaved, persisted, setPersisted,
-    projects, setProjects, pointer, setPointer, staticMode, setStaticMode, exportOpen, setExportOpen,
+    projects, setProjects, templatesOpen, setTemplatesOpen, onboardingOpen, setOnboardingOpen,
+    pointer, setPointer, staticMode, setStaticMode, exportOpen, setExportOpen,
     sheet, setSheet, printSections, setPrintSections,
     canvas, stage, upload, restoreInput, photoInput, cameraInput,
     drag, pointers, snapVibe, tap, pinching, pressStart, longPressTimer,

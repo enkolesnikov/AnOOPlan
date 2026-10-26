@@ -8,8 +8,9 @@ import { EquipmentIcon } from './equipment-icon';
 import { number } from './format';
 import { routeColor, routeKindOf } from '../route-kinds';
 import { routeAngleStats, routeLength, routeSummary } from '../engine';
-import { freshFloor, freshProject } from './project-factory';
+import { freshFloor } from './project-factory';
 import { matchesQuery, searchCaption } from './search';
+import { EQUIPMENT_KITS, kitEquipment } from '../kits';
 import { allIds, bulkKind, isBulkTab, pageSlice, toggleId } from './multi-select';
 import type { ObjectKind } from './types';
 import type { AppUi } from './use-app-controller';
@@ -183,6 +184,28 @@ function MultiControls({ ui }: { ui: AppUi }) {
   </div>;
 }
 
+/** Вставка типового комплекта оборудования на текущий этаж. */
+function KitInserter({ ui }: { ui: AppUi }) {
+  const { project, floor, mutate, setSelection, setView, setMessage } = ui;
+  const [kitId, setKitId] = useState(EQUIPMENT_KITS[0].id);
+  if (!floor) return null;
+  const kit = EQUIPMENT_KITS.find(item => item.id === kitId) ?? EQUIPMENT_KITS[0];
+  function insert(): void {
+    const items = kitEquipment(kit, project, floor);
+    if (!items.length) return;
+    mutate(p => { p.equipment.push(...items); }, 'Вставка комплекта');
+    setSelection({ kind: 'equipment', id: items[0].id });
+    setView('plan');
+    setMessage(`Комплект «${kit.name}»: ${items.length} ед. оборудования.`);
+  }
+  return <div className="kit-inserter">
+    <select aria-label="Комплект оборудования" value={kitId} onChange={event => setKitId(event.target.value)}>
+      {EQUIPMENT_KITS.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}
+    </select>
+    <button type="button" onClick={insert}>＋ Комплект</button>
+  </div>;
+}
+
 /** Кнопки добавления объектов активной вкладки. */
 function SidebarActions({ ui }: { ui: AppUi }) {
   const { tab, project, floor, busy, mutate, setFloorId, setSelection, upload, setView, setTool } = ui;
@@ -192,16 +215,20 @@ function SidebarActions({ ui }: { ui: AppUi }) {
       <button onClick={() => upload.current?.click()} disabled={!floor || busy}>↑ Загрузить PDF</button>
     </div>;
   }
+  if (tab === 'equipment') return <div className="sidebar-actions kit-actions">
+    <button onClick={() => { setView('plan'); setTool('equipment'); }}>＋ Оборудование на плане</button>
+    <KitInserter ui={ui} />
+  </div>;
   return <div className="sidebar-actions">
-    <button onClick={() => { setView('plan'); setTool(tab === 'equipment' ? 'equipment' : tab === 'routes' ? 'route' : tab === 'pins' ? 'pin' : 'cable'); }}>＋ {tab === 'equipment' ? 'Оборудование на плане' : tab === 'routes' ? 'Начертить трассу' : tab === 'pins' ? 'Замечание на плане' : 'Создать кабель'}</button>
+    <button onClick={() => { setView('plan'); setTool(tab === 'routes' ? 'route' : tab === 'pins' ? 'pin' : 'cable'); }}>＋ {tab === 'routes' ? 'Начертить трассу' : tab === 'pins' ? 'Замечание на плане' : 'Создать кабель'}</button>
   </div>;
 }
 
 /** Действия с проектом: новый, открыть, импорт JSON, учебный проект. */
 function ProjectActions({ ui }: { ui: AppUi }) {
-  const { busy, mayLeave, load, setMenuOpen, setProjects, staticMode, restoreInput, run, setMessage } = ui;
+  const { busy, mayLeave, load, setMenuOpen, setProjects, staticMode, restoreInput, run, setMessage, setTemplatesOpen } = ui;
   return <div className="sidebar-project">
-    <button onClick={() => { setMenuOpen(false); if (mayLeave()) load(freshProject(), false); }}>＋ Новый проект</button>
+    <button onClick={() => { setMenuOpen(false); setTemplatesOpen(true); }}>＋ Новый проект</button>
     <button disabled={busy} onClick={() => { setMenuOpen(false); void run(async () => { setProjects(staticMode ? readLocalProjects().map(item => ({ id: item.id, name: item.name, updatedAt: item.updatedAt })) : await api('/api/projects')); }); }}>📂 Открыть проект</button>
     <button disabled={busy} onClick={() => { setMenuOpen(false); restoreInput.current?.click(); }}>⬆ Загрузить JSON</button>
     <button onClick={() => { setMenuOpen(false); if (mayLeave()) { load(createDemoProject(), false); setMessage('Учебный проект: синтетические данные, не рабочая документация.'); } }}>📘 Учебный проект</button>
@@ -220,7 +247,7 @@ function ProjectHealth({ issueCount, onShow }: { issueCount: number; onShow: () 
 
 /** Сайдбар: структура проекта, действия и контроль данных. */
 export function Sidebar({ ui }: { ui: AppUi }) {
-  const { project, tab, menuOpen, setTab, setMenuOpen, setView, issueCount, setDiagnostics, setAboutOpen } = ui;
+  const { project, tab, menuOpen, setTab, setMenuOpen, setView, issueCount, setDiagnostics, setAboutOpen, setOnboardingOpen } = ui;
   return (
     <aside className={`sidebar ${menuOpen ? 'open' : ''}`}>
       <SidebarTitle floors={project.floors.length} />
@@ -234,6 +261,7 @@ export function Sidebar({ ui }: { ui: AppUi }) {
       <ProjectHealth issueCount={issueCount} onShow={() => setView('specs')} />
       <div className="sidebar-about">
         <button onClick={() => { setMenuOpen(false); setDiagnostics(readDiagnostics()); setAboutOpen(true); }}>ℹ О программе / Лицензии</button>
+        <button onClick={() => { setMenuOpen(false); setOnboardingOpen(true); }}>🎓 Обучение</button>
       </div>
     </aside>
   );

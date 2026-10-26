@@ -1,6 +1,8 @@
-import { useMemo, useRef } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import type { PriceItem, PriceKind, Project } from '../model';
 import { estimate, isCatalogDate, normalizeCatalog } from '../estimate';
+import { parseCatalogRows, mergeCatalog, type CatalogImportResult } from '../catalog-import';
+import { readCatalogFile } from '../catalog-file';
 import type { EstimateResult, EstimateSection as EstimateSectionData } from '../estimate';
 import { createUuid as uid } from '../compat';
 import { number } from './format';
@@ -107,6 +109,8 @@ function CatalogRow({ item, index, onUpdate, onRemove }: {
     <td className="catalog-name"><input type="text" value={item.name} aria-label={`Наименование позиции ${index + 1}`} onChange={event => onUpdate(index, { name: event.target.value })} /></td>
     <td className="catalog-article"><input type="text" value={item.article ?? ''} aria-label={`Артикул позиции ${index + 1}`} onChange={event => onUpdate(index, { article: event.target.value })} /></td>
     <td className="catalog-manufacturer"><input type="text" value={item.manufacturer ?? ''} aria-label={`Производитель позиции ${index + 1}`} onChange={event => onUpdate(index, { manufacturer: event.target.value })} /></td>
+    <td className="catalog-series"><input type="text" value={item.series ?? ''} aria-label={`Серия позиции ${index + 1}`} onChange={event => onUpdate(index, { series: event.target.value })} /></td>
+    <td className="catalog-size"><input type="text" value={item.size ?? ''} aria-label={`Размер позиции ${index + 1}`} onChange={event => onUpdate(index, { size: event.target.value })} /></td>
     <td className="catalog-unit"><input type="text" value={item.unit} aria-label={`Единица позиции ${index + 1}`} onChange={event => onUpdate(index, { unit: event.target.value })} /></td>
     <td className="catalog-price"><NumberField value={item.price} placeholder="Не задано" ariaLabel={`Цена позиции ${index + 1}`} onCommit={raw => onUpdate(index, { price: raw === '' ? null : nonNegativeOrNull(raw) })} /></td>
     <td className="catalog-note"><input type="text" value={item.note} aria-label={`Примечание позиции ${index + 1}`} onChange={event => onUpdate(index, { note: event.target.value })} /></td>
@@ -122,6 +126,8 @@ function CatalogEditor({ project, onChange, onMessage, onError }: {
   onError: (text: string) => void;
 }) {
   const importInput = useRef<HTMLInputElement>(null);
+  const tableInput = useRef<HTMLInputElement>(null);
+  const [preview, setPreview] = useState<(CatalogImportResult & { fileName: string }) | null>(null);
   const catalog = project.catalog ?? [];
   function updateCatalogItem(index: number, patch: Partial<PriceItem>): void {
     onChange(p => {
@@ -175,6 +181,23 @@ function CatalogEditor({ project, onChange, onMessage, onError }: {
       onError(error instanceof Error ? error.message : String(error));
     }
   }
+  async function previewCatalogTable(file: File): Promise<void> {
+    try {
+      const rows = await readCatalogFile(file);
+      const parsed = parseCatalogRows(rows);
+      setPreview({ ...parsed, fileName: file.name });
+      if (!parsed.items.length) onError(parsed.errors[0] ?? 'В таблице нет строк для импорта.');
+    } catch (error) {
+      onError(`Не удалось прочитать таблицу: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+  function applyPreview(): void {
+    if (!preview) return;
+    const result = mergeCatalog(catalog, preview.items);
+    onChange(p => { p.catalog = result.catalog; });
+    setPreview(null);
+    onMessage(`Импорт «${preview.fileName}»: добавлено ${result.added}, обновлено ${result.updated}.`);
+  }
   return <>
     <details className="catalog-editor">
       <summary>Справочник цен <span>{catalog.length}</span></summary>
@@ -182,20 +205,31 @@ function CatalogEditor({ project, onChange, onMessage, onError }: {
         <label className="field catalog-date">Дата прайса<input type="date" value={project.catalogDate ?? ''} aria-label="Дата прайса" onChange={event => onChange(p => { p.catalogDate = event.target.value || null; })} /></label>
         <div className="catalog-actions">
           <button type="button" className="catalog-export" onClick={() => void exportCatalog()}>Экспорт справочника</button>
-          <button type="button" className="catalog-import" onClick={() => importInput.current?.click()}>Импорт справочника</button>
+          <button type="button" className="catalog-import" onClick={() => importInput.current?.click()}>Импорт JSON</button>
+          <button type="button" className="catalog-import-table" onClick={() => tableInput.current?.click()}>Импорт XLSX/CSV</button>
           <button type="button" onClick={() => onChange(p => { p.catalog = [...(p.catalog ?? []), { id: uid(), kind: 'equipment', name: 'Новая позиция', unit: 'шт', price: null, note: '' }]; })}>＋ Позиция</button>
         </div>
       </div>
+      {preview && <div className="catalog-preview">
+        <div className="catalog-preview-head"><strong>Импорт: {preview.fileName}</strong><span>{preview.items.length} поз. · ошибок: {preview.errors.length}</span></div>
+        <div className="table-scroll"><table className="catalog-preview-table">
+          <thead><tr><th>Вид</th><th>Наименование</th><th>Артикул</th><th>Серия</th><th>Размер</th><th>Ед.</th><th>Цена</th></tr></thead>
+          <tbody>{preview.items.slice(0, 5).map(item => <tr key={item.id}><td>{PRICE_KIND_LABELS[item.kind]}</td><td>{item.name}</td><td>{item.article || '—'}</td><td>{item.series || '—'}</td><td>{item.size || '—'}</td><td>{item.unit}</td><td>{item.price === null ? '—' : moneyText(item.price)}</td></tr>)}</tbody>
+        </table></div>
+        {preview.errors.length > 0 && <ul className="catalog-import-errors">{preview.errors.slice(0, 10).map((error, index) => <li key={index}>{error}</li>)}{preview.errors.length > 10 && <li>… и ещё {preview.errors.length - 10}</li>}</ul>}
+        <div className="catalog-preview-actions"><button type="button" className="primary" onClick={applyPreview} disabled={!preview.items.length}>Импортировать ({preview.items.length})</button><button type="button" onClick={() => setPreview(null)}>Отмена</button></div>
+      </div>}
       <div className="table-scroll"><table className="catalog-table">
-        <thead><tr><th>Вид</th><th>Наименование</th><th>Артикул</th><th>Производитель</th><th>Ед.</th><th>Цена, ₽</th><th>Примечание</th><th /></tr></thead>
+        <thead><tr><th>Вид</th><th>Наименование</th><th>Артикул</th><th>Производитель</th><th>Серия</th><th>Размер</th><th>Ед.</th><th>Цена, ₽</th><th>Примечание</th><th /></tr></thead>
         <tbody>
           {catalog.map((item, index) => <CatalogRow key={item.id} item={item} index={index} onUpdate={updateCatalogItem} onRemove={removed => onChange(p => { p.catalog = (p.catalog ?? []).filter(entry => entry.id !== removed.id); })} />)}
-          {!catalog.length && <tr><td colSpan={8}>Справочник пуст. Добавьте позиции или импортируйте JSON.</td></tr>}
+          {!catalog.length && <tr><td colSpan={10}>Справочник пуст. Добавьте позиции или импортируйте JSON/XLSX/CSV.</td></tr>}
         </tbody>
       </table></div>
       <p className="help">Позиции справочника сопоставляются по виду и наименованию без учёта регистра. Цена «—» означает «неизвестно», а не 0. Пустое поле «Работы, %» также делает смету неполной.</p>
     </details>
     <input hidden ref={importInput} type="file" accept=".json,application/json" className="catalog-import-input" onChange={event => { const file = event.target.files?.[0]; if (file) void importCatalogFile(file); event.target.value = ''; }} />
+    <input hidden ref={tableInput} type="file" accept=".xlsx,.xls,.csv,text/csv" className="catalog-import-table-input" onChange={event => { const file = event.target.files?.[0]; if (file) void previewCatalogTable(file); event.target.value = ''; }} />
   </>;
 }
 
