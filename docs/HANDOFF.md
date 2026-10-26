@@ -51,7 +51,11 @@
   versionCode 36, сертификат прежний, `INTERNET` нет.
 - **DSH:** `@perrylink/dsh-github` 0.7.27 и `@zseven-w/dsh-android` 0.1.0-rc.12 установлены;
   мои плагины ужаты до уникального (`android_install/set`, `github_release/upload`, APK/визуал);
-  `github_release_upload` читает токен из DSH credential store (`GITHUB_TOKEN`).
+  `github_release_upload` читает токен из DSH credential store (`GITHUB_TOKEN`) — проверено
+  реальной загрузкой скриншотов 2.6.1.
+- **Релиз:** тег `v2.6.1` на `531ad3d`; CI/CodeQL зелёные (job CI 105 с, очередь раннера ещё ~30 с).
+  Release [v2.6.1](https://github.com/enkolesnikov/AnOOPlan/releases/tag/v2.6.1) содержит APK
+  1 472 898 Б и 3 скриншота; релизный APK скачан и проверен (versionCode 36, сертификат, без `INTERNET`).
 - **Не вошло:** полный распил `AppUi`, прямые тесты UI-хуков — техдолг; шаблоны/импорт XLSX — 2.7.0.
 
 ### Состояние на 2026-10-26 (2.6.0)
@@ -390,7 +394,8 @@ Android-инструменты; JDK на VPS уже установлен. Есл
 - `.github/workflows/ci.yml` — обязательный прогон на каждый push/PR: `npm ci`, `npm run lint`,
   `tsc --noEmit`, тесты с покрытием (`npm run coverage`, lcov), загрузка покрытия в Codacy при наличии
   секрета `CODACY_PROJECT_TOKEN`, сборка + бюджет бандла (`npm run size`), смоук, E2E.
-  Это единственный автоматический workflow; держать его ≤130 с (2.5.0 — 123 с; 2.6.0 — 108 с).
+  Это единственный автоматический workflow; держать job ≤130 с (2.5.0 — 123 с; 2.6.0 — 108 с;
+2.6.1 — 105 с; очередь раннера в бюджет не входит и иногда добавляет ~30 с).
 - `.github/workflows/android-apk.yml` — **вручную** (`workflow_dispatch`): неподписанный APK
   (`AnOOPlan-apk-unsigned`) для проверки установки. Ключ в раннере не создаётся.
 - `.github/workflows/deploy.yml` — **вручную** (`workflow_dispatch`): публикация веб-версии на Pages.
