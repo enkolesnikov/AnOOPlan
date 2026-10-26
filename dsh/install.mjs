@@ -124,6 +124,6 @@ try {
 }
 
 log('готово. Перезапустите `dsh web` — в новой сессии появятся инструменты:');
-log('  android_devices, android_boot, android_install, android_screenshot, android_set, android_logcat');
-log('  github_release, github_release_upload, github_workflow_runs, github_issues');
+log('  android_install, android_set (остальное — @zseven-w/dsh-android)');
+log('  github_release, github_release_upload (остальное — @perrylink/dsh-github)');
 log('  anooplan_apk_check, anooplan_visual_check');

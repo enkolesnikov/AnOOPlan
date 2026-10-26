@@ -1,22 +1,19 @@
 /**
- * dsh-android-tools — обёртка над adb/эмулятором для DSH.
- * Инструменты: устройства, запуск эмулятора, установка APK, скриншот,
- * тёмная тема/размер шрифта, logcat.
+ * dsh-android-tools — дополнение к @zseven-w/dsh-android.
+ *
+ * Устройства, запуск эмулятора, скриншоты и логи даёт маркет-плагин; здесь только
+ *   android_install — установка произвольного APK (не только Gradle-сборки);
+ *   android_set     — системная тема и font_scale для проверки доступности.
  *
  * @module dsh-android-tools
  */
-import { androidBoot, androidDevices, androidInstall, androidLogcat, androidScreenshot, androidSet } from './core.js';
+import { androidInstall, androidSet } from './core.js';
 
 export const name = 'dsh-android-tools';
 export const inject = ['tools'];
 
 const DEFAULTS = {
   adbPath: '/root/android-sdk/platform-tools/adb',
-  emulatorPath: '/root/android-sdk/emulator/emulator',
-  avdHome: '/root/Anooplan/build/avd-home',
-  emulatorHome: '/root/Anooplan/build/android-home',
-  defaultAvd: 'AnOOPlan25',
-  screenshotDir: '/root/Anooplan/build',
   root: '/root/Anooplan',
 };
 
@@ -30,20 +27,8 @@ const OUTPUT = {
   render: (_args, value) => [{ type: 'text', text: value.markdown || value.json }],
 };
 
-const list = (title, items) => [title, ...items.map(item => `- ${item}`)].join('\n');
-
-function renderDevices(result) {
-  if (!result.ok) return list('Устройства: ошибка', result.problems);
-  return list('Подключённые устройства:', result.devices.map(device => `${device.serial} — ${device.state} ${device.details}`));
-}
-
-function renderBoot(result) {
-  if (!result.ok) return list('Эмулятор: ошибка', result.problems);
-  return `Эмулятор готов: ${result.serial}${result.alreadyRunning ? ' (уже был запущен)' : ` (запущен ${result.avd})`}`;
-}
-
 function renderInstall(result) {
-  if (!result.ok) return list('Установка: ошибка', result.problems);
+  if (!result.ok) return ['Установка APK: ошибка', ...result.problems.map(p => `- ${p}`)].join('\n');
   return [
     `Устройство: ${result.serial}`,
     `APK: ${result.apk}`,
@@ -52,63 +37,24 @@ function renderInstall(result) {
   ].join('\n');
 }
 
-function renderScreenshot(result) {
-  if (!result.ok) return list('Скриншот: ошибка', result.problems);
-  return `Скриншот: \`${result.path}\` (${result.sizeBytes} Б, ${result.serial})`;
-}
-
 function renderSet(result) {
-  if (!result.ok) return list('Настройки: ошибка', result.problems);
+  if (!result.ok) return ['Настройки Android: ошибка', ...result.problems.map(p => `- ${p}`)].join('\n');
   return `Применено на ${result.serial}: ${result.applied.join(', ')}`;
 }
 
-function renderLogcat(result) {
-  if (!result.ok) return list('logcat: ошибка', result.problems);
-  return [`logcat (${result.lines} строк, ${result.serial}):`, '```', result.text || '—', '```'].join('\n');
-}
-
-/** Регистрирует Android-инструменты. */
+/** Регистрирует дополнения к Android-плагину. */
 export function apply(ctx, config = {}) {
   const cfg = { ...DEFAULTS, ...config };
 
   ctx.tools.register({
-    name: 'android_devices',
-    description: 'List connected Android devices/emulators via adb devices -l (serial, state, model). Read-only.',
-    parameters: { type: 'object', additionalProperties: false, properties: {} },
-    output: OUTPUT,
-    async execute() {
-      const result = androidDevices(cfg);
-      return { json: JSON.stringify(result, null, 2), markdown: renderDevices(result) };
-    },
-  });
-
-  ctx.tools.register({
-    name: 'android_boot',
-    description: 'Boot a headless Android emulator via the configured AVD if no device is connected, then wait until sys.boot_completed=1. Returns the adb serial.',
-    parameters: {
-      type: 'object',
-      additionalProperties: false,
-      properties: {
-        avd: { type: 'string', description: 'Optional AVD name; defaults to config.defaultAvd.' },
-        timeoutMs: { type: 'number', description: 'Boot timeout in milliseconds (default 180000).' },
-      },
-    },
-    output: OUTPUT,
-    async execute(args = {}) {
-      const result = await androidBoot(cfg, args);
-      return { json: JSON.stringify(result, null, 2), markdown: renderBoot(result) };
-    },
-  });
-
-  ctx.tools.register({
     name: 'android_install',
-    description: 'Install an APK on the connected device (adb install -r), optionally launch an activity and report versionName/versionCode.',
+    description: 'Install an arbitrary APK on the connected device (adb install -r), optionally launch an activity and report versionName/versionCode. Complements @zseven-w/dsh-android, which only installs Gradle build outputs.',
     parameters: {
       type: 'object',
       additionalProperties: false,
       properties: {
         apk: { type: 'string', description: 'APK path (absolute or relative to config.root); required.' },
-        serial: { type: 'string', description: 'Optional adb serial.' },
+        serial: { type: 'string', description: 'Optional adb serial; defaults to the first connected device.' },
         launch: { type: 'string', description: 'Optional component to launch, e.g. com.anooplan.app/.MainActivity.' },
       },
       required: ['apk'],
@@ -121,26 +67,8 @@ export function apply(ctx, config = {}) {
   });
 
   ctx.tools.register({
-    name: 'android_screenshot',
-    description: 'Capture the current device screen into a PNG file (default: build/screenshot-<timestamp>.png).',
-    parameters: {
-      type: 'object',
-      additionalProperties: false,
-      properties: {
-        serial: { type: 'string', description: 'Optional adb serial.' },
-        path: { type: 'string', description: 'Optional output path relative to config.root.' },
-      },
-    },
-    output: OUTPUT,
-    async execute(args = {}) {
-      const result = androidScreenshot(cfg, args);
-      return { json: JSON.stringify(result, null, 2), markdown: renderScreenshot(result) };
-    },
-  });
-
-  ctx.tools.register({
     name: 'android_set',
-    description: 'Switch system night mode (dark/light) and/or set system font_scale 0.85–1.6 on the connected device.',
+    description: 'Switch system night mode (dark/light) and/or set system font_scale 0.85–1.6 — for accessibility checks of the installed APK.',
     parameters: {
       type: 'object',
       additionalProperties: false,
@@ -154,25 +82,6 @@ export function apply(ctx, config = {}) {
     async execute(args = {}) {
       const result = androidSet(cfg, args);
       return { json: JSON.stringify(result, null, 2), markdown: renderSet(result) };
-    },
-  });
-
-  ctx.tools.register({
-    name: 'android_logcat',
-    description: 'Read the last logcat lines from the device (adb logcat -d), optionally filtered by a substring.',
-    parameters: {
-      type: 'object',
-      additionalProperties: false,
-      properties: {
-        serial: { type: 'string', description: 'Optional adb serial.' },
-        lines: { type: 'number', description: 'Number of lines, 1–2000 (default 200).' },
-        filter: { type: 'string', description: 'Optional substring filter (case-sensitive).' },
-      },
-    },
-    output: OUTPUT,
-    async execute(args = {}) {
-      const result = androidLogcat(cfg, args);
-      return { json: JSON.stringify(result, null, 2), markdown: renderLogcat(result) };
     },
   });
 }

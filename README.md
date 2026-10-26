@@ -444,9 +444,12 @@ npm run build        # tsc --noEmit + vite build
 Для работы над проектом используются локальные плагины DeepSeek Harness — папка [`dsh/`](dsh/README.md):
 
 - `dsh-anooplan-tools` — проверка APK и визуальные эталоны;
-- `dsh-android-tools` — обёртка adb: устройства, запуск эмулятора, установка, скриншоты,
-  тема/размер шрифта, logcat;
-- `dsh-github-tools` — релизы, загрузка ассетов, workflow-runs, issues.
+- `dsh-android-tools` — дополнение к `@zseven-w/dsh-android`: установка произвольного APK
+  и системная тема/шрифт;
+- `dsh-github-tools` — дополнение к `@perrylink/dsh-github`: релизы и загрузка ассетов.
+
+Маркет-плагины `@zseven-w/dsh-android` и `@perrylink/dsh-github` ставятся в профиль
+отдельно (`dsh plugin --profile web add …`) и не входят в репозиторий.
 
 Установка — `node dsh/install.mjs` (все плагины `dsh/plugins/*`); после перезапуска `dsh web`
 инструменты доступны агенту. На приложение, APK и офлайн-контракт не влияют.

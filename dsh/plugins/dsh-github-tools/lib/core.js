@@ -1,7 +1,10 @@
 /**
- * GitHub-инструменты для DSH: релизы, загрузка ассетов, workflow-runs, issues.
- * Использует только fetch (Node 18+), без octokit. Токен читается из
- * GH_TOKEN/GITHUB_TOKEN, в файлы не пишется; публичное чтение работает без него.
+ * Дополнение к @perrylink/dsh-github: то, чего нет в маркет-плагине —
+ * чтение релиза и загрузка/проверка релизных ассетов. Issues, PR, review и CI
+ * даёт @perrylink/dsh-github (инструменты gh_ и pr_), здесь они не дублируются.
+ *
+ * Только fetch (Node 18+), без octokit. Токен — GH_TOKEN/GITHUB_TOKEN из
+ * окружения; публичное чтение работает без него.
  *
  * @module dsh-github-tools/core
  */
@@ -109,52 +112,4 @@ export async function githubReleaseUpload(config, { tag, file, name } = {}) {
   } catch (error) {
     return { ok: false, problems: [`upload: ${error.message}`] };
   }
-}
-
-/** Список запусков workflow: статус, вывод, длительность. */
-export async function githubWorkflowRuns(config, { sha, branch, limit = 5 } = {}) {
-  const params = new URLSearchParams({ per_page: String(Math.min(Math.max(Number(limit) || 5, 1), 30)) });
-  if (sha) {
-    // GitHub API фильтрует runs только по полному sha: короткий резолвим через commits API.
-    let fullSha = sha;
-    if (sha.length < 40) {
-      const commit = await request(config, `/repos/${config.repoSlug}/commits/${encodeURIComponent(sha)}`);
-      if (commit.ok) fullSha = commit.data.sha;
-    }
-    params.set('head_sha', fullSha);
-  } else if (branch) {
-    params.set('branch', branch);
-  }
-  const result = await request(config, `/repos/${config.repoSlug}/actions/runs?${params}`);
-  if (!result.ok) return { ok: false, problems: [`GitHub API ${result.status}: ${result.error}`] };
-  const runs = (result.data.workflow_runs ?? []).map(run => ({
-    name: run.name,
-    status: run.status,
-    conclusion: run.conclusion,
-    headSha: run.head_sha?.slice(0, 7),
-    branch: run.head_branch,
-    createdAt: run.created_at,
-    durationSeconds: run.run_started_at && run.updated_at
-      ? Math.round((Date.parse(run.updated_at) - Date.parse(run.run_started_at)) / 1000)
-      : null,
-    url: run.html_url,
-  }));
-  return { ok: true, total: runs.length, runs, problems: [] };
-}
-
-/** Открытые/закрытые issues (PR исключаются). */
-export async function githubIssues(config, { state = 'open', limit = 20 } = {}) {
-  const params = new URLSearchParams({ state, per_page: String(Math.min(Math.max(Number(limit) || 20, 1), 100)) });
-  const result = await request(config, `/repos/${config.repoSlug}/issues?${params}`);
-  if (!result.ok) return { ok: false, problems: [`GitHub API ${result.status}: ${result.error}`] };
-  const issues = (result.data ?? [])
-    .filter(item => item.pull_request === undefined)
-    .map(item => ({
-      number: item.number,
-      title: item.title,
-      state: item.state,
-      labels: (item.labels ?? []).map(label => (typeof label === 'string' ? label : label.name)),
-      url: item.html_url,
-    }));
-  return { ok: true, total: issues.length, issues, problems: [] };
 }

@@ -29,6 +29,8 @@ dsh/
 | `@goodandready/dsh-messenger-gateway` | уведомления в Telegram | `dsh plugin --profile web add @goodandready/dsh-messenger-gateway` |
 | `@goodandready/dsh-russian-lang` | русская локализация интерфейса | `dsh plugin --profile web add @goodandready/dsh-russian-lang` |
 | `dsh-session-report` | отчёт о сессии в Telegram (локальный) | `dsh plugin --profile web add link:/root/.dsh/local-plugins/dsh-session-report` |
+| `@zseven-w/dsh-android` | Android-устройство, эмулятор, UI-дерево, скриншоты, логи | `dsh plugin --profile web add @zseven-w/dsh-android@0.1.0-rc.12` |
+| `@perrylink/dsh-github` | PR, review, issues, CI с approval-гейтом | `dsh plugin --profile web add @perrylink/dsh-github@0.7.27` |
 
 Точный список и версии — в `plugins.required.json`. Эти плагины не входят в
 рантайм приложения и не влияют на APK/офлайн-контракт.
@@ -44,25 +46,24 @@ dsh/
 Устройство/эмулятор и релизы GitHub намеренно не дублируются здесь: для этого есть
 `android_*` и `github_*` инструменты ниже.
 
-### `dsh-android-tools` — обёртка adb/эмулятора
+### `dsh-android-tools` — дополнение к `@zseven-w/dsh-android`
+
+Устройства, запуск эмулятора, скриншоты, UI-дерево и логи даёт маркет-плагин.
+Здесь только то, чего в нём нет:
 
 | Инструмент | Что делает |
 |---|---|
-| `android_devices` | Список устройств (`adb devices -l`). |
-| `android_boot` | Запуск headless-эмулятора из AVD и ожидание загрузки. |
-| `android_install` | `adb install -r`, опционально запуск activity. |
-| `android_screenshot` | Скриншот в `build/screenshot-<ts>.png`. |
-| `android_set` | Тёмная тема и `font_scale` 0.85–1.6. |
-| `android_logcat` | Последние строки `logcat -d` с фильтром. |
+| `android_install` | Установка **произвольного** APK (`adb install -r`), опционально запуск activity. |
+| `android_set` | Тёмная тема и `font_scale` 0.85–1.6 для проверки доступности. |
 
-### `dsh-github-tools` — GitHub
+### `dsh-github-tools` — дополнение к `@perrylink/dsh-github`
+
+PR, issues, review и CI даёт маркет-плагин. Здесь только релизные ассеты:
 
 | Инструмент | Что делает |
 |---|---|
 | `github_release` | Релиз по тегу/latest: активы, размеры, draft/prerelease. |
 | `github_release_upload` | Загрузка файла в релиз (нужен токен). |
-| `github_workflow_runs` | Actions-запуски с выводом и длительностью. |
-| `github_issues` | Issues (PR исключаются). |
 
 ## Установка
 
@@ -75,6 +76,15 @@ node dsh/install.mjs             # все плагины dsh/plugins/* в про
 включает плагины в `dsh.profile.bundles` (с резервной копией `package.json`) и
 проверяет `dsh --profile web --dump-config`. Если проверка не прошла — bundle
 откатываются.
+
+Маркет-плагины ставятся отдельно и в репозиторий не копируются:
+
+```bash
+dsh plugin --profile web add @zseven-w/dsh-android@0.1.0-rc.12 @perrylink/dsh-github@0.7.27
+```
+
+После установки проверьте, что оба пакета есть в `dsh.profile.bundles`, и перезапустите `dsh web`.
+Наши плагины намеренно не дублируют их инструменты, чтобы не было конфликта имён.
 
 После установки **перезапустите `dsh web`**: инструменты появляются в новой
 сессии. Проверка без перезапуска:

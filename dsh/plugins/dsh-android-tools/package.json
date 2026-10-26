@@ -1,8 +1,8 @@
 {
   "name": "dsh-android-tools",
-  "version": "0.1.0",
+  "version": "0.3.0",
   "private": true,
-  "description": "Local DSH Android/ADB wrapper: devices, emulator boot, install, screenshot, theme/font, logcat",
+  "description": "Complement to @zseven-w/dsh-android: install arbitrary APK and set system theme/font_scale",
   "type": "module",
   "main": "./lib/index.js",
   "exports": {
@@ -10,7 +10,17 @@
     "./cordis.patch.yml": "./cordis.patch.yml",
     "./package.json": "./package.json"
   },
-  "files": ["lib", "cordis.patch.yml", "README.md"],
-  "dsh": { "bundle": { "patch": "./cordis.patch.yml" } },
-  "engines": { "node": ">=20" }
+  "files": [
+    "lib",
+    "cordis.patch.yml",
+    "README.md"
+  ],
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  },
+  "engines": {
+    "node": ">=20"
+  }
 }
