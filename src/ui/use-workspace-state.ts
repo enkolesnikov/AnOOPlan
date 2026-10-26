@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import type { Point, Project } from '../model';
 import type { JournalSectionId } from '../export-pdf';
 import type { DiagnosticEntry } from '../diagnostics';
@@ -12,7 +12,7 @@ import { useProjectHistory } from '../use-project-history';
 import { useSnapshots } from '../use-snapshots';
 import { JOURNAL_SECTIONS } from './constants';
 import { freshProject } from './project-factory';
-import type { Selection, SheetTarget, StructureTab, Tool, View } from './types';
+import type { MultiSelection, Selection, SheetTarget, StructureTab, Tool, View } from './types';
 
 /**
  * Состояние и производные значения рабочего пространства: проект, выбор,
@@ -22,6 +22,7 @@ export function useWorkspaceState() {
   const [project, setProject] = useState<Project>(freshProject);
   const [floorId, setFloorId] = useState('');
   const [selection, setSelection] = useState<Selection>(null);
+  const [multi, setMulti] = useState<MultiSelection>(null);
   const [tool, setTool] = useState<Tool>('select');
   const [view, setView] = useState<View>('plan');
   const [menuOpen, setMenuOpen] = useState(false);
@@ -76,6 +77,8 @@ export function useWorkspaceState() {
   const longPressTimer = useRef<number | null>(null);
   projectRef.current = project;
   const floor = project.floors.find(f => f.id === floorId) || project.floors[0];
+  // Массовый выбор относится к одной вкладке: при переключении он сбрасывается.
+  useEffect(() => { setMulti(current => (current && current.tab !== tab ? null : current)); }, [tab]);
   const dirty = JSON.stringify(project) !== saved;
   const dirtyRef = useRef(false);
   dirtyRef.current = dirty;
@@ -139,10 +142,10 @@ export function useWorkspaceState() {
       return;
     }
     setProject(p); projectRef.current = p; setSaved(exists ? JSON.stringify(p) : ''); setPersisted(exists);
-    setFloorId(p.floors[0]?.id || ''); resetHistory(); setSelection(null); setDraft([]); setMeasure([]); setCalibration([]); setCableSegments([]); setView('plan'); setTool('select'); setError('');
+    setFloorId(p.floors[0]?.id || ''); resetHistory(); setSelection(null); setMulti(null); setDraft([]); setMeasure([]); setCalibration([]); setCableSegments([]); setView('plan'); setTool('select'); setError('');
   }
   return {
-    project, setProject, floorId, setFloorId, selection, setSelection, tool, setTool, view, setView,
+    project, setProject, floorId, setFloorId, selection, setSelection, multi, setMulti, tool, setTool, view, setView,
     menuOpen, setMenuOpen, aboutOpen, setAboutOpen, diagnostics, setDiagnostics, propsOpen, setPropsOpen,
     tab, setTab, search, setSearch, zoom, setZoom, pan, setPan, grid, setGrid, snap, setSnap, ortho, setOrtho, gridSize, setGridSize,
     draft, setDraft, calibration, setCalibration, measure, setMeasure, measureMode, setMeasureMode,

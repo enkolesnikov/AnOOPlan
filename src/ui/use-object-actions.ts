@@ -8,6 +8,7 @@ import { api } from './api';
 import { JOURNAL_SECTIONS, SHEET_SIZES } from './constants';
 import { number } from './format';
 import { nextPinNumber, uniqueNumber } from './project-helpers';
+import { affectedCableIds } from './multi-select';
 import type { ObjectKind } from './types';
 import type { WorkspaceState } from './use-workspace-state';
 
@@ -16,7 +17,7 @@ export function useObjectActions(s: WorkspaceState) {
   const {
     project, projectRef, selection, photoOwner, floor, route, gridSize, staticMode,
     sheetFormat, sheetScale, setSelection, setSheet, setPropsOpen, setTab, setMessage, setError,
-    mutate, setPrintSections,
+    mutate, setPrintSections, setMulti,
   } = s;
   function copyObject(kind: ObjectKind, id: string) {
     const source = projectRef.current;
@@ -69,6 +70,44 @@ export function useObjectActions(s: WorkspaceState) {
     }, 'Удаление');
     void purgePhotoBlobs(photoKeys, idbDelete);
     setSelection(null); setSheet(null); setPropsOpen(false);
+  }
+
+  /** Массовое удаление выбранных на вкладке объектов с очисткой кабелей и фото. */
+  function removeMany(kind: ObjectKind, ids: string[]): void {
+    const source = projectRef.current;
+    const selected = new Set(ids);
+    const targets = kind === 'equipment' ? source.equipment.filter(item => selected.has(item.id))
+      : kind === 'route' ? source.routes.filter(item => selected.has(item.id))
+        : kind === 'pin' ? source.pins.filter(item => selected.has(item.id))
+          : source.cables.filter(item => selected.has(item.id));
+    if (targets.length === 0) { setMulti(null); return; }
+    const cableIds = new Set(affectedCableIds(source, kind, ids));
+    const affected = source.cables.filter(cable => cableIds.has(cable.id));
+    const label = kind === 'equipment' ? 'оборудование' : kind === 'route' ? 'трассы' : kind === 'pin' ? 'замечания' : 'кабели';
+    if (!window.confirm(`Удалить выбранные ${label}: ${targets.length}?${affected.length ? ` Также будут удалены связанные кабели: ${affected.length}.` : ''}`)) return;
+    const photoKeys = kind === 'equipment' || kind === 'pin' ? orphanPhotoKeys(source, ids) : [];
+    mutate(p => {
+      if (kind === 'equipment') p.equipment = p.equipment.filter(item => !selected.has(item.id));
+      if (kind === 'route') p.routes = p.routes.filter(item => !selected.has(item.id));
+      if (kind === 'pin') p.pins = p.pins.filter(item => !selected.has(item.id));
+      p.cables = p.cables.filter(cable => !cableIds.has(cable.id));
+    }, 'Массовое удаление');
+    void purgePhotoBlobs(photoKeys, idbDelete);
+    setSelection(null); setSheet(null); setPropsOpen(false); setMulti(null);
+    setMessage(`Удалено: ${targets.length}${affected.length ? `, кабелей: ${affected.length}` : ''}.`);
+  }
+
+  /** Массовый перенос оборудования/замечаний на другой этаж. */
+  function moveMany(kind: 'equipment' | 'pin', ids: string[], floorId: string): void {
+    const targetFloor = projectRef.current.floors.find(item => item.id === floorId);
+    if (!targetFloor || ids.length === 0) return;
+    const selected = new Set(ids);
+    mutate(p => {
+      const collection = kind === 'equipment' ? p.equipment : p.pins;
+      for (const item of collection) if (selected.has(item.id)) item.floorId = floorId;
+    }, 'Перенос на этаж');
+    setSelection(null); setMulti(null);
+    setMessage(`Перенесено на «${targetFloor.name}»: ${ids.length}.`);
   }
 
   function copySelection() {
@@ -172,7 +211,7 @@ export function useObjectActions(s: WorkspaceState) {
     });
   }
   return {
-    copyObject, removeObject, copySelection, removeSelection,
+    copyObject, removeObject, removeMany, moveMany, copySelection, removeSelection,
     addPhoto, removePhoto, setItem,
     applySheetScale, addRiser, segmentField, uploadPdf, togglePrintSection,
   };

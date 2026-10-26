@@ -1,4 +1,5 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import type { MouseEvent } from 'react';
 import { createDemoProject } from '../demo';
 import { readDiagnostics } from '../diagnostics';
 import { readLocalProjects } from '../local-projects';
@@ -9,6 +10,8 @@ import { routeColor, routeKindOf } from '../route-kinds';
 import { routeAngleStats, routeLength, routeSummary } from '../engine';
 import { freshFloor, freshProject } from './project-factory';
 import { matchesQuery, searchCaption } from './search';
+import { allIds, bulkKind, isBulkTab, pageSlice, toggleId } from './multi-select';
+import type { ObjectKind } from './types';
 import type { AppUi } from './use-app-controller';
 
 type Tab = AppUi['tab'];
@@ -31,6 +34,17 @@ function RouteSummary({ project }: { project: Project }) {
   return <div className="route-summary">{summary.groups.map(group => <span key={group.group}><strong>{number(group.length)} м</strong> {group.group}{group.group === 'Кабель-канал' ? ` · углов ${group.angles.total}` : ''}</span>)}</div>;
 }
 
+/** Состояние строки в режиме массового выбора. */
+function rowBulk(ui: AppUi, tab: Tab, kind: ObjectKind, id: string) {
+  const ids = ui.multi?.tab === tab ? ui.multi.ids : null;
+  return {
+    active: ids !== null,
+    checked: ids?.includes(id) ?? false,
+    toggle: () => { if (ids) ui.setMulti({ tab, ids: toggleId(ids, id) }); },
+    menu: (event: MouseEvent) => { event.preventDefault(); ui.setSheet({ kind, id }); },
+  };
+}
+
 /** Строка этажа: номер, подложка, отметка и калибровка. */
 function FloorRow({ ui, floor: item, index }: { ui: AppUi; floor: AppUi['project']['floors'][number]; index: number }) {
   const { floor, setFloorId, setSelection, setMenuOpen } = ui;
@@ -47,7 +61,8 @@ function FloorRow({ ui, floor: item, index }: { ui: AppUi; floor: AppUi['project
 /** Строка оборудования: иконка типа, номер, наименование. */
 function EquipmentRow({ ui, item }: { ui: AppUi; item: AppUi['project']['equipment'][number] }) {
   const { selection, setSelection, setFloorId, setView, setMenuOpen } = ui;
-  return <button data-kind="equipment" data-id={item.id} className={`object-row ${selection?.id === item.id ? 'selected' : ''}`} onClick={() => { setSelection({ kind: 'equipment', id: item.id }); setFloorId(item.floorId); setView('plan'); setMenuOpen(false); }}>
+  const bulk = rowBulk(ui, 'equipment', 'equipment', item.id);
+  return <button data-kind="equipment" data-id={item.id} data-bulk={bulk.checked ? 'true' : undefined} className={`object-row ${!bulk.active && selection?.id === item.id ? 'selected' : ''}`} onClick={() => { if (bulk.active) { bulk.toggle(); return; } setSelection({ kind: 'equipment', id: item.id }); setFloorId(item.floorId); setView('plan'); setMenuOpen(false); }} onContextMenu={bulk.menu}>
     <span className="object-icon equipment-icon"><EquipmentIcon item={item} /></span>
     <span>
       <strong>{item.number}</strong>
@@ -59,7 +74,8 @@ function EquipmentRow({ ui, item }: { ui: AppUi; item: AppUi['project']['equipme
 /** Строка трассы: цвет, тип, длина, сегменты и углы коробов. */
 function RouteRow({ ui, item }: { ui: AppUi; item: AppUi['project']['routes'][number] }) {
   const { project, selection, setSelection, setFloorId, setView, setMenuOpen } = ui;
-  return <button data-kind="route" data-id={item.id} className={`object-row ${selection?.id === item.id ? 'selected' : ''}`} onClick={() => { setSelection({ kind: 'route', id: item.id }); if (item.segments[0]) setFloorId(item.segments[0].a.floorId); setView('plan'); setMenuOpen(false); }}>
+  const bulk = rowBulk(ui, 'routes', 'route', item.id);
+  return <button data-kind="route" data-id={item.id} data-bulk={bulk.checked ? 'true' : undefined} className={`object-row ${!bulk.active && selection?.id === item.id ? 'selected' : ''}`} onClick={() => { if (bulk.active) { bulk.toggle(); return; } setSelection({ kind: 'route', id: item.id }); if (item.segments[0]) setFloorId(item.segments[0].a.floorId); setView('plan'); setMenuOpen(false); }} onContextMenu={bulk.menu}>
     <span className="object-icon route-icon" style={{ color: routeColor(item) }}>⌁</span>
     <span>
       <strong>{item.number} · {item.type}</strong>
@@ -71,7 +87,8 @@ function RouteRow({ ui, item }: { ui: AppUi; item: AppUi['project']['routes'][nu
 /** Строка замечания: номер, текст и статус. */
 function PinRow({ ui, item }: { ui: AppUi; item: AppUi['project']['pins'][number] }) {
   const { selection, setSelection, setFloorId, setView, setMenuOpen } = ui;
-  return <button data-kind="pin" data-id={item.id} className={`object-row ${selection?.id === item.id ? 'selected' : ''}`} onClick={() => { setSelection({ kind: 'pin', id: item.id }); setFloorId(item.floorId); setView('plan'); setMenuOpen(false); }}>
+  const bulk = rowBulk(ui, 'pins', 'pin', item.id);
+  return <button data-kind="pin" data-id={item.id} data-bulk={bulk.checked ? 'true' : undefined} className={`object-row ${!bulk.active && selection?.id === item.id ? 'selected' : ''}`} onClick={() => { if (bulk.active) { bulk.toggle(); return; } setSelection({ kind: 'pin', id: item.id }); setFloorId(item.floorId); setView('plan'); setMenuOpen(false); }} onContextMenu={bulk.menu}>
     <span className="object-icon pin-icon">📍</span>
     <span>
       <strong>{item.number}</strong>
@@ -84,7 +101,8 @@ function PinRow({ ui, item }: { ui: AppUi; item: AppUi['project']['pins'][number
 function CableRow({ ui, item }: { ui: AppUi; item: AppUi['project']['cables'][number] }) {
   const { selection, setSelection, setMenuOpen, cableCalcs } = ui;
   const calc = cableCalcs.get(item.id)!;
-  return <button data-kind="cable" data-id={item.id} className={`object-row ${selection?.id === item.id ? 'selected' : ''}`} onClick={() => { setSelection({ kind: 'cable', id: item.id }); setMenuOpen(false); }}>
+  const bulk = rowBulk(ui, 'cables', 'cable', item.id);
+  return <button data-kind="cable" data-id={item.id} data-bulk={bulk.checked ? 'true' : undefined} className={`object-row ${!bulk.active && selection?.id === item.id ? 'selected' : ''}`} onClick={() => { if (bulk.active) { bulk.toggle(); return; } setSelection({ kind: 'cable', id: item.id }); setMenuOpen(false); }} onContextMenu={bulk.menu}>
     <span className="object-icon cable-icon">↝</span>
     <span>
       <strong>{item.number} · {item.brand || item.name}</strong>
@@ -117,9 +135,11 @@ function SearchBox({ ui }: { ui: AppUi }) {
   </div>;
 }
 
-/** Список объектов активной вкладки с фильтром по поисковой строке. */
+/** Список объектов активной вкладки с фильтром и порционной отрисовкой. */
 function ObjectList({ ui }: { ui: AppUi }) {
   const { tab, project, listPressDown, moveLongPress, cancelLongPress, search } = ui;
+  const [limit, setLimit] = useState(80);
+  useEffect(() => { setLimit(80); }, [tab, search]);
   const floors = project.floors.filter(item => matchesQuery(search, [item.name]));
   const equipment = project.equipment.filter(item => matchesQuery(search, [item.number, item.name, item.type, item.note]));
   const routes = project.routes.filter(item => matchesQuery(search, [item.number, item.type, item.note, item.subsystem]));
@@ -129,14 +149,37 @@ function ObjectList({ ui }: { ui: AppUi }) {
   const total = project[tab].length;
   const caption = searchCaption(search, found, total);
   const emptyText = search.trim() ? `Ничего не найдено по «${search.trim()}».` : 'Объектов пока нет.';
+  const rows = tab === 'floors' ? pageSlice(floors, limit).map((item, index) => <FloorRow key={item.id} ui={ui} floor={item} index={index} />)
+    : tab === 'equipment' ? pageSlice(equipment, limit).map(item => <EquipmentRow key={item.id} ui={ui} item={item} />)
+      : tab === 'routes' ? pageSlice(routes, limit).map(item => <RouteRow key={item.id} ui={ui} item={item} />)
+        : tab === 'pins' ? pageSlice(pins, limit).map(item => <PinRow key={item.id} ui={ui} item={item} />)
+          : pageSlice(cables, limit).map(item => <CableRow key={item.id} ui={ui} item={item} />);
   return <div className="object-list" onPointerDown={listPressDown} onPointerMove={moveLongPress} onPointerUp={cancelLongPress} onPointerCancel={cancelLongPress} onPointerLeave={cancelLongPress}>
     {caption ? <div className="search-count">{caption}</div> : null}
-    {tab === 'floors' ? floors.map((item, index) => <FloorRow key={item.id} ui={ui} floor={item} index={index} />)
-      : tab === 'equipment' ? equipment.map(item => <EquipmentRow key={item.id} ui={ui} item={item} />)
-        : tab === 'routes' ? routes.map(item => <RouteRow key={item.id} ui={ui} item={item} />)
-          : tab === 'pins' ? pins.map(item => <PinRow key={item.id} ui={ui} item={item} />)
-            : cables.map(item => <CableRow key={item.id} ui={ui} item={item} />)}
+    {rows}
     {found === 0 && <div className="empty-list">{emptyText}{!search.trim() && <><br />Добавьте их на плане.</>}</div>}
+    {found > limit && <button type="button" className="show-more" onClick={() => setLimit(value => value + 100)}>Показать ещё ({found - limit})</button>}
+  </div>;
+}
+
+/** Панель массового выбора: режим, «все», удаление и перенос на этаж. */
+function MultiControls({ ui }: { ui: AppUi }) {
+  const { tab, multi, setMulti, project, removeMany, moveMany } = ui;
+  if (!isBulkTab(tab)) return null;
+  const kind = bulkKind(tab)!;
+  const active = multi?.tab === tab;
+  const ids = active ? multi.ids : [];
+  const all = allIds(project[tab] as Array<{ id: string }>);
+  return <div className="multi-controls">
+    <button type="button" className={active ? 'active' : ''} onClick={() => setMulti(active ? null : { tab, ids: [] })}>{active ? 'Отменить выбор' : 'Выбрать'}</button>
+    {active && <>
+      <button type="button" onClick={() => setMulti({ tab, ids: all })}>Все ({all.length})</button>
+      {ids.length > 0 && <button type="button" className="danger" onClick={() => removeMany(kind, ids)}>Удалить ({ids.length})</button>}
+      {(tab === 'equipment' || tab === 'pins') && ids.length > 0 && <select aria-label="Перенести на этаж" value="" onChange={event => { const floorId = event.target.value; if (floorId) moveMany(tab === 'equipment' ? 'equipment' : 'pin', ids, floorId); }}>
+        <option value="">На этаж…</option>
+        {project.floors.map(floor => <option key={floor.id} value={floor.id}>{floor.name}</option>)}
+      </select>}
+    </>}
   </div>;
 }
 
@@ -184,6 +227,7 @@ export function Sidebar({ ui }: { ui: AppUi }) {
       <SearchBox ui={ui} />
       <StructureTabs project={project} tab={tab} onTab={setTab} />
       {tab === 'routes' && project.routes.length > 0 && <RouteSummary project={project} />}
+      <MultiControls ui={ui} />
       <ObjectList ui={ui} />
       <SidebarActions ui={ui} />
       <ProjectActions ui={ui} />

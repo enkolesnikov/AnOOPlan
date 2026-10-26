@@ -8,5 +8,7 @@ export type View = 'plan' | 'journal' | 'specs' | 'estimate';
 export type ObjectKind = 'equipment' | 'route' | 'cable' | 'pin';
 /** Вкладки структуры проекта в сайдбаре. */
 export type StructureTab = 'floors' | 'equipment' | 'routes' | 'cables' | 'pins';
+/** Набор объектов активной вкладки, выбранных для массового действия. */
+export type MultiSelection = { tab: StructureTab; ids: string[] } | null;
 /** Объект, для которого открыта нижняя шторка действий. */
 export type SheetTarget = { kind: ObjectKind; id: string } | null;

@@ -22,7 +22,7 @@ export function PlanScreen({ ui }: { ui: AppUi }) {
     setMessage, cableFrom, setCableFrom, cableTo, setCableTo, setCableSegments, cableSegments, finishCable,
     setError, pdfError, pdfNote, stage, pointerDown, pointerMove, pointerUp, pointerCancel, stagePressDown,
     moveLongPress, cancelLongPress, zoomAt, armTap, position, startDrag, pinching, selection, setSelection,
-    setTab, setView, pointer, route, cable,
+    setTab, setView, pointer, route, cable, setSheet,
   } = ui;
   const [dimensionFrom, setDimensionFrom] = useState<string | null>(null);
   useEffect(() => { setDimensionFrom(null); }, [tool]);
@@ -47,6 +47,15 @@ export function PlanScreen({ ui }: { ui: AppUi }) {
         onPointerDown={pointerDown} onPointerMove={pointerMove} onPointerUp={pointerUp} onPointerCancel={pointerCancel}
         onPointerDownCapture={stagePressDown} onPointerMoveCapture={moveLongPress} onPointerUpCapture={cancelLongPress}
         onWheel={e => { e.preventDefault(); changeZoom(zoom * (e.deltaY < 0 ? 1.1 : 1 / 1.1)); }}
+        onContextMenu={event => {
+          const element = (event.target as Element).closest('[data-object]');
+          if (!element) return;
+          const kind = element.getAttribute('data-object');
+          const id = kind === 'segment' ? element.getAttribute('data-route') : element.getAttribute('data-id');
+          if (!id || (kind !== 'equipment' && kind !== 'pin' && kind !== 'segment')) return;
+          event.preventDefault();
+          setSheet({ kind: kind === 'segment' ? 'route' : kind, id });
+        }}
         onDoubleClick={e => { if ((e.target as Element).closest('[data-object]')) return; e.preventDefault(); if (zoom < 1.5) zoomAt(e.clientX, e.clientY, zoom * 2.4); else fit(); }}>
         {floor && <div className="drawing-sheet" style={{ width: floor.width, height: floor.height, transform: `translate(${pan.x}px,${pan.y}px) scale(${zoom})` }}>
           {floor.pdfId ? <canvas ref={canvas} aria-label={`План: ${floor?.name ?? 'этаж'}`} style={renderPlan ? { position: 'absolute', left: renderPlan.clipX, top: renderPlan.clipY, width: renderPlan.clipWidth, height: renderPlan.clipHeight } : { width: '100%', height: '100%' }} /> : <div className="no-pdf"><span>AnOOPlan / {floor.name.toUpperCase()}</span><p>Рабочее поле без PDF</p><small>{project.name.includes('Учеб') ? 'Синтетическая схема для проверки расчёта' : 'Загрузите план PDF и задайте масштаб по двум точкам'}</small></div>}

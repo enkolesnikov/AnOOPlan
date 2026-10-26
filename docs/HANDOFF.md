@@ -13,8 +13,8 @@
 - Релизы с APK: <https://github.com/enkolesnikov/AnOOPlan/releases>
 - Веб-версия: <https://enkolesnikov.github.io/AnOOPlan/> — та же сборка, что и APK; публикуется
   вручную по запросу (приоритет — Android).
-- Текущая версия: **2.6.0**, versionCode 35, `com.anooplan.app`, minSdk 24, targetSdk 35.
-  APK ~1,5 МБ, WebView 98+, 251 юнит-тест + 231 проверка смоука + 2 E2E.
+- Текущая версия: **2.6.1**, versionCode 36, `com.anooplan.app`, minSdk 24, targetSdk 35.
+  APK ~1,5 МБ, WebView 98+, 255 юнит-тестов + 231 проверка смоука + 2 E2E.
 - Возможности: PDF-планы и калибровка, оборудование с иконками и цветом, трассы, кабели и автопрокладка,
   журнал, справочник цен и смета с коммерческим предложением, печатные формы (титул, оглавление,
   штамп ГОСТ, лист изменений), печать выбранных разделов, обмен PDF/XLSX и проектом `.anooplan`,
@@ -25,15 +25,34 @@
 - **Курс — Android-first.** Облако — в планах (дальняя перспектива); приложение полностью офлайн,
   разрешение `INTERNET` не запрашивается, сетевых модулей нет.
 - **Удобство:** поиск и фильтры по спискам (`Ctrl+K`), дублирование объектов (`Ctrl+D`), undo по
-  действиям с подписями, горячие клавиши; на телефоне сайдбар прокручивается и не ломается при клавиатуре.
+  действиям с подписями, горячие клавиши, мультивыбор и массовые действия, контекстные меню,
+  порционная отрисовка больших списков; на телефоне сайдбар прокручивается и не ломается при клавиатуре.
 - **Доступность:** системный размер шрифта Android (textZoom 85–160 %), тёмная тема, высокий контраст,
   reduced-motion; бюджет памяти рендера плана — 8 Мпикс с предупреждением.
 - Подпись: SHA-256 сертификата `6431374cf6a7d385c4c47f0f2bf54fcb5ee5b2c7120f057b18c4062af92fe097`.
-- Текущий релиз: [v2.6.0 «Быстрый проект»](https://github.com/enkolesnikov/AnOOPlan/releases/tag/v2.6.0) —
-  подписанный APK `AnOOPlan-2.6.0.apk` (versionCode 35), описание из аннотации тега и **3 скриншота**
-  (`01-search.png`, `02-duplicate.png`, `03-mobile-search.png`) в assets.
-- Предыдущий релиз: [v2.5.0 «Поле и доступность»](https://github.com/enkolesnikov/AnOOPlan/releases/tag/v2.5.0) —
-  APK `AnOOPlan-2.5.0.apk` (versionCode 34), 3 скриншота в assets.
+- Текущий релиз: [v2.6.1 «Мультивыбор и списки»](https://github.com/enkolesnikov/AnOOPlan/releases/tag/v2.6.1) —
+  подписанный APK `AnOOPlan-2.6.1.apk` (versionCode 36), описание из аннотации тега и **3 скриншота**
+  (`01-bulk-select.png`, `02-context-menu.png`, `03-mobile-bulk.png`) в assets.
+- Предыдущий релиз: [v2.6.0 «Быстрый проект»](https://github.com/enkolesnikov/AnOOPlan/releases/tag/v2.6.0) —
+  APK `AnOOPlan-2.6.0.apk` (versionCode 35), 3 скриншота в assets.
+
+### Состояние на 2026-10-27 (2.6.1)
+
+- **Мультивыбор:** `src/ui/multi-select.ts` (`toggleId`, `allIds`, `bulkKind`, `pageSlice`,
+  `affectedCableIds`), состояние `multi` в workspace, кнопка «Выбрать»/«Все»/«Удалить (N)»/«На этаж…»
+  на вкладках оборудования, трасс, кабелей и замечаний. Удаление чистит связанные кабели и фото,
+  один шаг undo; перенос оборудования/замечаний на этаж — одной операцией.
+- **Контекстные меню:** ПКМ по строке списка и по оборудованию/замечанию/трассе на плане открывает
+  существующую шторку действий; мобильное долгое нажатие работает как раньше.
+- **Большие списки:** порционная отрисовка по 80 с «Показать ещё» (`pageSlice`), сброс при смене
+  вкладки/поиска; мультивыбор сбрасывается при смене вкладки и загрузке проекта.
+- **Проверки:** 255 юнит-тестов (+4 на мультивыбор), 231 смоук, 2 E2E, 4 визуальных эталона;
+  покрытие 95,4/87,9/95,7 %; JS 436,2 КБ / CSS 36,3 КБ; APK `AnOOPlan-2.6.1.apk` 1 472 898 Б,
+  versionCode 36, сертификат прежний, `INTERNET` нет.
+- **DSH:** `@perrylink/dsh-github` 0.7.27 и `@zseven-w/dsh-android` 0.1.0-rc.12 установлены;
+  мои плагины ужаты до уникального (`android_install/set`, `github_release/upload`, APK/визуал);
+  `github_release_upload` читает токен из DSH credential store (`GITHUB_TOKEN`).
+- **Не вошло:** полный распил `AppUi`, прямые тесты UI-хуков — техдолг; шаблоны/импорт XLSX — 2.7.0.
 
 ### Состояние на 2026-10-26 (2.6.0)
 
@@ -195,7 +214,7 @@ APK всегда работает в режиме «Браузер»: запро
 | Совместимость | `src/compat.ts`, `src/polyfills.ts`, `src/pdf-worker.ts` | фолбэки WebView, полифилл `Promise.withResolvers` |
 | Оболочка Android | `android/java/com/anooplan/app/` | `MainActivity`, `AssetServer`, `NativeBridge`, `PdfPrinter`, `ShareProvider` |
 | Сборка APK | `scripts/build-apk.sh`, `scripts/fetch-tools.sh` | aapt + javac + d8 + zipalign + apksigner, **без Gradle** |
-| Тесты | `tests/*.test.ts`, `tests/e2e/`, `scripts/smoke-dom.mjs` | 251 юнит-тест (~10 с), смоук happy-dom (231 проверка) и 2 Playwright E2E; общие фикстуры — `tests/fixtures.ts`; покрытие ~95 % строк |
+| Тесты | `tests/*.test.ts`, `tests/e2e/`, `scripts/smoke-dom.mjs` | 255 юнит-тестов (~10 с), смоук happy-dom (231 проверка) и 2 Playwright E2E; общие фикстуры — `tests/fixtures.ts`; покрытие ~95 % строк |
 | CI | `.github/workflows/ci.yml` | на push: lint, `tsc`, покрытие с порогами + lcov, сборка + бюджет бандла, смоук, E2E; Codacy — при наличии секрета; Pages и неподписанный APK — вручную |
 | Релиз-скрипты | `scripts/status.mjs`, `coverage.mjs`, `check-size.mjs` | статус проекта, пороги покрытия (+lcov для Codacy) и бюджета бандла без новых зависимостей |
 
@@ -336,7 +355,7 @@ APK всегда работает в режиме «Браузер»: запро
 
 ```bash
 npm ci                      # зависимости (Node 22.5+, проверено на Node 24)
-npm test                    # 251 тест (движок, КНС/сегменты, иконки, смета, формы, миграции, API, экспорт)
+npm test                    # 255 тестов (движок, КНС/сегменты, иконки, смета, формы, миграции, API, экспорт)
 npm run lint                # ESLint (0 ошибок), шаг CI перед тестами
 npm run coverage            # тесты с покрытием и порогами + coverage/lcov.info (используется в CI)
 npm run size                # бюджет стартового бандла (после npm run build)
@@ -430,7 +449,7 @@ Android-инструменты; JDK на VPS уже установлен. Есл
 
 ## Тесты и что ими не покрыто
 
-- 251 юнит-тест: движок, заполнение КНС и сегментные размеры (`tests/tray-fill.test.ts`), типы и
+- 255 юнит-тестов: движок, заполнение КНС и сегментные размеры (`tests/tray-fill.test.ts`), типы и
   цвета КНС (`tests/route-kinds.test.ts`), доступность (textZoom, тёмная тема, контраст —
   `tests/a11y.test.ts`, `tests/android-config.test.ts`), память рендера (`tests/render-plan.test.ts`),
   страницы плана и note в PDF (`tests/plan-pages.test.ts`, `tests/export.test.ts`), иконки и цвет
@@ -439,7 +458,7 @@ Android-инструменты; JDK на VPS уже установлен. Есл
   IndexedDB, localStorage, CSV, многостраничный план, пины, диагностика, миграции схемы, конфигурация
   Android (intent-фильтры, ShareProvider, fontScale/textZoom) и релиза. Общие фикстуры — `tests/fixtures.ts`.
 - Покрытие: `npm run coverage` (`--experimental-test-coverage`, без новых зависимостей) —
-  95,5 % строк / 87,7 % веток / 95,6 % функций по модулям, которые импортируются тестами; lcov пишется
+  95,4 % строк / 87,9 % веток / 95,7 % функций по модулям, которые импортируются тестами; lcov пишется
   в `coverage/lcov.info` (27 файлов) и загружается в Codacy в CI при наличии `CODACY_PROJECT_TOKEN`.
   UI-файлы (`src/ui/`, хуки) в метрику почти не входят — их покрывают смоук и E2E; прямые тесты хуков
   остаются кандидатом на 3.0.0.
@@ -610,7 +629,7 @@ Android-инструменты; JDK на VPS уже установлен. Есл
 ## Первые шаги в новой сессии
 
 1. Клонировать репозиторий / открыть `/root/Anooplan`, `git checkout main && git pull`.
-2. `npm ci && npm run lint && npm test && npm run smoke` — убедиться, что база зелёная (251/231);
+2. `npm ci && npm run lint && npm test && npm run smoke` — убедиться, что база зелёная (255/231);
    `npm run coverage` и `npm run size` — пороги (93/85/92 %, JS ≤460 КБ, CSS ≤40 КБ).
 3. `bash scripts/fetch-tools.sh && bash scripts/build-apk.sh` — собрать APK 2.6.0 локально
    (на VPS keystore уже на месте); проверить версию/versionCode, сертификат и отсутствие `INTERNET`,

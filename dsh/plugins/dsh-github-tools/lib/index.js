@@ -43,6 +43,7 @@ function renderRelease(result) {
 
 function renderUpload(result) {
   if (!result.ok) return ['Загрузка ассета: ошибка', ...result.problems.map(p => `- ${p}`)].join('\n');
+  if (result.dryRun) return `Dry-run: в ${result.tag} был бы загружен ${result.assetName} — ${result.sizeBytes} Б (токен найден, релиз доступен)`;
   return `Ассет загружен в ${result.tag}: ${result.asset.name} — ${result.asset.size} Б`;
 }
 
@@ -77,6 +78,7 @@ export function apply(ctx, config = {}) {
         tag: { type: 'string', description: 'Release tag; required.' },
         file: { type: 'string', description: 'Local file path (absolute or relative to the repo root); required.' },
         name: { type: 'string', description: 'Optional asset name; defaults to the file basename.' },
+        dryRun: { type: 'boolean', description: 'Validate token/release/file and return what would be uploaded, without uploading.' },
       },
       required: ['tag', 'file'],
     },

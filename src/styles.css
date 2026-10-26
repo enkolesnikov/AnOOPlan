@@ -160,6 +160,16 @@ textarea { resize: vertical; min-height: 54px; }
 }
 .structure-tabs button span { font-size: 11px; color: var(--muted); }
 .structure-tabs button.active { color: var(--accent-2); background: var(--accent-soft); }
+.multi-controls {
+  display: flex; flex-wrap: wrap; gap: 6px; align-items: center;
+  padding: 8px 10px; border-bottom: 1px solid var(--border-soft);
+}
+.multi-controls button { font-size: 12px; padding: 5px 8px; border-radius: 7px; }
+.multi-controls button.active { border-color: var(--accent); background: var(--accent-soft); color: var(--accent-2); }
+.multi-controls select { font-size: 12px; padding: 5px 6px; border-radius: 7px; flex: 1; min-width: 110px; }
+.object-row[data-bulk="true"] { border-color: var(--accent); background: var(--accent-soft); }
+.object-row[data-bulk="true"]::after { content: '✓'; margin-left: 6px; color: var(--accent-2); font-weight: 700; }
+.show-more { width: 100%; margin: 6px 0; padding: 7px; font-size: 12px; }
 .object-list { flex: 1; overflow-y: auto; padding: 6px; min-height: 0; }
 .object-row {
   display: flex; align-items: center; gap: 10px; width: 100%;

@@ -9,14 +9,31 @@
  * @module dsh-github-tools/core
  */
 import { existsSync, readFileSync, statSync } from 'node:fs';
-import { basename, resolve } from 'node:path';
+import { homedir } from 'node:os';
+import { basename, join, resolve } from 'node:path';
 
 function baseUrl(config) {
   return (config.apiBase || 'https://api.github.com').replace(/\/+$/, '');
 }
 
+function credentialStoreToken() {
+  // Токен, добавленный через веб-интерфейс DSH (Plugins → GitHub), лежит в
+  // ~/.dsh/.credentials.yaml. Читаем только значение GITHUB_TOKEN/GH_TOKEN и
+  // никогда не печатаем его; env имеет приоритет.
+  const home = process.env.DSH_HOME || join(homedir(), '.dsh');
+  const file = join(home, '.credentials.yaml');
+  if (!existsSync(file)) return '';
+  try {
+    const text = readFileSync(file, 'utf8');
+    const match = /^\s*(?:GITHUB_TOKEN|GH_TOKEN):\s*(.+?)\s*$/m.exec(text);
+    return match ? match[1].trim().replace(/^['"]|['"]$/g, '') : '';
+  } catch {
+    return '';
+  }
+}
+
 function authToken() {
-  return process.env.GH_TOKEN || process.env.GITHUB_TOKEN || '';
+  return process.env.GH_TOKEN || process.env.GITHUB_TOKEN || credentialStoreToken();
 }
 
 async function request(config, path, { method = 'GET', body, contentType, token, timeoutMs = 30_000 } = {}) {
@@ -69,7 +86,7 @@ export async function githubRelease(config, { tag = 'latest' } = {}) {
 }
 
 /** Загрузка файла в релиз по тегу. Требует GH_TOKEN/GITHUB_TOKEN с contents:write. */
-export async function githubReleaseUpload(config, { tag, file, name } = {}) {
+export async function githubReleaseUpload(config, { tag, file, name, dryRun = false } = {}) {
   if (!tag) return { ok: false, problems: ['нужен tag релиза'] };
   if (!file) return { ok: false, problems: ['нужен file — путь к ассету'] };
   if (!authToken()) return { ok: false, problems: ['нет GH_TOKEN/GITHUB_TOKEN в окружении'] };
@@ -82,6 +99,9 @@ export async function githubReleaseUpload(config, { tag, file, name } = {}) {
   if (!uploadUrl) return { ok: false, problems: ['у релиза нет upload_url'] };
 
   const assetName = name || basename(target);
+  if (dryRun) {
+    return { ok: true, dryRun: true, tag, assetName, sizeBytes: statSync(target).size, uploadUrl: Boolean(uploadUrl), problems: [] };
+  }
   const contentType = /\.png$/i.test(assetName) ? 'image/png'
     : /\.apk$/i.test(assetName) ? 'application/vnd.android.package-archive'
       : 'application/octet-stream';

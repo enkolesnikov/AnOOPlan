@@ -105,7 +105,9 @@ node dsh/plugins/dsh-github-tools/selftest.mjs
   `defaultAvd`, `screenshotDir`;
 - `dsh-github-tools`: `repoSlug`, `apiBase`, `root`.
 
-`GH_TOKEN`/`GITHUB_TOKEN` читается только из окружения; в файлы не пишется.
+`GH_TOKEN`/`GITHUB_TOKEN` берётся из окружения, иначе из DSH credential store
+(`~/.dsh/.credentials.yaml`); в репозиторий и логи не пишется. У `github_release_upload`
+есть `dryRun: true` для проверки токена без загрузки.
 
 ## Безопасность
 
