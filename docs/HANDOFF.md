@@ -54,6 +54,10 @@
 - **Проверки:** 251 юнит-тест, 231 смоук, 2 E2E, 4 визуальных эталона; покрытие 95,5/87,7/95,6 %;
   JS 431,8 КБ / CSS 35,7 КБ; `npm audit` 0; APK `AnOOPlan-2.6.0.apk` 1 468 802 Б, versionCode 35,
   сертификат прежний, `INTERNET` нет; установка и работа проверены на эмуляторе Android 15.
+- **Релиз:** тег `v2.6.0` на коммите `10794a7`; CI и CodeQL зелёные (CI — 108 с). GitHub Release
+  [v2.6.0 «Быстрый проект»](https://github.com/enkolesnikov/AnOOPlan/releases/tag/v2.6.0) опубликован:
+  APK 1 468 802 Б и 3 скриншота (`01-search.png`, `02-duplicate.png`, `03-mobile-search.png`) в assets;
+  релизный APK скачан и проверен (сертификат, versionCode 35, без `INTERNET`), установлен на эмулятор.
 
 ### Состояние на 2026-10-26 (2.5.0)
 
@@ -364,7 +368,7 @@ Android-инструменты; JDK на VPS уже установлен. Есл
 - `.github/workflows/ci.yml` — обязательный прогон на каждый push/PR: `npm ci`, `npm run lint`,
   `tsc --noEmit`, тесты с покрытием (`npm run coverage`, lcov), загрузка покрытия в Codacy при наличии
   секрета `CODACY_PROJECT_TOKEN`, сборка + бюджет бандла (`npm run size`), смоук, E2E.
-  Это единственный автоматический workflow; держать его ≤130 с (2.5.0 — 123 с; после ускорения и добавления knip — ~99 с).
+  Это единственный автоматический workflow; держать его ≤130 с (2.5.0 — 123 с; 2.6.0 — 108 с).
 - `.github/workflows/android-apk.yml` — **вручную** (`workflow_dispatch`): неподписанный APK
   (`AnOOPlan-apk-unsigned`) для проверки установки. Ключ в раннере не создаётся.
 - `.github/workflows/deploy.yml` — **вручную** (`workflow_dispatch`): публикация веб-версии на Pages.
