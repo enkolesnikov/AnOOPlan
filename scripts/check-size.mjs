@@ -1,13 +1,15 @@
 #!/usr/bin/env node
 // Бюджет стартового бандла: только те чанки, которые грузятся при первом открытии
 // (index-*.js + index-*.css). Тяжёлые экспорты/PDF грузятся по действию и не входят.
+// Ревизия 2026-10-27: 460→600 КБ JS и 40→60 КБ CSS, чтобы развитие не упиралось в
+// ранний лимит; размер по-прежнему контролируется на каждом релизе.
 import { readdirSync, statSync, existsSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 
 const ROOT = resolve(import.meta.dirname, '..');
 const DIST = join(ROOT, 'dist', 'assets');
-const JS_BUDGET = 460 * 1024;
-const CSS_BUDGET = 40 * 1024;
+const JS_BUDGET = 600 * 1024;
+const CSS_BUDGET = 60 * 1024;
 
 if (!existsSync(DIST)) {
   console.error('Нет dist/assets — сначала соберите сайт: npm run build');

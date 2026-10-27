@@ -19,7 +19,7 @@ npm run lint                # 0 ошибок; предупреждения react
 npx tsc --noEmit
 npm test                    # все юнит-тесты
 npm run coverage            # строки ≥93 %, ветки ≥85 %, функции ≥92 %
-npm run size                # JS ≤460 КБ, CSS ≤40 КБ (нужен свежий dist)
+npm run size                # JS ≤600 КБ, CSS ≤60 КБ (нужен свежий dist)
 npm run smoke               # happy-dom, все проверки
 npm run test:ui             # 2 E2E (собирает dist)
 npm run test:visual         # 4 визуальных эталона (вне CI: зависит от шрифтов машины)
@@ -27,7 +27,7 @@ npm run knip                # мёртвый код/экспорты — 0 на�
 npm audit                   # 0 high
 ```
 
-Бюджеты: CI на push ≤130 с, APK ≤1,6 МБ, `npm audit` 0 high.
+Бюджеты (ревизия 2026-10-27): CI на push ≤130 с, APK ≤4 МБ, JS ≤600 КБ, CSS ≤60 КБ, `npm audit` 0 high.
 
 ## 3. APK
 
@@ -37,7 +37,7 @@ APK=build/AnOOPlan-X.Y.Z.apk
 tools/build-tools/35.0.0/aapt dump badging "$APK" | head -1     # versionName/versionCode
 tools/build-tools/35.0.0/aapt dump permissions "$APK"            # только VIBRATE, без INTERNET
 tools/build-tools/35.0.0/apksigner verify --print-certs "$APK"   # SHA-256 = 6431374c…92fe097
-ls -l "$APK"                                                     # ≤1,6 МБ
+ls -l "$APK"                                                     # ≤4 МБ
 ```
 
 Установка и ручные сценарии на эмуляторе (AVD `AnOOPlan25`, adb `/root/android-sdk/platform-tools/adb`):

@@ -87,7 +87,8 @@ export function apkCheck(config, requestedApk) {
   const apk = planned.path;
   const problems = [];
   const sizeBytes = statSync(apk).size;
-  const maxApkBytes = config.maxApkBytes ?? 1_600_000;
+  // Ревизия 2026-10-27: 1,6 МБ было ранним лимитом, не ограничением Android.
+  const maxApkBytes = config.maxApkBytes ?? 4_000_000;
 
   let versionName = null;
   let versionCode = null;

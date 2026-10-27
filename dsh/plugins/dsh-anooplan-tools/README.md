@@ -25,7 +25,8 @@ node dsh/install.mjs --dry-run  # показать действия
 
 ## Настройка
 
-`cordis.patch.yml`: `root`, `buildToolsDir`, `expectedCertSha256`, `maxApkBytes`.
+`cordis.patch.yml`: `root`, `buildToolsDir`, `expectedCertSha256`, `maxApkBytes`
+(по умолчанию 4 000 000 Б; лимит пересмотрен 2026-10-27, это не ограничение Android).
 
 ## Безопасность
 
