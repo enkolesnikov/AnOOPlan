@@ -29,12 +29,15 @@ test('cloneValue и jsonClone делают независимую глубоку
   }
 });
 
-test('index.html показывает экран «обновите WebView» ещё до загрузки бандла', () => {
+test('страница показывает экран «обновите WebView» ещё до загрузки бандла', () => {
   const html = readRepoFile('index.html');
+  const guard = readRepoFile('public/webview-guard.js');
   assert.match(html, /id="webview-warning"/);
-  assert.ok(html.includes('Chrome\\/(\\d+)'));
-  assert.ok(html.includes('Number(match[1]) < 98'));
-  assert.match(html, /indexedDB/);
+  assert.match(html, /webview-guard\.js/);
+  assert.match(html, /Content-Security-Policy/);
+  assert.ok(guard.includes('Chrome\\/(\\d+)'));
+  assert.ok(guard.includes('Number(match[1]) < 98'));
+  assert.match(guard, /indexedDB/);
   assert.match(html, /Обновите системный WebView/);
 });
 

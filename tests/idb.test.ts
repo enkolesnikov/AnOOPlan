@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import 'fake-indexeddb/auto';
-import { idbDelete, idbGet, idbPut, idbStoreDelete, idbStoreGet, idbStoreGetAll, idbStoreKeys, idbStorePut } from '../src/idb';
+import { idbDelete, idbGet, idbOpen, idbPut, idbStoreDelete, idbStoreGet, idbStoreGetAll, idbStoreKeys, idbStorePut } from '../src/idb';
 
 test('PDF-блобы сохраняются, читаются и удаляются', async () => {
   const key = 'test-pdf-' + Date.now();
@@ -23,4 +23,11 @@ test('хранилище снимков: put/get/getAll/keys/delete', async () =
   assert.ok(all.some(item => item.key === key));
   await idbStoreDelete('snapshots', key);
   assert.equal(await idbStoreGet('snapshots', key), undefined);
+});
+
+test('соединение IndexedDB переиспользуется, а не открывается на каждую операцию', async () => {
+  const first = await idbOpen();
+  const second = await idbOpen();
+  assert.equal(first, second);
+  assert.equal(first.name, 'cableplan');
 });

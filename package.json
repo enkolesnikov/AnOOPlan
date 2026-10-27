@@ -1,7 +1,7 @@
 {
   "name": "anooplan",
-  "version": "2.8.0",
-  "androidVersionCode": 39,
+  "version": "2.8.1",
+  "androidVersionCode": 40,
   "private": true,
   "type": "module",
   "scripts": {

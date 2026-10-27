@@ -93,6 +93,7 @@ export function useProjectIo(s: WorkspaceState) {
         setMessage('Открытие файла отменено.');
         return;
       }
+      const lost: string[] = [];
       if (parsed.kind === 'file') {
         // Вложения всегда сохраняем под новыми локальными ключами: файл мог прийти
         // с другого устройства или из серверного режима, поэтому старые id не переиспользуем.
@@ -119,7 +120,7 @@ export function useProjectIo(s: WorkspaceState) {
             const localKey = uid();
             await idbPut(localKey, pdfBlob);
             pdfKeys.set(pdf.id, 'idb:' + localKey);
-          } catch { /* вложение не сохранилось — проект всё равно открываем */ }
+          } catch (error) { logDiagnostic('error', error, 'attach-pdf'); lost.push('PDF'); /* проект открываем, но потерю покажем */ }
         }
         if (pdfKeys.size) {
           for (const stageFloor of parsed.project.floors) {
@@ -131,7 +132,7 @@ export function useProjectIo(s: WorkspaceState) {
           try {
             const bytes = Uint8Array.from(atob(photo.dataBase64), c => c.charCodeAt(0));
             await idbPut('photo:' + photo.key, new Blob([bytes], { type: photo.mime || 'image/jpeg' }));
-          } catch { /* фото не сохранилось — проект открывается */ }
+          } catch (error) { logDiagnostic('error', error, 'attach-photo'); lost.push('фото'); /* проект открываем, но потерю покажем */ }
         }
         // Открытый файл ещё не сохранён в хранилище: persisted=false, чтобы «Сохранить»
         // создавал проект, а не делал PUT /api/projects/<чужой id> (404).
@@ -140,6 +141,7 @@ export function useProjectIo(s: WorkspaceState) {
         load(parsed.project, false);
       }
       setMessage(`Проект «${parsed.project.name}» открыт из файла ${ANOOPLAN_EXTENSION}.`);
+      if (lost.length) setError(`Проект открыт, но вложения не сохранились: ${lost.length} (${[...new Set(lost)].join(', ')}). Проверьте свободное место и повторите импорт.`);
     } catch (error) {
       logDiagnostic('error', error, 'openSharedProject');
       setError(`Не удалось открыть файл ${ANOOPLAN_EXTENSION}: ${error instanceof Error ? error.message : String(error)}`);

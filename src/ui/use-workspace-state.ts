@@ -81,7 +81,9 @@ export function useWorkspaceState() {
   const floor = project.floors.find(f => f.id === floorId) || project.floors[0];
   // Массовый выбор относится к одной вкладке: при переключении он сбрасывается.
   useEffect(() => { setMulti(current => (current && current.tab !== tab ? null : current)); }, [tab]);
-  const dirty = JSON.stringify(project) !== saved;
+  // Сравнение всего проекта дорого на каждый рендер (зум/пан/указатель).
+  // updatedAt меняется только в commit/record, поэтому stringify нужен один раз на мутацию.
+  const dirty = useMemo(() => JSON.stringify(project) !== saved, [project, saved]);
   const dirtyRef = useRef(false);
   dirtyRef.current = dirty;
   const equipment = selection?.kind === 'equipment' ? project.equipment.find(e => e.id === selection.id) : undefined;

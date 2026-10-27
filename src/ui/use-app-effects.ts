@@ -33,7 +33,7 @@ export function useAppEffects(
   useEffect(() => { fetch('/api/health').then(r => { if (!r.ok) setStaticMode(true); }).catch(() => setStaticMode(true)); }, [setStaticMode]);
   useEffect(() => {
     if (!staticMode) return;
-    const timer = setTimeout(() => { try { localStorage.setItem('cableplan:autosave', JSON.stringify(projectRef.current)); } catch { /* переполнение localStorage */ } }, 800);
+    const timer = setTimeout(() => { try { localStorage.setItem('cableplan:autosave', JSON.stringify(projectRef.current)); } catch (error) { logDiagnostic('error', error, 'autosave-local'); setMessageRef.current('Черновик не сохранён: в браузере кончилось место. Выгрузите проект в .anooplan.'); } }, 800);
     return () => clearTimeout(timer);
   }, [project, staticMode, projectRef]);
   // Проект, который уже лежит в списке, дописывается сам — «Сохранить» лишь для нового.

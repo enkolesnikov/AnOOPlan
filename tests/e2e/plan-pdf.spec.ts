@@ -17,7 +17,7 @@ test('PDF-подложка попадает в лист «План» выгру�
     state.__planBlobs = [];
     const original = HTMLCanvasElement.prototype.toBlob;
     HTMLCanvasElement.prototype.toBlob = function (callback, type, quality) {
-      if (this.width === 1600) {
+      if (this.width >= 1600) {
         try { state.__planBlobs!.push(this.toDataURL(type || 'image/png')); }
         catch (error) { state.__planError = String(error); }
       }

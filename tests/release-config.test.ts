@@ -23,6 +23,7 @@ test('build-apk: без ключа не генерирует его случай
   assert.match(script, /AnOOPlan-\$\{VERSION_NAME\}-unsigned\.apk/);
   assert.match(script, /в CI ключ должен приходить из секрета/);
   assert.match(script, /KS_PASS_FILE/);
+  assert.match(script, /npx tsc --noEmit/, 'APK не собирается из кода, который не проходит tsc');
   assert.doesNotMatch(script, /anooplan-build-pass/);
 });
 
@@ -32,6 +33,11 @@ test('обычный CI собирает неподписанный APK и не 
   assert.match(workflow, /AnOOPlan-apk-unsigned/);
   assert.doesNotMatch(workflow, /keytool -genkeypair/);
   assert.doesNotMatch(workflow, /ANDROID_KEYSTORE_BASE64/);
+});
+
+test('Pages деплоится на том же Node 24, что и CI', () => {
+  const workflow = read('.github/workflows/deploy.yml');
+  assert.match(workflow, /node-version: 24/);
 });
 
 test('release-workflow подписывает из секретов и публикует GitHub Release', () => {

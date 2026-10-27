@@ -458,3 +458,13 @@ test('сегментные размеры КНС: строки становят�
   const roundTrip = migrateProject(JSON.parse(JSON.stringify(migrated)));
   assert.deepEqual(roundTrip.routes[0].segments, migrated.routes[0].segments);
 });
+
+test('битый сегмент (строка вместо объекта) отбрасывается, а не роняет загрузку', () => {
+  const raw = JSON.parse(JSON.stringify(createDemoProject())) as Record<string, unknown>;
+  const routes = raw.routes as { segments: unknown[] }[];
+  routes[0].segments[0] = 'not-a-segment';
+  routes[0].segments[1] = { id: 'bad', a: null, b: {} };
+  const migrated = migrateProject(raw);
+  assert.equal(migrated.routes[0].segments.length, 2, 'два битых сегмента отброшены из четырёх');
+  assert.ok(migrated.routes[0].segments.every(segment => segment.a && segment.b));
+});

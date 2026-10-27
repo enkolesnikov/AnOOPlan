@@ -75,7 +75,6 @@ public class AssetServer extends WebViewClient {
     private static Map<String, String> headers() {
         Map<String, String> result = new HashMap<>();
         result.put("Cache-Control", "no-cache");
-        result.put("Access-Control-Allow-Origin", "*");
         return result;
     }
 

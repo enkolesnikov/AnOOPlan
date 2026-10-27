@@ -89,8 +89,10 @@ function normalizeEquipment(value: unknown): Project['equipment'][number] {
  * переопределения КНС нормализуются — «6.5» из старой копии станет числом,
  * мусор считается отсутствующим, а не нулём.
  */
-function normalizeSegment(value: unknown): Segment {
-  if (!isRecord(value)) return value as unknown as Segment;
+function normalizeSegment(value: unknown): Segment | null {
+  // Без объектов на концах это не сегмент: иначе движок упадёт на segment.a.floorId
+  // в расчёте вместо понятной схемной ошибки загрузки.
+  if (!isRecord(value) || !isRecord(value.a) || !isRecord(value.b)) return null;
   const segment = { ...(value as unknown as Segment) };
   for (const key of SECTION_DIM_KEYS) {
     const normalized = optionalNumber(value[key]);
@@ -106,7 +108,7 @@ function normalizeRoute(value: unknown): Project['routes'][number] {
     id: String(value.id ?? ''),
     number: typeof value.number === 'string' ? value.number : '',
     type: typeof value.type === 'string' ? value.type : 'Трасса',
-    segments: Array.isArray(value.segments) ? value.segments.map(normalizeSegment) : [],
+    segments: Array.isArray(value.segments) ? value.segments.map(normalizeSegment).filter((segment): segment is Segment => segment !== null) : [],
     note: typeof value.note === 'string' ? value.note : '',
     trayWidthMm: optionalNumber(value.trayWidthMm),
     trayHeightMm: optionalNumber(value.trayHeightMm),

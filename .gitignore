@@ -19,3 +19,10 @@ keystore/
 out/
 android/assets/
 tools/
+
+# Рабочие материалы (не часть проекта; не коммитим)
+/*.xlsx
+/*.pdf
+/*.txt
+/dl/
+/work/

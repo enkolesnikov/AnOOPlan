@@ -6,16 +6,31 @@ const DB_VERSION = 2;
 const BLOB_STORE = 'pdfs';
 const SNAPSHOT_STORE = 'snapshots';
 
+let connection: Promise<IDBDatabase> | null = null;
+
+/**
+ * Одно соединение на всё приложение. Раньше каждый idbGet/idbPut открывал новую
+ * базу и не закрывал её: на проектах с десятками фото это копило соединения и
+ * блокировало versionchange. При закрытии/обновлении базы соединение сбрасывается
+ * и следующая операция откроет его заново.
+ */
 export function idbOpen(): Promise<IDBDatabase> {
-  return new Promise((resolve, reject) => {
+  if (connection) return connection;
+  connection = new Promise((resolve, reject) => {
     const request = indexedDB.open(DB_NAME, DB_VERSION);
     request.onupgradeneeded = () => {
       if (!request.result.objectStoreNames.contains(BLOB_STORE)) request.result.createObjectStore(BLOB_STORE);
       if (!request.result.objectStoreNames.contains(SNAPSHOT_STORE)) request.result.createObjectStore(SNAPSHOT_STORE);
     };
-    request.onsuccess = () => resolve(request.result);
-    request.onerror = () => reject(request.error ?? new Error('IndexedDB: ошибка запроса'));
+    request.onsuccess = () => {
+      const db = request.result;
+      db.onclose = () => { connection = null; };
+      db.onversionchange = () => { db.close(); connection = null; };
+      resolve(db);
+    };
+    request.onerror = () => { connection = null; reject(request.error ?? new Error('IndexedDB: ошибка запроса')); };
   });
+  return connection;
 }
 
 export async function idbPut(key: string, value: Blob): Promise<void> {

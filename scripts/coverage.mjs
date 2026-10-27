@@ -8,6 +8,14 @@ import { spawnSync } from 'node:child_process';
 import { join, resolve } from 'node:path';
 
 const ROOT = resolve(import.meta.dirname, '..');
+
+/** Все исходники src/ и физические строки — чтобы показать охват, а не только lcov-файлы. */
+function sourceFiles(dir = join(ROOT, 'src')) {
+  return readdirSync(dir, { withFileTypes: true }).flatMap(entry => {
+    const path = join(dir, entry.name);
+    return entry.isDirectory() ? sourceFiles(path) : /\.(ts|tsx)$/.test(entry.name) ? [path] : [];
+  });
+}
 const COVERAGE_DIR = join(ROOT, 'coverage');
 const LCOV_PATH = join(COVERAGE_DIR, 'lcov.info');
 const files = readdirSync(join(ROOT, 'tests')).filter(name => name.endsWith('.test.ts')).map(name => join('tests', name));
@@ -46,6 +54,21 @@ if (numbers.length < 3) {
   process.exit(1);
 }
 const [lines, branches, functions] = numbers;
+// Вторая, честная цифра: lcov видит только импортированные тестами модули, а src/ui/
+// и часть хуков в юнит-тесты не входят. Печатаем охват по всем src/, но порог пока
+// применяем к тестируемым модулям (переход на полный порог — отдельная задача).
+const srcFiles = sourceFiles();
+const totalSrcLines = srcFiles.reduce((sum, file) => sum + readFileSync(file, 'utf8').split('\n').length, 0);
+const coveredSrc = new Set([...lcov.matchAll(/^SF:(.*)$/gm)].map(match => match[1].replace(/.*Anooplan\//, '')));
+let hitSrcLines = 0;
+for (const block of lcov.split('end_of_record')) {
+  const sf = /^SF:(.*)$/m.exec(block);
+  if (!sf || !coveredSrc.has(sf[1].replace(/.*Anooplan\//, ''))) continue;
+  const lh = /^LH:(\d+)$/m.exec(block);
+  if (lh) hitSrcLines += Number(lh[1]);
+}
+const allRatio = totalSrcLines ? hitSrcLines / totalSrcLines * 100 : 0;
+console.log(`  охват всех src/: ${allRatio.toFixed(1)}% (${hitSrcLines}/${totalSrcLines} строк; ${coveredSrc.size}/${srcFiles.length} файлов)`);
 let failed = false;
 for (const [name, value, threshold] of [['строки', lines, THRESHOLDS.lines], ['ветки', branches, THRESHOLDS.branches], ['функции', functions, THRESHOLDS.functions]]) {
   const ok = value >= threshold;

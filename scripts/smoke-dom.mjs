@@ -13,6 +13,15 @@ const ROOT = resolve(import.meta.dirname, '..');
 const OUT = join(ROOT, 'build');
 await mkdir(OUT, { recursive: true });
 
+const reactWarnings = [];
+const originalConsoleError = console.error;
+// Предупреждения React (например, отсутствующий key) — это дефект, а не шум.
+console.error = (...args) => {
+  const text = args.map(value => String(value)).join(' ');
+  if (/Each child in a list|Warning:/.test(text)) reactWarnings.push(text);
+  originalConsoleError(...args);
+};
+
 const failures = [];
 const check = (ok, message) => {
   console.log(`${ok ? '  ✔' : '  ✘'} ${message}`);
@@ -971,6 +980,7 @@ if (typeof saveAndExit === 'function') {
   check(exitCalled, 'после сохранения запрошен выход');
 }
 
+check(reactWarnings.length === 0, `нет предупреждений React (найдено ${reactWarnings.length})`);
 console.log(`\nИтог: ${failures.length ? 'ПРОВАЛ' : 'УСПЕХ'}`);
 if (failures.length) {
   failures.forEach(item => console.log(' - ' + item));

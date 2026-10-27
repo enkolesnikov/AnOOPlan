@@ -1,0 +1,6 @@
+#webview-warning { position: fixed; inset: 0; z-index: 10000; display: flex; align-items: center; justify-content: center; padding: 24px; background: #122936; color: #f2f7f8; font: 16px/1.5 sans-serif; }
+#webview-warning[hidden] { display: none; }
+#webview-warning .card { max-width: 460px; background: #1b3a48; border: 1px solid #2f5d6e; border-radius: 16px; padding: 24px; }
+#webview-warning h1 { margin: 0 0 12px; font-size: 20px; }
+#webview-warning p { margin: 0 0 16px; }
+#webview-warning button { width: 100%; padding: 12px; border: 0; border-radius: 10px; background: #2ea043; color: #fff; font-size: 16px; }

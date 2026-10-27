@@ -6,6 +6,7 @@ import { decodeImage } from './compat';
 import { logDiagnostic } from './diagnostics';
 import { idbGet } from './idb';
 import { MAX_PLAN_PAGES, planOverlayWarning, planPageTitle, planPagesToCapture } from './plan-pages';
+import { planRasterWidth } from './plan-raster';
 
 type PdfjsModule = typeof import('pdfjs-dist/legacy/build/pdf.mjs');
 type PdfLoadingTask = ReturnType<PdfjsModule['getDocument']>;
@@ -79,8 +80,8 @@ async function fallbackPlan(project: Project, floor: Floor): Promise<CapturedPla
 async function capturePage(project: Project, floor: Floor, document: PdfDocument, pageNumber: number): Promise<CapturedPlan | null> {
   const page = await document.getPage(pageNumber);
   const viewport = page.getViewport({ scale: 1 });
-  const width = 1600;
   const active = pageNumber === floor.page;
+  const width = planRasterWidth(active ? floor.width : viewport.width, active ? floor.height : viewport.height);
   const height = Math.max(1, Math.round(active
     ? width * floor.height / Math.max(1, floor.width)
     : width * viewport.height / Math.max(1, viewport.width)));

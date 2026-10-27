@@ -135,6 +135,16 @@ export default tseslint.config(
     },
   },
   {
+    // ES5-страж старых WebView: var и глобальные browser-API здесь намеренны.
+    files: ['public/**/*.js'],
+    languageOptions: { globals: { ...globals.browser } },
+    rules: {
+      'no-var': 'off',
+      'no-useless-assignment': 'off',
+      '@typescript-eslint/no-unused-vars': 'off',
+    },
+  },
+  {
     // DSH-плагин и установщик — Node-скрипты вне бандла приложения.
     files: ['dsh/**/*.{js,mjs}'],
     languageOptions: { globals: { ...globals.node } },

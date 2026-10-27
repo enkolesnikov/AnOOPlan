@@ -66,9 +66,10 @@ if [ -z "$D8_CMD" ]; then
     fi
 fi
 
-say "1/7 Сборка веб-приложения (Vite)"
+say "1/7 Проверка типов и сборка веб-приложения (Vite)"
 cd "$ROOT"
 [ -d node_modules ] || npm install --no-audit --no-fund
+npx tsc --noEmit
 npx vite build
 
 say "2/7 Подготовка ассетов"
