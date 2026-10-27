@@ -17,7 +17,7 @@ export function useAppEffects(
   const {
     dirty, dirtyRef, project, projectRef, staticMode, setStaticMode, floor, persisted,
     draft, setDraft, setCalibration, setMeasure, setCableSegments, setTool,
-    undo, redo, history, setMessage, load, takeSnapshot, selection, gridSize, mutate, setMenuOpen,
+    undo, redo, history, setMessage, setError, load, takeSnapshot, selection, gridSize, mutate, setMenuOpen,
   } = s;
   const { saveProject, run, openSharedProject } = io;
   const { finishRoute, fit } = plan;
@@ -59,8 +59,14 @@ export function useAppEffects(
   // Вызывается из Java: сохранить и только потом закрыть приложение.
   useEffect(() => {
     (window as Window & { __anooplanSaveAndExit?: () => Promise<void> }).__anooplanSaveAndExit = async () => {
-      try { await saveProject(true); } catch (error) { logDiagnostic('error', error, 'saveAndExit'); /* выходим в любом случае */ }
-      nativeBridge()?.exitNow?.();
+      try {
+        await saveProjectRef.current(true);
+        nativeBridge()?.exitNow?.();
+      } catch (error) {
+        // Ошибка сохранения не должна закрывать приложение: пользователь теряет данные.
+        logDiagnostic('error', error, 'saveAndExit');
+        setError(`Не удалось сохранить проект: ${error instanceof Error ? error.message : String(error)}. Приложение остаётся открытым — повторите сохранение или выгрузите .anooplan.`);
+      }
     };
   });
   // Открытие .anooplan из системы: Java вызывает __anooplanOpenSharedProject(jsonText)

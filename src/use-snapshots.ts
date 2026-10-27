@@ -27,17 +27,14 @@ export function useSnapshots({ projectRef, load, onGarbageCollect, setError, set
   const [snapshots, setSnapshots] = useState<SnapshotEntry[] | null>(null);
 
   async function takeSnapshot(reason: string): Promise<void> {
-    try {
-      const snapshot = clone(projectRef.current);
-      const key = `${snapshot.id}:${Date.now()}`;
-      await idbStorePut('snapshots', key, { key, createdAt: new Date().toISOString(), reason, project: snapshot });
-      const keys = (await idbStoreKeys('snapshots'))
-        .filter(item => item.startsWith(`${snapshot.id}:`))
-        .sort((a, b) => Number(b.split(':')[1]) - Number(a.split(':')[1]));
-      for (const stale of keys.slice(SNAPSHOT_LIMIT)) await idbStoreDelete('snapshots', stale);
-    } catch {
-      // хранилище недоступно — снимок просто не создаётся
-    }
+    const snapshot = clone(projectRef.current);
+    const prefix = `${snapshot.id}:`;
+    const key = `${prefix}${Date.now()}`;
+    await idbStorePut('snapshots', key, { key, createdAt: new Date().toISOString(), reason, project: snapshot });
+    const keys = (await idbStoreKeys('snapshots'))
+      .filter(item => item.startsWith(prefix))
+      .sort((a, b) => Number(b.slice(prefix.length)) - Number(a.slice(prefix.length)));
+    for (const stale of keys.slice(SNAPSHOT_LIMIT)) await idbStoreDelete('snapshots', stale);
   }
 
   async function openHistory(): Promise<void> {
@@ -45,9 +42,10 @@ export function useSnapshots({ projectRef, load, onGarbageCollect, setError, set
     setSnapshots(null);
     try {
       const projectId = projectRef.current.id;
+      const prefix = `${projectId}:`;
       const keys = (await idbStoreKeys('snapshots'))
-        .filter(item => item.startsWith(`${projectId}:`))
-        .sort((a, b) => Number(b.split(':')[1]) - Number(a.split(':')[1]));
+        .filter(item => item.startsWith(prefix))
+        .sort((a, b) => Number(b.slice(prefix.length)) - Number(a.slice(prefix.length)));
       const list: SnapshotEntry[] = [];
       for (const key of keys) {
         const entry = await idbStoreGet<SnapshotEntry>('snapshots', key);
@@ -64,7 +62,10 @@ export function useSnapshots({ projectRef, load, onGarbageCollect, setError, set
     const entry = snapshots?.find(item => item.key === key);
     if (!entry) return;
     if (!window.confirm(`Восстановить проект от ${new Date(entry.createdAt).toLocaleString('ru-RU')}? Текущее состояние сохранится как снимок.`)) return;
-    try { await takeSnapshot('перед восстановлением'); } catch { /* снимок не критичен */ }
+    try { await takeSnapshot('перед восстановлением'); } catch (error) {
+      setError(`Не удалось сохранить текущее состояние: ${error instanceof Error ? error.message : String(error)}. Восстановление отменено.`);
+      return;
+    }
     load(clone(entry.project), true);
     setHistoryOpen(false);
     setSnapshots(null);

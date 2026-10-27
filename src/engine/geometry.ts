@@ -96,16 +96,17 @@ export function findRoute(project: Project, fromId: string, toId: string): { seg
   const to = project.equipment.find(e => e.id === toId);
   if (!from || !to) return { segmentIds: [], error: 'Оборудование не найдено.' };
 
-  const key = (floorId: string, x: number, y: number) => `${floorId}|${x.toFixed(3)}|${y.toFixed(3)}`;
+  const key = (floorId: string, x: number, y: number, height: number | null) => `${floorId}|${x.toFixed(3)}|${y.toFixed(3)}|${height === null ? '?' : height.toFixed(3)}`;
   const adjacency = new Map<string, { segmentId: string; other: string; weight: number }[]>();
   const positions = new Map<string, { floorId: string; x: number; y: number }>();
-  const weightOf = (segment: Segment) => { const length = segmentLength(project, segment); return length === null ? 1 : Math.max(length, 1e-6); };
+  const weightOf = (segment: Segment) => { const length = segmentLength(project, segment); return length === null ? null : Math.max(length, 1e-6); };
 
   for (const route of project.routes) {
     for (const segment of route.segments) {
-      const ka = key(segment.a.floorId, segment.a.x, segment.a.y);
-      const kb = key(segment.b.floorId, segment.b.x, segment.b.y);
+      const ka = key(segment.a.floorId, segment.a.x, segment.a.y, segment.a.height);
+      const kb = key(segment.b.floorId, segment.b.x, segment.b.y, segment.b.height);
       const weight = weightOf(segment);
+      if (weight === null) continue;
       if (!adjacency.has(ka)) { adjacency.set(ka, []); positions.set(ka, { floorId: segment.a.floorId, x: segment.a.x, y: segment.a.y }); }
       if (!adjacency.has(kb)) { adjacency.set(kb, []); positions.set(kb, { floorId: segment.b.floorId, x: segment.b.x, y: segment.b.y }); }
       adjacency.get(ka)!.push({ segmentId: segment.id, other: kb, weight });

@@ -18,7 +18,7 @@ export function Topbar({ ui }: { ui: AppUi }) {
 export function CommandBar({ ui }: { ui: AppUi }) {
   const { view, setView, mayLeave, load, setMessage, setExportOpen } = ui;
   return (
-    <div className="commandbar"><div className="view-tabs">{([['plan', 'План'], ['journal', 'Журнал'], ['specs', 'Ведомости'], ['estimate', 'Смета']] as const).map(([id, label]) => <button key={id} className={view === id ? 'active' : ''} onClick={() => setView(id)}>{label}</button>)}</div><div className="command-actions"><button className="desk-only" onClick={() => { if (mayLeave()) { load(createDemoProject(), false); setMessage('Учебный проект: синтетические данные, не рабочая документация.'); } }}>Учебный проект</button><button className="export-trigger" onClick={() => setExportOpen(true)}>Экспорт / копия ↓</button></div></div>
+    <div className="commandbar"><div className="view-tabs">{([['plan', 'План'], ['journal', 'Журнал'], ['specs', 'Ведомости'], ['estimate', 'Смета']] as const).map(([id, label]) => <button key={id} className={view === id ? 'active' : ''} aria-current={view === id ? 'page' : undefined} onClick={() => setView(id)}>{label}</button>)}</div><div className="command-actions"><button className="desk-only" onClick={() => { if (mayLeave()) { load(createDemoProject(), false); setMessage('Учебный проект: синтетические данные, не рабочая документация.'); } }}>Учебный проект</button><button className="export-trigger" onClick={() => setExportOpen(true)}>Экспорт / копия ↓</button></div></div>
   );
 }
 
@@ -48,7 +48,8 @@ export function PropsFab({ ui }: { ui: AppUi }) {
 
 /** Плавающие кнопки отмены и повтора. */
 export function HistoryFab({ ui }: { ui: AppUi }) {
-  const { undo, redo, history, undoLabel, redoLabel } = ui;
+  const { undo, redo, history, undoLabel, redoLabel, propsOpen, menuOpen, exportOpen, historyOpen, aboutOpen, templatesOpen, onboardingOpen, sheet } = ui;
+  if (propsOpen || menuOpen || exportOpen || historyOpen || aboutOpen || templatesOpen || onboardingOpen || sheet) return null;
   return (
     <div className="history-fab">
       <button title={undoLabel ? `Отменить: ${undoLabel} (Ctrl+Z)` : 'Отменить Ctrl+Z'} aria-label="Отменить" disabled={!undo.length} onClick={() => history(true)}>↶</button>

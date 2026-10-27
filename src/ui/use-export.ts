@@ -39,7 +39,8 @@ export function useExport(s: WorkspaceState, io: ProjectIo) {
   }
 
   /** PDF/фото текущего проекта для резервной копии и файла .anooplan. */
-  async function collectProjectArchive(current: Project): Promise<{ pdfs: { id: string; name: string; dataBase64: string }[]; photos: { key: string; name: string; mime: string; dataBase64: string }[] }> {
+  async function collectProjectArchive(current: Project): Promise<{ pdfs: { id: string; name: string; dataBase64: string }[]; photos: { key: string; name: string; mime: string; dataBase64: string }[]; warnings: string[] }> {
+    const warnings: string[] = [];
     const pdfs: { id: string; name: string; dataBase64: string }[] = [];
     const seenPdf = new Set<string>();
     for (const stageFloor of current.floors) {
@@ -49,16 +50,18 @@ export function useExport(s: WorkspaceState, io: ProjectIo) {
       if (pdfId.startsWith('idb:')) {
         const pdfBlob = await idbGet(pdfId.slice(4));
         if (pdfBlob) pdfs.push({ id: pdfId, name: 'plan.pdf', dataBase64: await blobToBase64(pdfBlob) });
+        else warnings.push(`PDF ${pdfId} не найден в хранилище`);
         continue;
       }
       // data:-подложка (демо/встроенный PDF) уже лежит в проекте — не дублируем её.
-      if (pdfId.startsWith('data:') || staticMode) continue;
+      if (pdfId.startsWith('data:')) continue;
+      if (staticMode) { warnings.push(`PDF ${pdfId} недоступен в браузерном режиме`); continue; }
       // Серверный id: вкладываем исходный PDF, чтобы файл .anooplan оставался самодостаточным.
       try {
         const response = await fetch('/api/pdfs/' + encodeURIComponent(pdfId));
-        if (!response.ok) continue;
-        pdfs.push({ id: 'server:' + pdfId, name: 'plan.pdf', dataBase64: await blobToBase64(await response.blob()) });
-      } catch { /* сервер недоступен — проект выгружается без этого вложения */ }
+        if (!response.ok) { warnings.push(`PDF ${pdfId}: сервер вернул ${response.status}`); continue; }
+        pdfs.push({ id: pdfId, name: 'plan.pdf', dataBase64: await blobToBase64(await response.blob()) });
+      } catch (error) { warnings.push(`PDF ${pdfId}: ${error instanceof Error ? error.message : String(error)}`); }
     }
     const photoKeys = [...new Set([...current.equipment, ...current.pins].flatMap(item => item.photos || []))];
     const photos: { key: string; name: string; mime: string; dataBase64: string }[] = [];
@@ -66,21 +69,16 @@ export function useExport(s: WorkspaceState, io: ProjectIo) {
       try {
         const photoBlob = await idbGet('photo:' + key);
         if (photoBlob) photos.push({ key, name: 'photo.jpg', mime: photoBlob.type || 'image/jpeg', dataBase64: await blobToBase64(photoBlob) });
-      } catch { /* фото недоступно — копия всё равно выгружается */ }
+        else warnings.push(`Фото ${key} не найдено в хранилище`);
+      } catch (error) { warnings.push(`Фото ${key}: ${error instanceof Error ? error.message : String(error)}`); }
     }
-    return { pdfs, photos };
+    return { pdfs, photos, warnings };
   }
   /** Единая сборка экспортного файла: используется и «Сохранить», и «Поделиться». */
   async function buildExportBlob(kind: 'csv' | 'xlsx' | 'pdf' | 'backup'): Promise<{ blob: Blob; fileName: string; warning: string }> {
     const current = projectRef.current;
-    const extension = kind === 'backup' ? 'json' : kind;
-    if (!staticMode) {
-      const saved = await saveProject();
-      const url = kind === 'backup' ? `/api/projects/${saved.id}/backup` : `/api/projects/${saved.id}/export?format=${kind}`;
-      const response = await fetch(url);
-      if (!response.ok) throw new Error(await response.text());
-      return { blob: await response.blob(), fileName: `${saved.name}.${extension}`, warning: '' };
-    }
+    // Один клиентский экспорт для браузера и серверного режима: серверного /export больше нет.
+    if (!staticMode) await saveProject();
     if (kind === 'xlsx') {
       const { buildWorkbook } = await import('../export-xlsx');
       const blob = new Blob([buildWorkbook(exportSheets(current)) as unknown as BlobPart], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
@@ -93,7 +91,8 @@ export function useExport(s: WorkspaceState, io: ProjectIo) {
       return { blob: new Blob([bytes as unknown as BlobPart], { type: 'application/pdf' }), fileName: `${current.name}.pdf`, warning: plans.warnings.join(' ') };
     }
     if (kind === 'backup') {
-      const { pdfs, photos } = await collectProjectArchive(current);
+      const { pdfs, photos, warnings } = await collectProjectArchive(current);
+      if (warnings.length) throw new Error(`Резервная копия неполная: ${warnings.join('; ')}. Освободите место и повторите.`);
       return { blob: new Blob([JSON.stringify({ schemaVersion: 2, project: current, pdfs, photos })], { type: 'application/json' }), fileName: `${current.name}.json`, warning: '' };
     }
     return { blob: new Blob([clientCsv(current)], { type: 'text/csv;charset=utf-8' }), fileName: `${current.name}.csv`, warning: '' };
@@ -132,7 +131,8 @@ export function useExport(s: WorkspaceState, io: ProjectIo) {
   }
   async function buildAnoPlanBlob(): Promise<{ blob: Blob; fileName: string }> {
     const current = projectRef.current;
-    const { pdfs, photos } = await collectProjectArchive(current);
+    const { pdfs, photos, warnings } = await collectProjectArchive(current);
+    if (warnings.length) throw new Error(`Файл .anooplan неполный: ${warnings.join('; ')}. Освободите место и повторите.`);
     const json = serializeAnoPlanFile(buildAnoPlanFile(current, pdfs, photos));
     return { blob: new Blob([json], { type: ANOOPLAN_MIME }), fileName: `${current.name}${ANOOPLAN_EXTENSION}` };
   }

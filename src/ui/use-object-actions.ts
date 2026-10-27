@@ -2,8 +2,7 @@ import type { Cable, Equipment, Pin, Route, Segment, Vertex } from '../model';
 import type { JournalSectionId } from '../export-pdf';
 import { cloneValue as clone, createUuid as uid } from '../compat';
 import { compressPhoto } from '../photo-compress';
-import { orphanPhotoKeys, purgePhotoBlobs } from '../photos';
-import { idbDelete, idbPut } from '../idb';
+import { idbPut } from '../idb';
 import { api } from './api';
 import { JOURNAL_SECTIONS, SHEET_SIZES } from './constants';
 import { number } from './format';
@@ -60,15 +59,12 @@ export function useObjectActions(s: WorkspaceState) {
     const affected = source.cables.filter(c => kind === 'equipment' ? c.fromId === id || c.toId === id : kind === 'route' ? c.segmentIds.some(s => segmentIds.includes(s)) : false);
     const label = kind === 'equipment' ? 'оборудование' : kind === 'route' ? 'трассу' : kind === 'pin' ? 'замечание' : 'кабель';
     if (!window.confirm(`Удалить ${label} ${target.number}?${affected.length ? ` Также будут удалены связанные кабели: ${affected.map(c => c.number).join(', ')}.` : ''}`)) return;
-    // Фото лежат в IndexedDB отдельно от проекта: без явной очистки они остаются сиротами.
-    const photoKeys = kind === 'equipment' || kind === 'pin' ? orphanPhotoKeys(source, [id]) : [];
     mutate(p => {
       if (kind === 'equipment') p.equipment = p.equipment.filter(e => e.id !== id);
       if (kind === 'route') p.routes = p.routes.filter(r => r.id !== id);
       if (kind === 'pin') p.pins = p.pins.filter(pin => pin.id !== id);
       p.cables = p.cables.filter(c => c.id !== (kind === 'cable' ? id : '') && !affected.some(a => a.id === c.id));
     }, 'Удаление');
-    void purgePhotoBlobs(photoKeys, idbDelete);
     setSelection(null); setSheet(null); setPropsOpen(false);
   }
 
@@ -85,14 +81,12 @@ export function useObjectActions(s: WorkspaceState) {
     const affected = source.cables.filter(cable => cableIds.has(cable.id));
     const label = kind === 'equipment' ? 'оборудование' : kind === 'route' ? 'трассы' : kind === 'pin' ? 'замечания' : 'кабели';
     if (!window.confirm(`Удалить выбранные ${label}: ${targets.length}?${affected.length ? ` Также будут удалены связанные кабели: ${affected.length}.` : ''}`)) return;
-    const photoKeys = kind === 'equipment' || kind === 'pin' ? orphanPhotoKeys(source, ids) : [];
     mutate(p => {
       if (kind === 'equipment') p.equipment = p.equipment.filter(item => !selected.has(item.id));
       if (kind === 'route') p.routes = p.routes.filter(item => !selected.has(item.id));
       if (kind === 'pin') p.pins = p.pins.filter(item => !selected.has(item.id));
       p.cables = p.cables.filter(cable => !cableIds.has(cable.id));
     }, 'Массовое удаление');
-    void purgePhotoBlobs(photoKeys, idbDelete);
     setSelection(null); setSheet(null); setPropsOpen(false); setMulti(null);
     setMessage(`Удалено: ${targets.length}${affected.length ? `, кабелей: ${affected.length}` : ''}.`);
   }
@@ -152,7 +146,6 @@ export function useObjectActions(s: WorkspaceState) {
       const item = pinTarget ? p.pins.find(pin => pin.id === targetId) : p.equipment.find(eq => eq.id === targetId);
       if (item) item.photos = (item.photos || []).filter(itemKey => itemKey !== key);
     });
-    void idbDelete('photo:' + key).catch(() => { /* файл останется в хранилище */ });
     setMessage('Фото удалено из проекта.');
   }
   function setItem(key: string, value: unknown) {

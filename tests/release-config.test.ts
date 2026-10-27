@@ -55,3 +55,14 @@ test('release-workflow подписывает из секретов и публ�
   assert.match(workflow, /rm -rf keystore/);
   assert.doesNotMatch(workflow, /keytool -genkeypair/);
 });
+
+test('безопасность и надёжность: localhost по умолчанию, нет серверного /export, нет таймера выхода', () => {
+  const server = read('server/index.ts');
+  assert.match(server, /process\.env\.HOST \|\| '127\.0\.0\.1'/);
+  const exporter = read('src/ui/use-export.ts');
+  assert.doesNotMatch(exporter, /\/export\?format/);
+  const activity = read('android/java/com/anooplan/app/MainActivity.java');
+  const saveAndExit = activity.slice(activity.indexOf('private void saveAndExit()'), activity.indexOf('protected void onResume()'));
+  assert.doesNotMatch(saveAndExit, /postDelayed/);
+  assert.match(saveAndExit, /__anooplanSaveAndExit/);
+});

@@ -578,14 +578,6 @@ public class MainActivity extends Activity implements NativeBridge.Host {
                         }
                     }
                 });
-        webView.postDelayed(new Runnable() {
-            public void run() {
-                if (!exiting) {
-                    exiting = true;
-                    finish();
-                }
-            }
-        }, 2500);
     }
 
     @Override

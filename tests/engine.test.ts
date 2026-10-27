@@ -188,6 +188,17 @@ test('findRoute прокладывает маршрут по сегментам 
   assert.equal(findRoute(p, 'a', 'b').segmentIds.length, 0);
 });
 
+test('findRoute не соединяет вершины с одинаковыми X/Y, но разной высотой', () => {
+  const p = fixture();
+  p.routes[0].segments = [
+    segment('s1', vertex('a', 0, 0, 3), vertex('m1', 50, 0, 3)),
+    segment('s2', vertex('m2', 50, 0, 6), vertex('b', 100, 0, 6)),
+  ];
+  const result = findRoute(p, 'a', 'b');
+  assert.ok(result.error);
+  assert.deepEqual(result.segmentIds, []);
+});
+
 test('validateProject требует уникальные имена и номера оборудования', () => {
   const p = fixture();
   p.equipment[1].name = p.equipment[0].name;

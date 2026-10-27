@@ -5,6 +5,7 @@ import { logDiagnostic } from '../diagnostics';
 import { idbDelete, idbPut, idbStoreDelete, idbStoreKeys } from '../idb';
 import { deleteLocalProject, readLocalProjects, saveLocalProject } from '../local-projects';
 import { migrateProject } from '../migrations';
+import { collectStorageGarbage } from '../garbage-collector';
 import { api, jsonOptions } from './api';
 import { nativeBridge } from './native';
 import type { WorkspaceState } from './use-workspace-state';
@@ -42,9 +43,9 @@ export function useProjectIo(s: WorkspaceState) {
         for (const key of snapshotKeys) { try { await idbStoreDelete('snapshots', key); } catch { /* хранилище недоступно */ } }
       } catch { /* хранилище недоступно — проект всё равно удаляем */ }
       const target = readLocalProjects().find(p => p.id === id);
-      if (target) for (const f of target.floors) if (f.pdfId?.startsWith('idb:')) { try { await idbDelete(f.pdfId.slice(4)); } catch { /* хранилище недоступно */ } }
-      if (target) for (const item of [...target.equipment, ...(target.pins ?? [])]) for (const key of item.photos || []) { try { await idbDelete('photo:' + key); } catch { /* хранилище недоступно */ } }
+      // Блобы не удаляем здесь: GC проверит оставшиеся проекты, undo и снимки.
       deleteLocalProject(id);
+      void collectStorageGarbage([projectRef.current]);
     } else await api('/api/projects/' + id, { method: 'DELETE' });
     setProjects(list => list ? list.filter(p => p.id !== id) : null);
     setMessage(`Проект «${name}» удалён.`);
@@ -58,17 +59,33 @@ export function useProjectIo(s: WorkspaceState) {
       const project = migrateProject(hasProject ? parsed.project : parsed);
       if (hasProject) {
         const rawPdfs = Array.isArray(parsed.pdfs) ? parsed.pdfs as { id?: string; dataBase64?: string }[] : [];
+        const pdfKeys = new Map<string, string>();
         for (const pdf of rawPdfs) {
           if (pdf?.id && pdf.dataBase64) {
             const bytes = Uint8Array.from(atob(pdf.dataBase64), c => c.charCodeAt(0));
-            await idbPut(pdf.id.replace(/^idb:/, ''), new Blob([bytes], { type: 'application/pdf' }));
+            const localKey = uid();
+            await idbPut(localKey, new Blob([bytes], { type: 'application/pdf' }));
+            pdfKeys.set(pdf.id, 'idb:' + localKey);
+          }
+        }
+        if (pdfKeys.size) {
+          for (const stageFloor of project.floors) {
+            if (stageFloor.pdfId && pdfKeys.has(stageFloor.pdfId)) stageFloor.pdfId = pdfKeys.get(stageFloor.pdfId)!;
           }
         }
         const rawPhotos = Array.isArray(parsed.photos) ? parsed.photos as { key?: string; dataBase64?: string; mime?: string }[] : [];
+        const photoKeys = new Map<string, string>();
         for (const photo of rawPhotos) {
           if (photo?.key && photo.dataBase64) {
             const bytes = Uint8Array.from(atob(photo.dataBase64), c => c.charCodeAt(0));
-            await idbPut('photo:' + photo.key, new Blob([bytes], { type: photo.mime || 'image/jpeg' }));
+            const localKey = uid();
+            await idbPut('photo:' + localKey, new Blob([bytes], { type: photo.mime || 'image/jpeg' }));
+            photoKeys.set(photo.key, localKey);
+          }
+        }
+        if (photoKeys.size) {
+          for (const item of [...project.equipment, ...(project.pins ?? [])]) {
+            if (item.photos?.length) item.photos = item.photos.map(key => photoKeys.get(key) ?? key);
           }
         }
       }
@@ -127,12 +144,20 @@ export function useProjectIo(s: WorkspaceState) {
             if (stageFloor.pdfId && pdfKeys.has(stageFloor.pdfId)) stageFloor.pdfId = pdfKeys.get(stageFloor.pdfId)!;
           }
         }
+        const photoKeys = new Map<string, string>();
         for (const photo of parsed.photos) {
           if (!photo?.key || !photo.dataBase64) continue;
           try {
             const bytes = Uint8Array.from(atob(photo.dataBase64), c => c.charCodeAt(0));
-            await idbPut('photo:' + photo.key, new Blob([bytes], { type: photo.mime || 'image/jpeg' }));
+            const localKey = uid();
+            await idbPut('photo:' + localKey, new Blob([bytes], { type: photo.mime || 'image/jpeg' }));
+            photoKeys.set(photo.key, localKey);
           } catch (error) { logDiagnostic('error', error, 'attach-photo'); lost.push('фото'); /* проект открываем, но потерю покажем */ }
+        }
+        if (photoKeys.size) {
+          for (const item of [...parsed.project.equipment, ...(parsed.project.pins ?? [])]) {
+            if (item.photos?.length) item.photos = item.photos.map(key => photoKeys.get(key) ?? key);
+          }
         }
         // Открытый файл ещё не сохранён в хранилище: persisted=false, чтобы «Сохранить»
         // создавал проект, а не делал PUT /api/projects/<чужой id> (404).

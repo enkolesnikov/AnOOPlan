@@ -26,7 +26,7 @@ function SidebarTitle({ floors }: { floors: number }) {
 /** Переключатель вкладок структуры проекта. */
 function StructureTabs({ project, tab, onTab }: { project: Project; tab: Tab; onTab: (tab: Tab) => void }) {
   const tabs = [['floors', 'Этажи'], ['equipment', 'Оборуд.'], ['routes', 'Трассы'], ['cables', 'Кабели'], ['pins', 'Зам.']] as const;
-  return <div className="structure-tabs">{tabs.map(([id, name]) => <button className={tab === id ? 'active' : ''} key={id} onClick={() => onTab(id)}>{name}<span>{project[id].length}</span></button>)}</div>;
+  return <div className="structure-tabs">{tabs.map(([id, name]) => <button className={tab === id ? 'active' : ''} key={id} aria-pressed={tab === id} onClick={() => onTab(id)}>{name}<span>{project[id].length}</span></button>)}</div>;
 }
 
 /** Сводка метража по типам КНС — видна только на вкладке «Трассы». */
