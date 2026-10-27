@@ -49,6 +49,8 @@
 - **Проверки:** 277 тестов, 234 смоука, 4 E2E, 4 визуальных эталона; покрытие 95,1/87,5/94,8;
   JS 456,7 КБ / CSS 37,7 КБ; APK 1 600 200 Б, versionCode 40.
 - **Отложено:** квота storage, `AppUi`/`export-pdf`/`MainActivity`, a11y-план, суммарный бюджет чанков.
+- **Релиз:** тег `v2.8.1` на `90ff827`; CI/CodeQL и Pages зелёные (job CI 101 с); Release [v2.8.1](https://github.com/enkolesnikov/AnOOPlan/releases/tag/v2.8.1) —
+  APK 1 600 200 Б и скриншот «О программе»; веб-версия задеплоена на https://enkolesnikov.github.io/AnOOPlan/.
 
 ### Состояние на 2026-10-27 (2.8.0)
 
