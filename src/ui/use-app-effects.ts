@@ -2,8 +2,9 @@ import { useEffect, useRef } from 'react';
 import type { Project } from '../model';
 import { collectStorageGarbage } from '../garbage-collector';
 import { logDiagnostic } from '../diagnostics';
-import { nativeBridge } from './native';
+import { nativeBridge, type NativeHostWindow } from './native';
 import type { PlanEditing } from './use-plan-editing';
+import { useLayerFocus } from './use-layer-focus';
 import type { ProjectIo } from './use-project-io';
 import type { WorkspaceState } from './use-workspace-state';
 
@@ -14,6 +15,8 @@ export function useAppEffects(
   plan: PlanEditing,
   objects: { copySelection: () => void; removeSelection: () => void },
 ) {
+  // UX-01/UX-02: модальность шторок, inert у закрытых панелей и веб-обработчик Back.
+  useLayerFocus(s);
   const {
     dirty, dirtyRef, project, projectRef, staticMode, setStaticMode, floor, persisted,
     draft, setDraft, setCalibration, setMeasure, setCableSegments, setTool,
@@ -58,7 +61,7 @@ export function useAppEffects(
   useEffect(() => { nativeBridge()?.setDirty?.(dirty); }, [dirty]);
   // Вызывается из Java: сохранить и только потом закрыть приложение.
   useEffect(() => {
-    (window as Window & { __anooplanSaveAndExit?: () => Promise<void> }).__anooplanSaveAndExit = async () => {
+    (window as NativeHostWindow).__anooplanSaveAndExit = async () => {
       try {
         await saveProjectRef.current(true);
         nativeBridge()?.exitNow?.();
@@ -72,7 +75,7 @@ export function useAppEffects(
   // Открытие .anooplan из системы: Java вызывает __anooplanOpenSharedProject(jsonText)
   // и/или отдаёт отложенный файл через мост при запуске.
   useEffect(() => {
-    const target = window as Window & { __anooplanOpenSharedProject?: (text: string) => void };
+    const target = window as NativeHostWindow;
     target.__anooplanOpenSharedProject = (text: string) => { void openSharedProjectRef.current(text); };
     const pending = nativeBridge()?.takePendingFile?.();
     if (pending) void openSharedProjectRef.current(pending);

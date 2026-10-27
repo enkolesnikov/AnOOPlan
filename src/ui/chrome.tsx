@@ -1,8 +1,9 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { createDemoProject } from '../demo';
 import { readLocalProjects } from '../local-projects';
 import type { Project } from '../model';
 import { api } from './api';
+import { formatBytes, storageHealth, type StorageHealth } from '../storage-health';
 import { builtInTemplates, deleteCustomTemplate, instantiateTemplate, readCustomTemplates, saveCustomTemplate, type ProjectTemplate } from '../templates';
 import type { AppUi } from './use-app-controller';
 
@@ -25,8 +26,10 @@ export function CommandBar({ ui }: { ui: AppUi }) {
 /** Статусная строка: сообщения и счётчики проекта. */
 export function Footer({ ui }: { ui: AppUi }) {
   const { message, project, staticMode } = ui;
+  const [health, setHealth] = useState<StorageHealth | null>(null);
+  useEffect(() => { let active = true; void storageHealth().then(value => { if (active) setHealth(value); }); return () => { active = false; }; }, [project.updatedAt]);
   return (
-<footer className="statusbar"><span role="status" aria-live="polite"><i className="dot calibrated" />{message}</span><span>{project.equipment.length} оборуд. · {project.routes.length} трасс · {project.cables.length} кабелей <b>{staticMode ? 'БРАУЗЕР' : 'СЕРВЕР'}</b></span></footer>
+<footer className="statusbar"><span role="status" aria-live="polite"><i className="dot calibrated" />{message}</span><span>{project.equipment.length} оборуд. · {project.routes.length} трасс · {project.cables.length} кабелей {health && <>· {formatBytes(health.usage)}{health.ratio >= 0.8 ? ' ⚠ мало места' : ''} </>}<b>{staticMode ? 'БРАУЗЕР' : 'СЕРВЕР'}</b></span></footer>
   );
 }
 

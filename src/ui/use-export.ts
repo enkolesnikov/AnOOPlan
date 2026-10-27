@@ -3,10 +3,12 @@ import { APP_VERSION } from '../About';
 import { clientCsv } from '../client-csv';
 import { collectPinPhotos, collectPhotos, collectPlans } from '../plan-capture';
 import { diagnosticsText } from '../diagnostics';
+import { buildAttachmentManifest } from '../attachment-manifest';
 import { idbGet } from '../idb';
 import { exportSheets } from '../sheets';
 import { ANOOPLAN_EXTENSION, ANOOPLAN_MIME, buildAnoPlanFile, serializeAnoPlanFile } from '../project-file';
 import { JOURNAL_SECTIONS } from './constants';
+import { storageHealth } from '../storage-health';
 import { blobToBase64, bytesToBase64, nativeBridge, saveBlobOnDevice } from './native';
 import type { ProjectIo } from './use-project-io';
 import type { WorkspaceState } from './use-workspace-state';
@@ -38,9 +40,13 @@ export function useExport(s: WorkspaceState, io: ProjectIo) {
     setMessage(`Открыт системный диалог печати: разделов ${include.length} из ${JOURNAL_SECTIONS.length}.${plans.warnings.length ? ` ${plans.warnings.join(' ')}` : ''}`);
   }
 
+  /** Практический предел base64-архива: не даём собрать несколько копий и упасть по OOM. */
+  const MAX_ARCHIVE_BASE64 = 40 * 1024 * 1024;
   /** PDF/фото текущего проекта для резервной копии и файла .anooplan. */
   async function collectProjectArchive(current: Project): Promise<{ pdfs: { id: string; name: string; dataBase64: string }[]; photos: { key: string; name: string; mime: string; dataBase64: string }[]; warnings: string[] }> {
     const warnings: string[] = [];
+    let totalBase64 = 0;
+    const account = (dataBase64: string): void => { totalBase64 += dataBase64.length; if (totalBase64 > MAX_ARCHIVE_BASE64) throw new Error('Архив слишком большой для одного файла. Удалите лишние фото/PDF или используйте несколько проектов.'); };
     const pdfs: { id: string; name: string; dataBase64: string }[] = [];
     const seenPdf = new Set<string>();
     for (const stageFloor of current.floors) {
@@ -49,7 +55,7 @@ export function useExport(s: WorkspaceState, io: ProjectIo) {
       seenPdf.add(pdfId);
       if (pdfId.startsWith('idb:')) {
         const pdfBlob = await idbGet(pdfId.slice(4));
-        if (pdfBlob) pdfs.push({ id: pdfId, name: 'plan.pdf', dataBase64: await blobToBase64(pdfBlob) });
+        if (pdfBlob) { const dataBase64 = await blobToBase64(pdfBlob); account(dataBase64); pdfs.push({ id: pdfId, name: 'plan.pdf', dataBase64 }); }
         else warnings.push(`PDF ${pdfId} не найден в хранилище`);
         continue;
       }
@@ -60,7 +66,7 @@ export function useExport(s: WorkspaceState, io: ProjectIo) {
       try {
         const response = await fetch('/api/pdfs/' + encodeURIComponent(pdfId));
         if (!response.ok) { warnings.push(`PDF ${pdfId}: сервер вернул ${response.status}`); continue; }
-        pdfs.push({ id: pdfId, name: 'plan.pdf', dataBase64: await blobToBase64(await response.blob()) });
+        { const dataBase64 = await blobToBase64(await response.blob()); account(dataBase64); pdfs.push({ id: pdfId, name: 'plan.pdf', dataBase64 }); }
       } catch (error) { warnings.push(`PDF ${pdfId}: ${error instanceof Error ? error.message : String(error)}`); }
     }
     const photoKeys = [...new Set([...current.equipment, ...current.pins].flatMap(item => item.photos || []))];
@@ -68,7 +74,7 @@ export function useExport(s: WorkspaceState, io: ProjectIo) {
     for (const key of photoKeys) {
       try {
         const photoBlob = await idbGet('photo:' + key);
-        if (photoBlob) photos.push({ key, name: 'photo.jpg', mime: photoBlob.type || 'image/jpeg', dataBase64: await blobToBase64(photoBlob) });
+        if (photoBlob) { const dataBase64 = await blobToBase64(photoBlob); account(dataBase64); photos.push({ key, name: 'photo.jpg', mime: photoBlob.type || 'image/jpeg', dataBase64 }); }
         else warnings.push(`Фото ${key} не найдено в хранилище`);
       } catch (error) { warnings.push(`Фото ${key}: ${error instanceof Error ? error.message : String(error)}`); }
     }
@@ -77,6 +83,8 @@ export function useExport(s: WorkspaceState, io: ProjectIo) {
   /** Единая сборка экспортного файла: используется и «Сохранить», и «Поделиться». */
   async function buildExportBlob(kind: 'csv' | 'xlsx' | 'pdf' | 'backup'): Promise<{ blob: Blob; fileName: string; warning: string }> {
     const current = projectRef.current;
+    const health = await storageHealth();
+    if (health && health.ratio >= 0.9) throw new Error(`Мало свободного места (занято ${Math.round(health.ratio * 100)}%). Освободите хранилище или выгрузите проект перед экспортом.`);
     // Один клиентский экспорт для браузера и серверного режима: серверного /export больше нет.
     if (!staticMode) await saveProject();
     if (kind === 'xlsx') {
@@ -93,7 +101,8 @@ export function useExport(s: WorkspaceState, io: ProjectIo) {
     if (kind === 'backup') {
       const { pdfs, photos, warnings } = await collectProjectArchive(current);
       if (warnings.length) throw new Error(`Резервная копия неполная: ${warnings.join('; ')}. Освободите место и повторите.`);
-      return { blob: new Blob([JSON.stringify({ schemaVersion: 2, project: current, pdfs, photos })], { type: 'application/json' }), fileName: `${current.name}.json`, warning: '' };
+      const manifest = await buildAttachmentManifest(pdfs, photos);
+      return { blob: new Blob([JSON.stringify({ schemaVersion: 2, project: current, pdfs, photos, manifest })], { type: 'application/json' }), fileName: `${current.name}.json`, warning: '' };
     }
     return { blob: new Blob([clientCsv(current)], { type: 'text/csv;charset=utf-8' }), fileName: `${current.name}.csv`, warning: '' };
   }
@@ -133,7 +142,8 @@ export function useExport(s: WorkspaceState, io: ProjectIo) {
     const current = projectRef.current;
     const { pdfs, photos, warnings } = await collectProjectArchive(current);
     if (warnings.length) throw new Error(`Файл .anooplan неполный: ${warnings.join('; ')}. Освободите место и повторите.`);
-    const json = serializeAnoPlanFile(buildAnoPlanFile(current, pdfs, photos));
+    const manifest = await buildAttachmentManifest(pdfs, photos);
+    const json = serializeAnoPlanFile(buildAnoPlanFile(current, pdfs, photos, manifest));
     return { blob: new Blob([json], { type: ANOOPLAN_MIME }), fileName: `${current.name}${ANOOPLAN_EXTENSION}` };
   }
   async function saveAnoPlan(): Promise<void> {

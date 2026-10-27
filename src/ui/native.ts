@@ -3,6 +3,20 @@ export function blobToBase64(blob: Blob): Promise<string> {
   return new Promise((resolve, reject) => { const reader = new FileReader(); reader.onload = () => resolve(String(reader.result).split(',')[1] ?? ''); reader.onerror = () => reject(reader.error ?? new Error('Не удалось прочитать файл')); reader.readAsDataURL(blob); });
 }
 
+/**
+ * Контракт системной кнопки «Назад» (UX-02): MainActivity вызывает
+ * `window.__anooplanHandleBack()`; `true` — веб-слой закрыл верхний слой,
+ * `false` — Back не обработан и решает нативная оболочка.
+ */
+export type WebBackHandler = () => boolean;
+
+/** Функции, которые нативная оболочка вызывает у страницы. */
+export type NativeHostWindow = Window & {
+  __anooplanSaveAndExit?: () => Promise<void>;
+  __anooplanOpenSharedProject?: (text: string) => void;
+  __anooplanHandleBack?: WebBackHandler;
+};
+
 // Нативная оболочка Android (AnOOPlan) подключает мост AnOOPlanNative:
 // через него экспортированные файлы попадают в «Загрузки/AnOOPlan».
 export type NativeBridgeApi = {

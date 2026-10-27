@@ -8,13 +8,13 @@
   --border: #d4dde1;
   --border-soft: #e5ebee;
   --text: #1c2b33;
-  --muted: #64767f;
-  --accent: #008e94;
+  --muted: #5a6b73;
+  --accent: #00777c;
   --accent-2: #126e71;
-  --accent-soft: rgba(0, 142, 148, 0.12);
+  --accent-soft: rgba(0, 119, 124, 0.12);
   --warn: #e78c22;
-  --danger: #dc5071;
-  --good: #2f9e63;
+  --danger: #b8324f;
+  --good: #1f7a4a;
   --violet: #875ec5;
   --shadow: 0 2px 10px rgba(18, 41, 54, 0.08);
 }
@@ -317,7 +317,7 @@ td strong { font-weight: 600; }
 td small { display: block; color: var(--muted); font-size: 12px; }
 .badge { display: inline-block; padding: 2px 8px; border-radius: 20px; font-size: 12px; font-weight: 600; }
 .badge.good { background: #e4f4ea; color: var(--good); }
-.badge.warn { background: #fdf1e2; color: #a5610f; }
+.badge.warn { background: #fdf1e2; color: #96550c; }
 .document-empty { padding: 28px; text-align: center; color: var(--muted); }
 .document-note { margin-top: 12px; color: var(--muted); font-size: 12px; }
 
@@ -328,7 +328,7 @@ td small { display: block; color: var(--muted); font-size: 12px; }
 .estimate-labor { width: 140px; flex: 0 0 auto; }
 .estimate-note-field { flex: 1; min-width: 220px; }
 .estimate-warnings { border: 1px solid #f2d3ab; background: #fdf6ec; border-radius: 10px; padding: 10px 12px; margin-bottom: 16px; font-size: 13px; }
-.estimate-warnings strong { color: #a5610f; }
+.estimate-warnings strong { color: #96550c; }
 .estimate-warnings ul { margin: 6px 0 0; padding-left: 18px; color: var(--muted); }
 .estimate-section { margin-bottom: 18px; }
 .estimate-section-head { display: flex; align-items: center; gap: 10px; margin-bottom: 6px; flex-wrap: wrap; }
@@ -410,11 +410,11 @@ td small { display: block; color: var(--muted); font-size: 12px; }
 .tray-fill-row strong { font-weight: 600; }
 .tray-fill-row span { color: var(--muted); }
 .tray-fill-row em { font-style: normal; font-weight: 600; color: var(--muted); overflow-wrap: anywhere; }
-.tray-fill-row small { grid-column: 1 / -1; color: #a5610f; font-size: 12px; }
+.tray-fill-row small { grid-column: 1 / -1; color: #96550c; font-size: 12px; }
 .tray-fill-row.ok { border-left-color: var(--good); }
 .tray-fill-row.ok em { color: var(--good); }
 .tray-fill-row.warning { border-left-color: var(--warn); }
-.tray-fill-row.warning em { color: #a5610f; }
+.tray-fill-row.warning em { color: #96550c; }
 .tray-fill-row.over { border-left-color: var(--danger); }
 .tray-fill-row.over em { color: var(--danger); }
 .property-actions { display: flex; gap: 8px; border-top: 1px solid var(--border-soft); padding-top: 10px; margin-top: 4px; }
@@ -552,9 +552,11 @@ td small { display: block; color: var(--muted); font-size: 12px; }
   .save-indicator { display: none; }
   .top-actions { gap: 6px; flex-wrap: wrap; flex-shrink: 0; }
   .top-actions button { padding: 6px 9px; font-size: 12px; white-space: normal; overflow-wrap: anywhere; }
-  .commandbar { flex-wrap: nowrap; gap: 4px; padding: 4px 8px; }
-  .view-tabs { flex: 1 1 auto; }
-  .view-tabs button { flex: 1; padding: 8px 3px; font-size: 12px; white-space: normal; overflow-wrap: anywhere; }
+  .commandbar { flex-wrap: wrap; gap: 4px; padding: 4px 8px; }
+  /* Вкладки разделов: полные слова без переноса по буквам и цель ≥44 px.
+     Вкладки не сжимаются ниже текста, при крупном шрифте строка переносится. */
+  .view-tabs { flex: 1 1 auto; min-width: 0; }
+  .view-tabs button { flex: 1 1 auto; padding: 8px 2px; font-size: 11px; white-space: nowrap; overflow-wrap: normal; min-width: 44px; min-height: 44px; }
   .command-actions { flex-wrap: nowrap; gap: 4px; flex-shrink: 0; }
 
   /* план: максимум площади, инструменты — крупная нижняя панель */
@@ -565,15 +567,21 @@ td small { display: block; color: var(--muted); font-size: 12px; }
   .drawing-stage { order: 3; }
   .tool-hint { display: none; }
   .drawing-toolbar {
-    order: 4; flex-wrap: nowrap; gap: 4px; padding: 6px 8px;
+    order: 4; flex-wrap: nowrap; gap: 2px; padding: 6px 6px calc(6px + env(safe-area-inset-bottom, 0px));
     border-bottom: none; border-top: 1px solid var(--border); background: var(--surface);
   }
-  .drawing-toolbar .tool-group { flex: 1 1 auto; gap: 3px; }
-  .drawing-toolbar .tool-group button { flex: 1; flex-direction: column; gap: 2px; padding: 6px 2px; min-height: 52px; }
-  .drawing-toolbar .tool-group button b { font-size: 20px; line-height: 1; }
-  .drawing-toolbar .tool-group button span { display: block; font-size: 11px; }
+  /* Инструменты: иконка над полной подписью. Кнопки не сжимаются ниже текста,
+     поэтому при крупном системном шрифте панель переносится на вторую строку,
+     а не обрезает подписи и не рвёт слова по буквам. Цель — не меньше 44×44 CSS px. */
+  .drawing-toolbar .tool-group { flex: 1 1 auto; gap: 2px; flex-wrap: wrap; }
+  .drawing-toolbar .tool-group button {
+    flex: 1 0 auto; flex-direction: column; gap: 2px; padding: 5px 3px;
+    min-width: 44px; min-height: 52px;
+  }
+  .drawing-toolbar .tool-group button b { font-size: 19px; line-height: 1; }
+  .drawing-toolbar .tool-group button span { display: block; font-size: 11px; white-space: nowrap; }
   .drawing-toolbar .tool-group.history { flex: 0 0 auto; }
-  .drawing-toolbar .tool-group.history button { min-width: 44px; min-height: 52px; }
+  .drawing-toolbar .tool-group.history button { flex: 0 0 auto; min-width: 44px; min-height: 52px; }
 
   .document-view { padding: 12px 10px; }
   .statusbar { font-size: 11px; padding: 4px 10px; gap: 6px; }
@@ -717,12 +725,7 @@ input[inputmode="decimal"] { text-align: left; }
     font-size: 22px; line-height: 1; box-shadow: 0 2px 10px rgba(18, 41, 54, .18);
   }
   .history-fab button:disabled { opacity: .4; }
-  /* Панель инструментов: семь кнопок в один ряд, история больше не отнимает место */
-  .drawing-toolbar .tool-group:first-child { flex: 1 1 auto; min-width: 0; gap: 2px; }
-  .drawing-toolbar .tool-group:first-child button { flex: 1 1 0; min-width: 0; padding: 6px 0; }
-  .drawing-toolbar .tool-group:first-child button span {
-    max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 10px;
-  }
+  /* Нижняя панель: только инструменты, undo/redo — плавающие кнопки справа. */
   .drawing-toolbar .tool-group.history { display: none; }
 }
 
@@ -791,6 +794,84 @@ button, input, select, textarea, summary,
 .empty-list, .help, .document-note, .field small { overflow-wrap: anywhere; }
 
 /* ══════════════════════════════════════════════════════════════════════
+   UX-03: мобильная панель инструментов, шторка «Ещё» и масштаб на плане.
+   Базовые правила — для десктопа, мобильные уточнения ниже. Блок стоит
+   после общих правил переноса, чтобы слова во вкладках не рвались по буквам.
+   ══════════════════════════════════════════════════════════════════════ */
+/* «Ещё» нужна только узкому экрану; на десктопе все восемь кнопок на месте.
+   Селектор с классом панели перекрывает `.tool-group button { display: flex }`. */
+.drawing-toolbar .tool-more-button { display: none; }
+.drawing-toolbar .tool-more-button.has-active { background: var(--accent-soft); border-color: var(--accent); color: var(--accent-2); }
+/* Масштаб и «Вписать» на поле плана: на телефоне drawing-options скрыта. */
+.plan-zoom { display: none; }
+/* Ручное открытие свойств на документных видах (на телефоне есть PropsFab). */
+.props-toggle-doc { display: none; }
+
+@media (max-width: 768px) {
+  .drawing-toolbar .tool-secondary { display: none; }
+  .drawing-toolbar .tool-more-button { display: flex; }
+}
+
+@media (max-width: 1023px) {
+  .plan-zoom {
+    display: flex; align-items: center; gap: 2px;
+    position: absolute; top: 8px; right: 8px; z-index: 4;
+    padding: 3px; border: 1px solid var(--border); border-radius: 12px;
+    background: rgba(255, 255, 255, .94); box-shadow: var(--shadow);
+  }
+  .plan-zoom button {
+    display: grid; place-items: center; min-width: 44px; min-height: 44px;
+    padding: 0; border: none; background: transparent; font-size: 18px; line-height: 1;
+  }
+  .plan-zoom button:hover:not(:disabled) { background: var(--surface-3); color: var(--accent-2); }
+  .plan-zoom-value { min-width: 44px; text-align: center; font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
+  .commandbar .export-trigger { white-space: nowrap; overflow-wrap: normal; word-break: normal; min-height: 44px; }
+}
+
+@media (min-width: 1024px) {
+  .props-toggle-doc {
+    display: inline-flex; align-items: center; gap: 6px;
+    position: fixed; right: 16px; bottom: 56px; z-index: 40;
+    min-height: 44px; padding: 8px 14px; font-size: 13px;
+    border-radius: 999px; background: var(--surface); box-shadow: var(--shadow);
+  }
+  .props-toggle-doc.active { border-color: var(--accent); color: var(--accent-2); }
+}
+
+/* Шторка «Ещё инструменты»: крупные строки с полными подписями и подсказками. */
+.tool-sheet-list { display: flex; flex-direction: column; gap: 6px; }
+.tool-sheet-list button { display: flex; align-items: center; gap: 12px; }
+.tool-sheet-list button b { font-size: 22px; line-height: 1; width: 28px; text-align: center; flex: 0 0 auto; }
+.tool-sheet-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.tool-sheet-text strong { font-size: 15px; font-weight: 600; }
+.tool-sheet-text small { font-size: 12px; color: var(--muted); line-height: 1.35; }
+.tool-sheet-list button.active { border-color: var(--accent); background: var(--accent-soft); color: var(--accent-2); }
+.tool-sheet-options { display: flex; flex-wrap: wrap; gap: 8px 18px; padding: 4px 2px; }
+
+/* ── UX-05: вкладки шторки «Экспорт и копия» ─────────────────────────── */
+.export-tabs { display: flex; gap: 4px; padding: 8px 0 0; border-bottom: 1px solid var(--border-soft); }
+.export-tabs button {
+  flex: 1 1 0; min-width: 0; min-height: 44px; padding: 8px 6px;
+  border: 1px solid transparent; border-bottom: none; border-radius: 8px 8px 0 0;
+  background: transparent; color: var(--muted); font-size: 14px; font-weight: 500;
+}
+.export-tabs button.active { background: var(--accent-soft); color: var(--accent-2); box-shadow: inset 0 -2px 0 var(--accent); font-weight: 600; }
+.export-tabs button:hover:not(.active) { color: var(--accent-2); background: var(--surface-3); }
+.export-panel { display: flex; flex-direction: column; gap: 6px; }
+.export-panel[hidden] { display: none; }
+.export-formats { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; padding: 2px 0 4px; }
+.export-format { display: flex; flex-direction: column; gap: 3px; }
+.export-format button {
+  min-height: 48px; padding: 8px 10px; justify-content: center; align-items: center;
+  text-align: center; font-size: 15px; font-weight: 600; letter-spacing: .02em;
+}
+.export-format small { color: var(--muted); font-size: 11px; line-height: 1.3; }
+.export-row { display: flex; flex-wrap: wrap; gap: 6px; }
+.export-row button { flex: 1 1 140px; }
+.print-presets { display: flex; flex-wrap: wrap; gap: 6px; }
+.print-presets button { min-height: 40px; padding: 6px 10px; font-size: 12px; }
+
+/* ══════════════════════════════════════════════════════════════════════
    Тёмная тема: системная настройка Android/браузера.
    Контраст основного текста на поверхностях — ≥ 12:1, вторичного (--muted) — ≥ 7:1;
    значения проверяет tests/android-config.test.ts.
@@ -829,6 +910,7 @@ button, input, select, textarea, summary,
   .no-pdf span { color: #8fa3ad; }
   .no-pdf p { color: #54666f; }
   .plan-badge, .plan-legend { background: rgba(19, 37, 47, 0.94); }
+  .plan-zoom { background: rgba(19, 37, 47, 0.94); }
   .legend-equipment { background: #fff; }
 
   /* Элементы со светлыми цветами, зашитыми в правила выше. */
@@ -917,3 +999,7 @@ button, input, select, textarea, summary,
   .drawing-sheet, .no-pdf { forced-color-adjust: none; }
   :focus-visible { outline: 3px solid Highlight; outline-offset: 2px; }
 }
+
+/* Иконки инструментов — локальный SVG, а не emoji/символы системного шрифта. */
+.tool-group button svg, .tool-sheet button svg { flex: 0 0 auto; width: 18px; height: 18px; }
+@media (max-width: 1023px) { .tool-group button svg, .tool-sheet button svg { width: 22px; height: 22px; } }

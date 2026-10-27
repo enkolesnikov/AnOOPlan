@@ -6,6 +6,7 @@ import { idbDelete, idbPut, idbStoreDelete, idbStoreKeys } from '../idb';
 import { deleteLocalProject, readLocalProjects, saveLocalProject } from '../local-projects';
 import { migrateProject } from '../migrations';
 import { collectStorageGarbage } from '../garbage-collector';
+import { verifyAttachmentManifest, type AttachmentManifest } from '../attachment-manifest';
 import { api, jsonOptions } from './api';
 import { nativeBridge } from './native';
 import type { WorkspaceState } from './use-workspace-state';
@@ -58,6 +59,11 @@ export function useProjectIo(s: WorkspaceState) {
       const hasProject = Boolean(parsed) && typeof parsed === 'object' && 'project' in parsed;
       const project = migrateProject(hasProject ? parsed.project : parsed);
       if (hasProject) {
+        if (parsed.manifest && typeof parsed.manifest === 'object') {
+          const rawPdfs = Array.isArray(parsed.pdfs) ? parsed.pdfs as { id: string; name: string; dataBase64: string }[] : [];
+          const rawPhotos = Array.isArray(parsed.photos) ? parsed.photos as { key: string; name: string; mime: string; dataBase64: string }[] : [];
+          await verifyAttachmentManifest(parsed.manifest as AttachmentManifest, rawPdfs, rawPhotos);
+        }
         const rawPdfs = Array.isArray(parsed.pdfs) ? parsed.pdfs as { id?: string; dataBase64?: string }[] : [];
         const pdfKeys = new Map<string, string>();
         for (const pdf of rawPdfs) {
@@ -106,6 +112,7 @@ export function useProjectIo(s: WorkspaceState) {
   async function openSharedProject(text: string): Promise<void> {
     try {
       const parsed = parseAnoPlanFile(JSON.parse(text));
+      if (parsed.kind === 'file' && parsed.manifest) await verifyAttachmentManifest(parsed.manifest, parsed.pdfs, parsed.photos);
       if (dirtyRef.current && !window.confirm('Есть несохранённые изменения. Открыть файл без сохранения?')) {
         setMessage('Открытие файла отменено.');
         return;

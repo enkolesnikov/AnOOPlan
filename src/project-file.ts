@@ -1,5 +1,6 @@
 import type { Project } from './model';
 import { migrateProject, ProjectSchemaError } from './migrations';
+import type { AttachmentManifest } from './attachment-manifest';
 
 /**
  * Файл проекта AnOOPlan (`.anooplan`) — JSON-формат обмена проектом вместе с
@@ -23,11 +24,13 @@ export interface AnoPlanFile {
   project: Project;
   pdfs: ProjectPdfAttachment[];
   photos: ProjectPhotoAttachment[];
+  /** SHA-256 манифест вложений; необязателен для файлов старых версий. */
+  manifest?: AttachmentManifest;
   exportedAt: string;
 }
 
 export type ParsedProjectFile =
-  | { kind: 'file'; project: Project; pdfs: ProjectPdfAttachment[]; photos: ProjectPhotoAttachment[] }
+  | { kind: 'file'; project: Project; pdfs: ProjectPdfAttachment[]; photos: ProjectPhotoAttachment[]; manifest?: AttachmentManifest }
   | { kind: 'project'; project: Project };
 
 const NOT_A_PROJECT = 'Файл не является проектом AnOOPlan.';
@@ -47,6 +50,7 @@ export function buildAnoPlanFile(
   project: Project,
   pdfs: ProjectPdfAttachment[] = [],
   photos: ProjectPhotoAttachment[] = [],
+  manifest?: AttachmentManifest,
 ): AnoPlanFile {
   return {
     format: ANOOPLAN_FORMAT,
@@ -54,6 +58,7 @@ export function buildAnoPlanFile(
     project,
     pdfs,
     photos,
+    ...(manifest ? { manifest } : {}),
     exportedAt: new Date().toISOString(),
   };
 }
@@ -116,6 +121,7 @@ export function parseAnoPlanFile(input: unknown): ParsedProjectFile {
       project: migrateProject(input.project),
       pdfs: normalizePdfAttachments(input.pdfs),
       photos: normalizePhotoAttachments(input.photos),
+      ...(isRecord(input.manifest) ? { manifest: input.manifest as unknown as AttachmentManifest } : {}),
     };
   }
 
@@ -126,6 +132,7 @@ export function parseAnoPlanFile(input: unknown): ParsedProjectFile {
       project: migrateProject(input.project),
       pdfs: normalizePdfAttachments(input.pdfs),
       photos: normalizePhotoAttachments(input.photos),
+      ...(isRecord(input.manifest) ? { manifest: input.manifest as unknown as AttachmentManifest } : {}),
     };
   }
 

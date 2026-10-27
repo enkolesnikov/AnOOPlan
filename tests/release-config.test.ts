@@ -66,3 +66,17 @@ test('безопасность и надёжность: localhost по умол�
   assert.doesNotMatch(saveAndExit, /postDelayed/);
   assert.match(saveAndExit, /__anooplanSaveAndExit/);
 });
+
+test('цепочка поставки: checksums инструментов и полный release gate', () => {
+  const fetchTools = read('scripts/fetch-tools.sh');
+  assert.match(fetchTools, /SHA256|SHA_ANDROID_JAR|sha256sum/);
+  assert.match(fetchTools, /verify_sha/);
+  const ci = read('.github/workflows/ci.yml');
+  assert.doesNotMatch(ci, /coverage\.codacy\.com/);
+  assert.match(ci, /hashFiles\('package-lock\.json'\)/);
+  const release = read('.github/workflows/android-release.yml');
+  assert.match(release, /npm run lint/);
+  assert.match(release, /npm run knip/);
+  assert.match(release, /npm run coverage/);
+  assert.match(release, /merge-base --is-ancestor/);
+});

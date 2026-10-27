@@ -57,9 +57,21 @@ jobs:
         uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
           path: ~/.cache/ms-playwright
-          key: playwright-${{ runner.os }}-v1
+          key: playwright-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
           restore-keys: |
             playwright-${{ runner.os }}-
+
+      - name: Полный quality gate
+        run: |
+          npx tsc --noEmit
+          npm run lint
+          npm run knip
+          npm run coverage
+
+      - name: Тег создан из проверенного main
+        run: |
+          git fetch origin main --depth=100
+          git merge-base --is-ancestor "$GITHUB_SHA" origin/main || { echo "Тег указывает на коммит вне main — релиз запрещён." >&2; exit 1; }
 
       - name: Браузер для E2E
         run: npx playwright install --with-deps chromium

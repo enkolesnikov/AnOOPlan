@@ -13,8 +13,8 @@
 - Релизы с APK: <https://github.com/enkolesnikov/AnOOPlan/releases>
 - Веб-версия: <https://enkolesnikov.github.io/AnOOPlan/> — та же сборка, что и APK; публикуется
   вручную по запросу (приоритет — Android).
-- Текущая версия: **2.8.2**, versionCode 41, `com.anooplan.app`, minSdk 24, targetSdk 35.
-  APK ~1,5 МБ, WebView 98+, 279 юнит-тестов + 235 проверок смоука + 4 E2E.
+- Текущая версия: **2.8.3**, versionCode 42, `com.anooplan.app`, minSdk 24, targetSdk 35.
+  APK ~1,5 МБ, WebView 98+, 285 юнит-тестов + 235 проверок смоука + 6 E2E.
 - Возможности: PDF-планы и калибровка, оборудование с иконками и цветом, трассы, кабели и автопрокладка,
   журнал, справочник цен и смета с коммерческим предложением, печатные формы (титул, оглавление,
   штамп ГОСТ, лист изменений), печать выбранных разделов, обмен PDF/XLSX и проектом `.anooplan`,
@@ -30,11 +30,25 @@
 - **Доступность:** системный размер шрифта Android (textZoom 85–160 %), тёмная тема, высокий контраст,
   reduced-motion; бюджет памяти рендера плана — 8 Мпикс с предупреждением.
 - Подпись: SHA-256 сертификата `6431374cf6a7d385c4c47f0f2bf54fcb5ee5b2c7120f057b18c4062af92fe097`.
-- Текущий релиз: [v2.8.2 «Надёжность»](https://github.com/enkolesnikov/AnOOPlan/releases/tag/v2.8.2) —
-  подписанный APK `AnOOPlan-2.8.2.apk` (versionCode 41), описание из аннотации тега и 1 скриншот
+- Текущий релиз: [v2.8.3 «UX-аудит»](https://github.com/enkolesnikov/AnOOPlan/releases/tag/v2.8.3) —
+  подписанный APK `AnOOPlan-2.8.3.apk` (versionCode 42), описание из аннотации тега и 1 скриншот
   подтверждения в assets.
-- Предыдущий релиз: [v2.8.1 «Аудит»](https://github.com/enkolesnikov/AnOOPlan/releases/tag/v2.8.1) —
-  APK `AnOOPlan-2.8.1.apk` (versionCode 40), 1 скриншот в assets.
+- Предыдущий релиз: [v2.8.2 «Надёжность»](https://github.com/enkolesnikov/AnOOPlan/releases/tag/v2.8.2) —
+  APK `AnOOPlan-2.8.2.apk` (versionCode 41), 1 скриншот в assets.
+
+### Состояние на 2026-10-28 (2.8.3)
+
+- **UX-01/02:** `src/ui/use-layer-focus.ts` — aria-modal/focus trap/Escape/inert, возврат фокуса;
+  `window.__anooplanHandleBack` и `MainActivity.onBackPressed` сначала закрывают веб-слой.
+- **UX-03/05/06/07:** мобильные 4+«Ещё» с целями ≥44 px, экспорт на вкладках, свойства не занимают
+  документы, light-токены AA. **UX-08/09/10:** русские заголовки, aria-состояния/«⋯ Действия»,
+  локальные SVG-иконки.
+- **F-05:** SHA-256 манифест вложений, импорт отклоняет подмену; серверный backup помечен неполным.
+- **F-10:** кэш Playwright по lock-файлу; **F-11:** индикатор места, порог 90 %, лимит 40 МБ;
+  полная миграция в IndexedDB — 3.0; **F-12:** checksums инструментов, без `curl|bash`,
+  полный release gate и проверка тега из main.
+- **Проверки:** 285 тестов, 235 смоуков, 6 E2E, 4 визуальных эталона; покрытие 95,1/87,2/94,9
+  и 57,3 % по всем src; JS 475,4 КБ / CSS 40,9 КБ; APK 1 604 296 Б, versionCode 42.
 
 ### Состояние на 2026-10-28 (2.8.2)
 
@@ -447,7 +461,7 @@ APK всегда работает в режиме «Браузер»: запро
 
 ```bash
 npm ci                      # зависимости (Node 22.5+, проверено на Node 24)
-npm test                    # 279 тестов (движок, КНС/сегменты, иконки, смета, формы, миграции, API, экспорт)
+npm test                    # 285 тестов (движок, КНС/сегменты, иконки, смета, формы, миграции, API, экспорт)
 npm run lint                # ESLint (0 ошибок), шаг CI перед тестами
 npm run coverage            # тесты с покрытием и порогами + coverage/lcov.info (используется в CI)
 npm run size                # бюджет стартового бандла (после npm run build)
@@ -542,7 +556,7 @@ Android-инструменты; JDK на VPS уже установлен. Есл
 
 ## Тесты и что ими не покрыто
 
-- 279 юнит-тестов: движок, заполнение КНС и сегментные размеры (`tests/tray-fill.test.ts`), типы и
+- 285 юнит-тестов: движок, заполнение КНС и сегментные размеры (`tests/tray-fill.test.ts`), типы и
   цвета КНС (`tests/route-kinds.test.ts`), доступность (textZoom, тёмная тема, контраст —
   `tests/a11y.test.ts`, `tests/android-config.test.ts`), память рендера (`tests/render-plan.test.ts`),
   страницы плана и note в PDF (`tests/plan-pages.test.ts`, `tests/export.test.ts`), иконки и цвет

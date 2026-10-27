@@ -532,10 +532,40 @@ public class MainActivity extends Activity implements NativeBridge.Host {
         return intent;
     }
 
-    // ── «Назад»: сохранить перед выходом ─────────────────────────────────────
+    // ── «Назад»: сначала закрыть веб-слой, и только потом выходить ──────────
 
+    /** JS-обработчик Back: true — верхний веб-слой закрыт, Activity завершать нельзя. */
+    private static final String HANDLE_BACK_JS =
+            "(function(){try{if(typeof window.__anooplanHandleBack==='function'){"
+                    + "return window.__anooplanHandleBack()?'true':'false';}"
+                    + "}catch(e){}return 'false';})()";
+
+    /**
+     * Первое нажатие Back всегда отдаём веб-части (UX-02): открытая шторка,
+     * модалка или панель свойств закрываются, не завершая приложение. Только
+     * если веб-слой ответил false, работает прежняя нативная логика:
+     * история WebView, затем диалог выхода с сохранением.
+     */
     @Override
     public void onBackPressed() {
+        if (webView == null || isFinishing()) {
+            handleNativeBack();
+            return;
+        }
+        try {
+            webView.evaluateJavascript(HANDLE_BACK_JS, new ValueCallback<String>() {
+                public void onReceiveValue(String value) {
+                    if (value != null && value.contains("true")) return;
+                    handleNativeBack();
+                }
+            });
+        } catch (RuntimeException error) {
+            handleNativeBack();
+        }
+    }
+
+    /** Back не обработан веб-слоем: история WebView, затем диалог выхода. */
+    private void handleNativeBack() {
         if (webView != null && webView.canGoBack()) {
             webView.goBack();
             return;

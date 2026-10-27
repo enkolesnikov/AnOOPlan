@@ -21,7 +21,7 @@ export function PropertiesPanel({ ui }: { ui: AppUi }) {
     floor, applySheetScale, setTool, setView, setCalibration, sheetFormat, setSheetFormat, sheetScale, setSheetScale,
     pdfPages, upload, busy, addRiser, segmentField, routeFillWorst, fill, cableSegments, setCableSegments,
     cableFrom, setCableFrom, cableTo, setCableTo, tool, calculation, cableSectionResult, cableFill, setMessage,
-    setFloorId,
+    setFloorId, setSheet,
   } = ui;
   const activeItem = equipment || route || cable;
   const routePreset = route ? routeKindPreset(route.type) : null;
@@ -37,7 +37,7 @@ export function PropertiesPanel({ ui }: { ui: AppUi }) {
     return owner ? `${owner.number} / ${(index ?? 0) + 1}` : `Отсутствует: ${id.slice(0, 8)}`;
   }
   return (
-      <aside className={`properties ${propsOpen ? 'open' : ''}`}><div className="properties-title">Свойства<span>{dimension ? 'РАЗМЕР' : equipment ? 'ОБОРУДОВАНИЕ' : route ? 'ТРАССА' : cable ? 'КАБЕЛЬ' : pin ? 'ЗАМЕЧАНИЕ' : 'ЭТАЖ'}</span><button className="properties-close" aria-label="Закрыть" onClick={() => setPropsOpen(false)}>×</button></div><div className="properties-content">{selection && dimension ? (() => {
+      <aside className={`properties ${propsOpen ? 'open' : ''}`}><div className="properties-title">Свойства<span>{dimension ? 'РАЗМЕР' : equipment ? 'ОБОРУДОВАНИЕ' : route ? 'ТРАССА' : cable ? 'КАБЕЛЬ' : pin ? 'ЗАМЕЧАНИЕ' : 'ЭТАЖ'}</span><button className="properties-close" aria-label="Закрыть" onClick={() => setPropsOpen(false)}>×</button>{selection && selection.kind !== 'dimension' && <button className="properties-close" aria-label="Действия с объектом" title="Действия" onClick={() => { if (selection.kind !== 'dimension') setSheet({ kind: selection.kind, id: selection.id }); }}>⋯</button>}</div><div className="properties-content">{selection && dimension ? (() => {
         const geometry = dimensionGeometry(project, dimension);
         const from = project.equipment.find(item => item.id === dimension.fromId);
         const to = project.equipment.find(item => item.id === dimension.toId);

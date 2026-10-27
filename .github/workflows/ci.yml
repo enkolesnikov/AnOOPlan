@@ -39,11 +39,6 @@ jobs:
         run: npx tsc --noEmit
       - name: Юнит-тесты с покрытием
         run: npm run coverage
-      # Секрет задаётся владельцем: Codacy → Settings → Integrations/API → project token.
-      # Без секрета (например, PR из форка) шаг пропускается, токен в лог не попадает.
-      - name: Покрытие в Codacy
-        if: ${{ env.CODACY_PROJECT_TOKEN != '' }}
-        run: bash <(curl -Ls https://coverage.codacy.com/get.sh) report -l JavaScript -r coverage/lcov.info
       - name: Сборка и бюджет стартового бандла
         run: npm run build && npm run size
       - name: Дымовой тест интерфейса
@@ -52,7 +47,7 @@ jobs:
         uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
           path: ~/.cache/ms-playwright
-          key: playwright-${{ runner.os }}-v1
+          key: playwright-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
       - name: Браузер для E2E
         # Без --with-deps: системные библиотеки Chromium уже есть в образе ubuntu-24.04,
         # а apt-установка зависимостей иногда растягивалась на минуты (срыв бюджета CI).

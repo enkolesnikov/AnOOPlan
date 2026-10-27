@@ -17,6 +17,26 @@ PLATFORM_ZIP_FALLBACK="https://mirrors.cloud.tencent.com/AndroidSDK/platform-${P
 BUILD_TOOLS_ZIP_URL="${BUILD_TOOLS_ZIP_URL:-https://dl.google.com/android/repository/build-tools_r${BT_MAJOR}_linux.zip}"
 R8_URL="${R8_URL:-https://dl.google.com/dl/android/maven2/com/android/tools/r8/8.5.35/r8-8.5.35.jar}"
 
+# Контрольные суммы инструментов по умолчанию (ревизия 2026-10-28). При явном
+# переопределении версии/URL проверка пропускается с предупреждением.
+SHA_ANDROID_JAR="4566663c3876e022b4fa4ced8c8697c4ab1688267f090114fd92d027b32e619b"
+SHA_R8="4733945987ee0a840fafc34080b135259e01678412e07212b23f706334290294"
+SHA_AAPT="393c4c87f675f9555c50921fb53be1f3893cacd29f2270c4863e2e3f99583c39"
+SHA_APKSIGNER="b47549e373b895ce6ca620d0c7887e674d9615ffa837a86ac601dcfd04adb0f0"
+SHA_ZIPALIGN="a205d94a45c8522ca1b571dcbe190df145c818f0a29dfb366e4dd78eef4f56a7"
+SHA_D8="b773a721be3d4988dea9660815a9e441b76100e5b0f5c72b5893cfadadc76c6f"
+
+verify_sha() {
+    local file="$1" expected="$2" label="$3"
+    local actual
+    actual="$(sha256sum "$file" | awk '{print $1}')"
+    if [ "$actual" != "$expected" ]; then
+        echo "Подмена/повреждение $label: ожидался SHA-256 $expected, получен $actual" >&2
+        exit 1
+    fi
+    echo "    $label: SHA-256 ok"
+}
+
 mkdir -p "$TOOLS"
 cd "$TOOLS"
 
@@ -34,6 +54,7 @@ if [ ! -f android.jar ] || [ ! -f ".platform-${PLATFORM}" ]; then
     found="$(find "$tmp" -maxdepth 3 -name android.jar | head -1)"
     [ -n "$found" ] || { echo "В архиве нет android.jar" >&2; exit 1; }
     cp "$found" android.jar
+    if [ "$PLATFORM" = "35" ]; then verify_sha android.jar "$SHA_ANDROID_JAR" android.jar; else echo "    android.jar: нестандартная платформа, checksum не проверяю"; fi
     touch ".platform-${PLATFORM}"
     ls -lh android.jar
 fi
@@ -50,13 +71,25 @@ if [ ! -x "$BT_DIR/aapt" ]; then
     rm -rf "$BT_DIR"
     mkdir -p "$BT_DIR"
     cp -a "$(dirname "$found")/." "$BT_DIR/"
+    if [ "$BT_VERSION" = "35.0.0" ]; then
+        verify_sha "$BT_DIR/aapt" "$SHA_AAPT" aapt
+        verify_sha "$BT_DIR/apksigner" "$SHA_APKSIGNER" apksigner
+        verify_sha "$BT_DIR/zipalign" "$SHA_ZIPALIGN" zipalign
+        verify_sha "$BT_DIR/d8" "$SHA_D8" d8
+    else
+        echo "    build-tools: нестандартная версия, checksum не проверяю"
+    fi
 fi
 
 if [ ! -f r8.jar ] || ! unzip -t r8.jar >/dev/null 2>&1; then
     echo "==> Скачиваю R8 (d8) для dex"
     curl -fL --retry 2 -o r8.jar "$R8_URL"
     unzip -t r8.jar >/dev/null || { echo "r8.jar повреждён" >&2; exit 1; }
+    if [ "$R8_URL" = "https://dl.google.com/dl/android/maven2/com/android/tools/r8/8.5.35/r8-8.5.35.jar" ]; then verify_sha r8.jar "$SHA_R8" r8.jar; else echo "    r8.jar: нестандартный URL, checksum не проверяю"; fi
 fi
+
+if [ "$PLATFORM" = "35" ] && [ -f android.jar ]; then verify_sha android.jar "$SHA_ANDROID_JAR" android.jar; fi
+if [ -f r8.jar ] && [ "$R8_URL" = "https://dl.google.com/dl/android/maven2/com/android/tools/r8/8.5.35/r8-8.5.35.jar" ]; then verify_sha r8.jar "$SHA_R8" r8.jar; fi
 
 echo "==> Версии инструментов"
 "$BT_DIR/aapt" version

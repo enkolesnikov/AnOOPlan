@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState, type RefObject } from 'react';
 import { dimensionGeometry, dimensionText, findRoute } from '../engine';
 import { createUuid } from '../compat';
 import { equipmentColor, equipmentIcon } from '../equipment-icons';
@@ -8,9 +8,83 @@ import { EquipmentSymbol } from './equipment-icon';
 import { areaLabel, number } from './format';
 import { equipmentSelect } from './selects';
 import type { Tool } from './types';
+import { ToolIcon } from './icons';
 import type { AppUi } from './use-app-controller';
 
-const toolHints: Record<Tool, string> = { select: 'Выберите объект • тяните • двойной клик по сегменту — вершина', pan: 'Перетаскивайте план • колесо — масштаб', equipment: 'Клик на плане — добавить оборудование', route: 'Клики — вершины • Enter — завершить • Esc — отменить', calibrate: 'Укажите две точки известного размера на PDF', cable: 'Выбирайте сегменты по порядку от начала к концу', measure: 'Рулетка: две точки на плане → расстояние в метрах', pin: 'Клик на плане — добавить замечание', dimension: 'Размер: выберите два объекта оборудования — расстояние по прямой' };
+/** Подпись, иконка и подсказка инструмента: один источник для панели и шторки. */
+const TOOL_META: Record<Tool, { icon: string; label: string; hint: string }> = {
+  select: { icon: '↖', label: 'Выбор', hint: 'Выберите объект • тяните • двойной клик по сегменту — вершина' },
+  pan: { icon: '✥', label: 'Панорама', hint: 'Перетаскивайте план • колесо — масштаб' },
+  equipment: { icon: '▣', label: 'Оборудование', hint: 'Клик на плане — добавить оборудование' },
+  route: { icon: '⌁', label: 'Трасса', hint: 'Клики — вершины • Enter — завершить • Esc — отменить' },
+  dimension: { icon: '⟷', label: 'Размер', hint: 'Размер между оборудованием: выберите два объекта — расстояние по прямой' },
+  cable: { icon: '↝', label: 'Кабель', hint: 'Выбирайте сегменты по порядку от начала к концу' },
+  calibrate: { icon: '↔', label: 'Масштаб', hint: 'Укажите две точки известного размера на PDF' },
+  measure: { icon: '📏', label: 'Рулетка', hint: 'Рулетка: две точки на плане → расстояние в метрах' },
+  pin: { icon: '📍', label: 'Замечание', hint: 'Клик на плане — добавить замечание' },
+};
+/** Порядок кнопок на десктопе: восемь инструментов, как раньше. */
+const DESKTOP_TOOLS: Tool[] = ['select', 'pan', 'equipment', 'route', 'dimension', 'cable', 'calibrate', 'measure'];
+/** На узком экране остаются четыре частых инструмента, остальные — в шторке «Ещё». */
+const MORE_TOOLS: Tool[] = ['cable', 'dimension', 'calibrate', 'measure', 'pin'];
+const SECONDARY_TOOLS = new Set<Tool>(MORE_TOOLS);
+
+/** Шторка «Ещё»: редкие инструменты плана с полными подписями и крупными целями. */
+function ToolMoreSheet({ ui, returnFocus }: { ui: AppUi; returnFocus: RefObject<HTMLButtonElement | null> }) {
+  const {
+    tool, setTool, setDraft, setCalibration, setMeasure, setToolsMoreOpen, grid, setGrid, snap, setSnap, ortho, setOrtho,
+  } = ui;
+  const listRef = useRef<HTMLDivElement>(null);
+  const closeRef = useRef(() => setToolsMoreOpen(false));
+  closeRef.current = () => setToolsMoreOpen(false);
+  const returnFocusRef = useRef(returnFocus);
+  returnFocusRef.current = returnFocus;
+  useEffect(() => {
+    const active = listRef.current?.querySelector<HTMLButtonElement>('button[aria-pressed="true"]')
+      ?? listRef.current?.querySelector<HTMLButtonElement>('button');
+    active?.focus();
+    // Escape закрывает только эту шторку и не сбрасывает активный инструмент.
+    function onKey(event: KeyboardEvent) {
+      if (event.key !== 'Escape') return;
+      event.preventDefault();
+      event.stopPropagation();
+      closeRef.current();
+    }
+    window.addEventListener('keydown', onKey, true);
+    return () => {
+      window.removeEventListener('keydown', onKey, true);
+      returnFocusRef.current.current?.focus();
+    };
+  }, []);
+  function pick(id: Tool) {
+    setTool(id); setDraft([]); setCalibration([]); setMeasure([]); setToolsMoreOpen(false);
+  }
+  return (
+    <div className="sheet-backdrop" onPointerDown={event => { if (event.target === event.currentTarget) setToolsMoreOpen(false); }}>
+      <section className="sheet tool-sheet" role="dialog" aria-modal="true" aria-label="Ещё инструменты">
+        <div className="sheet-grip" />
+        <div className="sheet-head"><strong>Ещё инструменты</strong><button aria-label="Закрыть" onClick={() => setToolsMoreOpen(false)}>×</button></div>
+        <div className="sheet-list">
+          <div className="tool-sheet-list" ref={listRef}>
+            {MORE_TOOLS.map(id => {
+              const meta = TOOL_META[id];
+              return <button key={id} className={tool === id ? 'active' : ''} aria-pressed={tool === id} onClick={() => pick(id)}>
+                <ToolIcon name={id} />
+                <span className="tool-sheet-text"><strong>{meta.label}</strong><small>{meta.hint}</small></span>
+              </button>;
+            })}
+          </div>
+          <span className="section-label">Параметры плана</span>
+          <div className="tool-sheet-options">
+            <label className="print-section"><input type="checkbox" checked={grid} onChange={event => setGrid(event.target.checked)} />Сетка</label>
+            <label className="print-section"><input type="checkbox" checked={snap} onChange={event => setSnap(event.target.checked)} />Привязка</label>
+            <label className="print-section"><input type="checkbox" checked={ortho} onChange={event => setOrtho(event.target.checked)} />Ортогонально</label>
+          </div>
+        </div>
+      </section>
+    </div>
+  );
+}
 
 /** Экран плана: тулбар, сетка, SVG-оверлей, подсказки и панель доступности. */
 export function PlanScreen({ ui }: { ui: AppUi }) {
@@ -22,10 +96,14 @@ export function PlanScreen({ ui }: { ui: AppUi }) {
     setMessage, cableFrom, setCableFrom, cableTo, setCableTo, setCableSegments, cableSegments, finishCable,
     setError, pdfError, pdfNote, stage, pointerDown, pointerMove, pointerUp, pointerCancel, stagePressDown,
     moveLongPress, cancelLongPress, zoomAt, armTap, position, startDrag, pinching, selection, setSelection,
-    setTab, setView, pointer, route, cable, setSheet, insertVertex,
+    setTab, setView, pointer, route, cable, setSheet, insertVertex, toolsMoreOpen, setToolsMoreOpen,
   } = ui;
   const [dimensionFrom, setDimensionFrom] = useState<string | null>(null);
+  const moreButtonRef = useRef<HTMLButtonElement>(null);
   useEffect(() => { setDimensionFrom(null); }, [tool]);
+  function pickTool(id: Tool) {
+    setTool(id); setDraft([]); setCalibration([]); setMeasure([]);
+  }
   function measureLabel(): string {
     if (measureMode === 'area') return measure.length >= 3 ? areaLabel(measure, floor?.metersPerUnit) : '';
     if (measure.length < 2) return '';
@@ -35,8 +113,7 @@ export function PlanScreen({ ui }: { ui: AppUi }) {
   }
   return (
 <div className="plan-view">
-<div className="drawing-toolbar"><div className="tool-group">{([['select', '↖', 'Выбор'], ['pan', '✥', 'Панорама'], ['equipment', '▣', 'Оборудование'], ['route', '⌁', 'Трасса'], ['dimension', '⟷', 'Размер'], ['cable', '↝', 'Кабель'], ['calibrate', '↔', 'Масштаб'], ['measure', '📏', 'Рулетка']] as const).map(([id, icon, label]) => <button key={id} title={label} aria-pressed={tool === id} className={tool === id ? 'active' : ''} onClick={() => { setTool(id); setDraft([]); setCalibration([]); setMeasure([]); }}><b>{icon}</b><span>{label}</span></button>)}</div><div className="tool-group history"><button title={undoLabel ? `Отменить: ${undoLabel} (Ctrl+Z)` : "Отменить Ctrl+Z"} aria-label="Отменить" disabled={!undo.length} onClick={() => history(true)}>↶</button><button title={redoLabel ? `Повторить: ${redoLabel} (Ctrl+Shift+Z)` : "Повторить Ctrl+Shift+Z"} aria-label="Повторить" disabled={!redo.length} onClick={() => history(false)}>↷</button></div></div>
-      <div className="drawing-options"><label><input type="checkbox" checked={grid} onChange={e => setGrid(e.target.checked)} />Сетка</label><label><input type="checkbox" checked={snap} onChange={e => setSnap(e.target.checked)} />Привязка</label><label><input type="checkbox" checked={ortho} onChange={e => setOrtho(e.target.checked)} />Ортогонально</label><label>Шаг<input className="mini-input" type="number" min="1" value={gridSize} onChange={e => setGridSize(Math.max(1, Number(e.target.value) || 1))} /></label><span className="grow" />{floor?.pdfId && <label>Страница <input className="mini-input" type="number" min="1" max={pdfPages || 9999} value={floor.page} onChange={e => { const page = Math.max(1, Math.min(pdfPages || 9999, Number(e.target.value) || 1)); if (page !== floor.page && window.confirm('Смена страницы сохраняет объекты и сбрасывает масштаб. Продолжить?')) mutate(p => { const f = p.floors.find(f => f.id === floor.id)!; f.page = page; f.metersPerUnit = null; }); }} /> / {pdfPages || '…'}</label>}<button onClick={fit} aria-label="Вписать план">Вписать</button><button onClick={() => changeZoom(zoom / 1.2)} aria-label="Уменьшить масштаб">−</button><span>{Math.round(zoom * 100)}%</span><button onClick={() => changeZoom(zoom * 1.2)} aria-label="Увеличить масштаб">＋</button><button className={tool === 'pin' ? 'active' : ''} title="Замечание" onClick={() => setTool(tool === 'pin' ? 'select' : 'pin')}>📍 Замечание</button></div>
+<div className="drawing-toolbar"><div className="tool-group tools-main">{DESKTOP_TOOLS.map(id => { const meta = TOOL_META[id]; const secondary = SECONDARY_TOOLS.has(id); return <button key={id} title={meta.label} aria-pressed={tool === id} className={`${tool === id ? 'active' : ''} ${secondary ? 'tool-secondary' : ''}`.trim()} onClick={() => pickTool(id)}><ToolIcon name={id} /><span>{meta.label}</span></button>; })}<button ref={moreButtonRef} type="button" className={`tool-more-button${SECONDARY_TOOLS.has(tool) ? ' has-active' : ''}`} title="Ещё инструменты: Кабель, Размер, Масштаб, Рулетка, Замечание" aria-haspopup="dialog" aria-expanded={toolsMoreOpen} aria-label={SECONDARY_TOOLS.has(tool) ? `Ещё инструменты, активен: ${TOOL_META[tool].label}` : 'Ещё инструменты'} onClick={() => setToolsMoreOpen(true)}><ToolIcon name="more" /><span>Ещё</span></button></div><div className="tool-group history"><button title={undoLabel ? `Отменить: ${undoLabel} (Ctrl+Z)` : "Отменить Ctrl+Z"} aria-label="Отменить" disabled={!undo.length} onClick={() => history(true)}>↶</button><button title={redoLabel ? `Повторить: ${redoLabel} (Ctrl+Shift+Z)` : "Повторить Ctrl+Shift+Z"} aria-label="Повторить" disabled={!redo.length} onClick={() => history(false)}>↷</button></div></div>      <div className="drawing-options"><label><input type="checkbox" checked={grid} onChange={e => setGrid(e.target.checked)} />Сетка</label><label><input type="checkbox" checked={snap} onChange={e => setSnap(e.target.checked)} />Привязка</label><label><input type="checkbox" checked={ortho} onChange={e => setOrtho(e.target.checked)} />Ортогонально</label><label>Шаг<input className="mini-input" type="number" min="1" value={gridSize} onChange={e => setGridSize(Math.max(1, Number(e.target.value) || 1))} /></label><span className="grow" />{floor?.pdfId && <label>Страница <input className="mini-input" type="number" min="1" max={pdfPages || 9999} value={floor.page} onChange={e => { const page = Math.max(1, Math.min(pdfPages || 9999, Number(e.target.value) || 1)); if (page !== floor.page && window.confirm('Смена страницы сохраняет объекты и сбрасывает масштаб. Продолжить?')) mutate(p => { const f = p.floors.find(f => f.id === floor.id)!; f.page = page; f.metersPerUnit = null; }); }} /> / {pdfPages || '…'}</label>}<button onClick={fit} aria-label="Вписать план">Вписать</button><button onClick={() => changeZoom(zoom / 1.2)} aria-label="Уменьшить масштаб">−</button><span>{Math.round(zoom * 100)}%</span><button onClick={() => changeZoom(zoom * 1.2)} aria-label="Увеличить масштаб">＋</button><button className={tool === 'pin' ? 'active' : ''} title="Замечание" onClick={() => setTool(tool === 'pin' ? 'select' : 'pin')}><ToolIcon name="pin" /> Замечание</button></div>
       {tool === 'route' && <div className="contextbar"><span>Трасса: {draft.length} вершин</span><label>Высота, м <input type="text" inputMode="decimal" value={routeHeight} onChange={e => setRouteHeight(e.target.value.replace(',', '.'))} /></label><button className="primary" disabled={draft.length < 2} onClick={finishRoute}>Завершить · Enter</button><button onClick={() => setDraft([])}>Сбросить</button></div>}
       {tool === 'dimension' && <div className="contextbar"><span>{dimensionFrom ? `Размер: ${project.equipment.find(item => item.id === dimensionFrom)?.number ?? '?'} → выберите второе оборудование` : 'Размер между оборудованием: выберите первое'}</span><button onClick={() => setDimensionFrom(null)}>Сброс</button><small>{floor?.metersPerUnit ? 'Расстояние по прямой, в метрах.' : 'Масштаб не задан — расстояние в единицах PDF.'}</small></div>}
       {tool === 'measure' && <div className="contextbar"><span>{measureMode === 'length' ? `Рулетка: точек ${Math.min(measure.length, 2)} из 2` : `Площадь: вершин ${measure.length}`}</span><button className={measureMode === 'length' ? 'primary' : ''} onClick={() => { setMeasureMode('length'); setMeasure([]); setMessage('Рулетка: укажите две точки на плане.'); }}>Длина</button><button className={measureMode === 'area' ? 'primary' : ''} onClick={() => { setMeasureMode('area'); setMeasure([]); setMessage('Площадь: обведите контур по вершинам, минимум три.'); }}>Площадь</button><button onClick={() => setMeasure([])}>Сброс</button><small>{floor?.metersPerUnit ? 'Метры по масштабу листа.' : 'Масштаб не задан — результат в единицах PDF.'}</small></div>}
@@ -127,9 +204,16 @@ export function PlanScreen({ ui }: { ui: AppUi }) {
             </g>}
           </svg>
         </div>}
+        <div className="plan-zoom" data-object="controls" onPointerDown={event => event.stopPropagation()}>
+          <button type="button" onClick={fit} aria-label="Вписать план" title="Вписать план">⤢</button>
+          <button type="button" onClick={() => changeZoom(zoom / 1.2)} aria-label="Уменьшить масштаб">−</button>
+          <output className="plan-zoom-value" aria-label="Текущий масштаб">{Math.round(zoom * 100)}%</output>
+          <button type="button" onClick={() => changeZoom(zoom * 1.2)} aria-label="Увеличить масштаб">＋</button>
+        </div>
         <div className="plan-badge"><span className="dot calibrated" />{floor?.name || 'Нет этажей'}<span> / </span>{floor?.metersPerUnit ? `${number(floor.metersPerUnit)} м/ед.` : 'Масштаб не задан'}</div>
         <div className="plan-legend">{(() => { const seen = new Map<string, string>(); for (const route of project.routes) { const label = route.type || 'Трасса'; if (!seen.has(label)) seen.set(label, routeColor(route)); } const items = [...seen.entries()].slice(0, 5); return items.length ? items.map(([label, color]) => <span key={label}><i className="legend-line" style={{ background: color }} />{label}{' '}</span>) : <><span className="legend-line" />Трасса</>; })()}<span className="legend-equipment" /> Оборудование <span className="legend-cable" /> Выбранный кабель</div>
-      </div><div className="tool-hint"><span>{toolHints[tool]}</span><small>Координаты PDF: {pointer ? `${number(pointer.x)}; ${number(pointer.y)}` : '—'}</small></div><PlanAccessibilityList project={project} floor={floor} />
+      </div><div className="tool-hint"><span>{TOOL_META[tool].hint}</span><small>Координаты PDF: {pointer ? `${number(pointer.x)}; ${number(pointer.y)}` : '—'}</small></div><PlanAccessibilityList project={project} floor={floor} />
+      {toolsMoreOpen && <ToolMoreSheet ui={ui} returnFocus={moreButtonRef} />}
 </div>
   );
 }

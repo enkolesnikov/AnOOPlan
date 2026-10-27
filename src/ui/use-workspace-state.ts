@@ -29,6 +29,8 @@ export function useWorkspaceState() {
   const [aboutOpen, setAboutOpen] = useState(false);
   const [diagnostics, setDiagnostics] = useState<DiagnosticEntry[]>([]);
   const [propsOpen, setPropsOpen] = useState(false);
+  // Шторка «Ещё» мобильной панели инструментов: редкие инструменты под рукой.
+  const [toolsMoreOpen, setToolsMoreOpen] = useState(false);
   const [tab, setTab] = useState<StructureTab>('floors');
   const [search, setSearch] = useState('');
   const [zoom, setZoom] = useState(.8);
@@ -81,6 +83,13 @@ export function useWorkspaceState() {
   const floor = project.floors.find(f => f.id === floorId) || project.floors[0];
   // Массовый выбор относится к одной вкладке: при переключении он сбрасывается.
   useEffect(() => { setMulti(current => (current && current.tab !== tab ? null : current)); }, [tab]);
+  // Документные виды (журнал, ведомости, смета) не делят площадь со свойствами:
+  // панель закрывается при уходе с плана и не открывается сама при возврате.
+  useEffect(() => {
+    if (view === 'plan') return;
+    setPropsOpen(false);
+    setToolsMoreOpen(false);
+  }, [view]);
   // Сравнение всего проекта дорого на каждый рендер (зум/пан/указатель).
   // updatedAt меняется только в commit/record, поэтому stringify нужен один раз на мутацию.
   const dirty = useMemo(() => JSON.stringify(project) !== saved, [project, saved]);
@@ -151,6 +160,7 @@ export function useWorkspaceState() {
   return {
     project, setProject, floorId, setFloorId, selection, setSelection, multi, setMulti, tool, setTool, view, setView,
     menuOpen, setMenuOpen, aboutOpen, setAboutOpen, diagnostics, setDiagnostics, propsOpen, setPropsOpen,
+    toolsMoreOpen, setToolsMoreOpen,
     tab, setTab, search, setSearch, zoom, setZoom, pan, setPan, grid, setGrid, snap, setSnap, ortho, setOrtho, gridSize, setGridSize,
     draft, setDraft, calibration, setCalibration, measure, setMeasure, measureMode, setMeasureMode,
     sheetFormat, setSheetFormat, sheetScale, setSheetScale, cableSegments, setCableSegments,

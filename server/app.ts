@@ -72,7 +72,8 @@ export function createApp(options?: { dataDir: string }) {
     const ids = [...new Set(project.floors.flatMap(f => f.pdfId ? [f.pdfId] : []))];
     const pdfs = ids.map(id => { const record = store.pdf(id); if (!record) throw new ApiError(409, `Отсутствует PDF: ${id}`); return { id, name: record.name, dataBase64: record.bytes.toString('base64') }; });
     res.setHeader('Content-Disposition', 'attachment; filename="project-backup.json"');
-    res.json({ schemaVersion: 2, project, pdfs });
+    res.setHeader('X-Backup-Warnings', 'server-backup-excludes-photos');
+    res.json({ schemaVersion: 2, project, pdfs, warnings: ['Серверная копия не содержит фотографии; для полной копии используйте .anooplan.'] });
   });
   app.post('/api/restore', (req, res) => {
     const backup = req.body;
