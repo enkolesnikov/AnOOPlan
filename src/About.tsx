@@ -11,7 +11,8 @@ const COMPONENTS = [
   ['SheetJS (xlsx)', 'Apache-2.0'],
   ['Vite, TypeScript, esbuild', 'MIT'],
   ['Express (серверная версия)', 'MIT'],
-  ['PT Sans — сабсет AnOOPlan Sans', 'SIL Open Font License 1.1'],
+  ['PT Sans — сабсет AnOOPlan Sans (PDF)', 'SIL Open Font License 1.1'],
+  ['Medeo Sans — сабсет для интерфейса', 'SIL Open Font License 1.1'],
 ];
 
 export function AboutSheet({ onClose, diagnostics, onExportDiagnostics, onClearDiagnostics }: {
@@ -47,8 +48,10 @@ export function AboutSheet({ onClose, diagnostics, onExportDiagnostics, onClearD
             : <p className="about-help">Ошибок не зафиксировано.</p>}
 
           <h3>PT Sans (сабсет AnOOPlan Sans)</h3>
+          <p>Интерфейс набран сабсетом **Medeo Sans** (© 2026 The Medeo Project Authors, SIL Open Font License 1.1); кириллица, латиница и служебные символы, полный variable-шрифт не включён ради бюджета APK.</p>
           <p>Для PDF встроены сабсеты шрифтов PT Sans Regular и PT Sans Bold: только латиница, кириллица, цифры и типографские символы. Сабсет уменьшает размер приложения; по требованию OFL модифицированные шрифты переименованы в «AnOOPlan Sans» и не используют зарезервированные имена. Лицензия — SIL Open Font License 1.1, полный текст приведён ниже.</p>
           <pre className="license-text">{oflText}</pre>
+          <p className="about-copy">Шрифт интерфейса — сабсет Medeo Sans, © 2026 The Medeo Project Authors, SIL Open Font License 1.1; полный текст OFL приведён выше. Полная лицензия шрифта — в исходном репозитории, `src/assets/fonts/Medeo-OFL.txt`.</p>
 
           <h3>Компоненты с открытым кодом</h3>
           <ul className="component-list">

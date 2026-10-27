@@ -6,6 +6,7 @@ import { CABLE_SNAP_LIMIT, SNAP_PX } from './constants';
 import { areaLabel, number } from './format';
 import { vibrate } from './native';
 import { nextPinNumber } from './project-helpers';
+import { replaceCableSegment, splitSegment } from '../plan-edits';
 import type { ObjectKind } from './types';
 import type { WorkspaceState } from './use-workspace-state';
 
@@ -312,10 +313,29 @@ export function usePlanEditing(s: WorkspaceState) {
     if (kind === 'equipment' && id) beginLongPress(event, () => openObjectSheet('equipment', id));
     else if ((kind === 'segment' || kind === 'vertex') && owner) beginLongPress(event, () => openObjectSheet('route', owner));
   }
+  /** Двойной клик по сегменту: вставить вершину и разделить сегмент (2.8.0). */
+  function insertVertex(routeId: string, segmentId: string, point: Point): void {
+    const source = projectRef.current;
+    const target = source.routes.find(item => item.id === routeId);
+    const segment = target?.segments.find(item => item.id === segmentId);
+    if (!target || !segment) return;
+    const split = splitSegment(segment, point);
+    if (!split) { setMessage('Вершину можно вставить только на сегмент одного этажа.'); return; }
+    mutate(project => {
+      const route = project.routes.find(item => item.id === routeId);
+      const index = route?.segments.findIndex(item => item.id === segmentId) ?? -1;
+      if (!route || index < 0) return;
+      route.segments.splice(index, 1, split.first, split.second);
+      project.cables = project.cables.map(cable => replaceCableSegment(cable, segmentId, split.first.id, split.second.id));
+    }, 'Вставка вершины');
+    setSelection({ kind: 'route', id: routeId });
+    setMessage(`Вершина вставлена: ${target.number}.${(target.segments.findIndex(item => item.id === segmentId) + 1)} → два сегмента.`);
+  }
+
   return {
     fit, changeZoom, position, armTap, startDrag,
     pointerDown, pointerMove, pointerUp, pointerCancel,
-    finishRoute, createPin, finishCable, openObjectSheet,
+    finishRoute, createPin, finishCable, openObjectSheet, insertVertex,
     cancelLongPress, moveLongPress, zoomAt, listPressDown, stagePressDown, pinching,
   };
 }

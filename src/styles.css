@@ -24,9 +24,19 @@ html, body, #root { height: 100%; }
 /* Крупный шрифт из системы масштабирует WebView (setTextZoom), автоувеличение текста
    при этом выключаем — иначе размеры складываются и раскладка рвётся. */
 html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
+/* Medeo Sans (SIL OFL 1.1): сабсет кириллицы/латиницы/символов, 64 КБ.
+   Полный variable-шрифт — 138 КБ и не помещается в бюджет APK 1,6 МБ. */
+@font-face {
+  font-family: "Medeo Sans";
+  src: url("./assets/fonts/MedeoSans-AnOOPlan.woff2") format("woff2");
+  font-weight: 100 900;
+  font-style: normal;
+  font-display: swap;
+}
+
 body {
   margin: 0;
-  font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  font-family: "Medeo Sans", system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
   color: var(--text);
   background: var(--surface-2);
   font-size: 14px;

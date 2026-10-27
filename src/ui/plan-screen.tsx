@@ -10,7 +10,7 @@ import { equipmentSelect } from './selects';
 import type { Tool } from './types';
 import type { AppUi } from './use-app-controller';
 
-const toolHints: Record<Tool, string> = { select: 'Выберите объект • тяните оборудование и узлы трассы', pan: 'Перетаскивайте план • колесо — масштаб', equipment: 'Клик на плане — добавить оборудование', route: 'Клики — вершины • Enter — завершить • Esc — отменить', calibrate: 'Укажите две точки известного размера на PDF', cable: 'Выбирайте сегменты по порядку от начала к концу', measure: 'Рулетка: две точки на плане → расстояние в метрах', pin: 'Клик на плане — добавить замечание', dimension: 'Размер: выберите два объекта оборудования — расстояние по прямой' };
+const toolHints: Record<Tool, string> = { select: 'Выберите объект • тяните • двойной клик по сегменту — вершина', pan: 'Перетаскивайте план • колесо — масштаб', equipment: 'Клик на плане — добавить оборудование', route: 'Клики — вершины • Enter — завершить • Esc — отменить', calibrate: 'Укажите две точки известного размера на PDF', cable: 'Выбирайте сегменты по порядку от начала к концу', measure: 'Рулетка: две точки на плане → расстояние в метрах', pin: 'Клик на плане — добавить замечание', dimension: 'Размер: выберите два объекта оборудования — расстояние по прямой' };
 
 /** Экран плана: тулбар, сетка, SVG-оверлей, подсказки и панель доступности. */
 export function PlanScreen({ ui }: { ui: AppUi }) {
@@ -22,7 +22,7 @@ export function PlanScreen({ ui }: { ui: AppUi }) {
     setMessage, cableFrom, setCableFrom, cableTo, setCableTo, setCableSegments, cableSegments, finishCable,
     setError, pdfError, pdfNote, stage, pointerDown, pointerMove, pointerUp, pointerCancel, stagePressDown,
     moveLongPress, cancelLongPress, zoomAt, armTap, position, startDrag, pinching, selection, setSelection,
-    setTab, setView, pointer, route, cable, setSheet,
+    setTab, setView, pointer, route, cable, setSheet, insertVertex,
   } = ui;
   const [dimensionFrom, setDimensionFrom] = useState<string | null>(null);
   useEffect(() => { setDimensionFrom(null); }, [tool]);
@@ -65,7 +65,7 @@ export function PlanScreen({ ui }: { ui: AppUi }) {
             {project.routes.flatMap(r => r.segments.map((s, index) => {
               const visibleA = s.a.floorId === floor.id, visibleB = s.b.floorId === floor.id; if (!visibleA && !visibleB) return null;
               const chosen = cableSegments.includes(s.id) || cable?.segmentIds.includes(s.id); const selected = selection?.id === r.id;
-              return <g key={s.id} data-object="segment" data-id={s.id} data-route={r.id} className={`route-segment ${chosen ? 'cable-selected' : ''} ${selected ? 'is-selected' : ''}`} style={{ '--route-color': routeColor(r) } as unknown as import('react').CSSProperties} onPointerDown={e => { e.stopPropagation(); if (pinching.current) return; if (tool === 'cable') armTap(e, () => setCableSegments(ids => ids.includes(s.id) ? ids.filter(id => id !== s.id) : [...ids, s.id])); else if (tool === 'route') armTap(e, () => { const p = position(e); setDraft(points => [...points, p]); }); else if (tool === 'select') armTap(e, () => setSelection({ kind: 'route', id: r.id })); }}>
+              return <g key={s.id} data-object="segment" data-id={s.id} data-route={r.id} className={`route-segment ${chosen ? 'cable-selected' : ''} ${selected ? 'is-selected' : ''}`} style={{ '--route-color': routeColor(r) } as unknown as import('react').CSSProperties} onDoubleClick={e => { if (tool !== 'select') return; e.preventDefault(); e.stopPropagation(); const p = position(e, false); insertVertex(r.id, s.id, p); }} onPointerDown={e => { e.stopPropagation(); if (pinching.current) return; if (tool === 'cable') armTap(e, () => setCableSegments(ids => ids.includes(s.id) ? ids.filter(id => id !== s.id) : [...ids, s.id])); else if (tool === 'route') armTap(e, () => { const p = position(e); setDraft(points => [...points, p]); }); else if (tool === 'select') armTap(e, () => setSelection({ kind: 'route', id: r.id })); }}>
                 <line x1={s.a.x} y1={s.a.y} x2={s.b.x} y2={s.b.y} stroke="transparent" strokeWidth={26 / zoom} />
                 <line x1={s.a.x} y1={s.a.y} x2={s.b.x} y2={s.b.y} strokeWidth={(chosen ? 5 : selected ? 4 : 3) / zoom} className="visible-route" pointerEvents="none" strokeDasharray={!visibleA || !visibleB ? `${7 / zoom} ${4 / zoom}` : undefined} />
                 {(!visibleA || !visibleB) && <g transform={`translate(${s.a.x},${s.a.y})`}><circle r={9 / zoom} fill="white" stroke={routeColor(r)} strokeWidth={2 / zoom} /><text textAnchor="middle" y={4 / zoom} fontSize={12 / zoom} fill={routeColor(r)}>↕</text></g>}

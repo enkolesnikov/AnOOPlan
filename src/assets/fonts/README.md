@@ -11,3 +11,11 @@
   в лицензиях/атрибуции (см. экран «О программе»).
 - Пересборка: `pyftsubset` + переименование name-таблиц (fonttools). Оригинальные файлы доступны
   в истории git до версии 2.1.0.
+
+## Шрифт интерфейса
+
+`MedeoSans-AnOOPlan.woff2` — **сабсет** variable-шрифта Medeo Sans (© 2026 The Medeo Project
+Authors, SIL OFL 1.1, полный текст в `Medeo-OFL.txt`). Оставлены Basic Latin, Latin-1,
+кириллица, типографская пунктуация, валюты (₽), №, стрелки, математические знаки и маркеры.
+Оригинал: `medeo-font@1.0.0-rc.3`, `dist/fonts/medeo-sans/MedeoSansVariable.woff2` (138 КБ);
+сабсет — 64,5 КБ. Пересборка: `pyftsubset` с диапазонами из комментария в `styles.css`.

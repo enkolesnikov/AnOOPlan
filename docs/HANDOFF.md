@@ -13,8 +13,8 @@
 - Релизы с APK: <https://github.com/enkolesnikov/AnOOPlan/releases>
 - Веб-версия: <https://enkolesnikov.github.io/AnOOPlan/> — та же сборка, что и APK; публикуется
   вручную по запросу (приоритет — Android).
-- Текущая версия: **2.7.0**, versionCode 38, `com.anooplan.app`, minSdk 24, targetSdk 35.
-  APK ~1,5 МБ, WebView 98+, 266 юнит-тестов + 231 проверка смоука + 3 E2E.
+- Текущая версия: **2.8.0**, versionCode 39, `com.anooplan.app`, minSdk 24, targetSdk 35.
+  APK ~1,5 МБ, WebView 98+, 270 юнит-тестов + 231 проверка смоука + 4 E2E.
 - Возможности: PDF-планы и калибровка, оборудование с иконками и цветом, трассы, кабели и автопрокладка,
   журнал, справочник цен и смета с коммерческим предложением, печатные формы (титул, оглавление,
   штамп ГОСТ, лист изменений), печать выбранных разделов, обмен PDF/XLSX и проектом `.anooplan`,
@@ -30,11 +30,24 @@
 - **Доступность:** системный размер шрифта Android (textZoom 85–160 %), тёмная тема, высокий контраст,
   reduced-motion; бюджет памяти рендера плана — 8 Мпикс с предупреждением.
 - Подпись: SHA-256 сертификата `6431374cf6a7d385c4c47f0f2bf54fcb5ee5b2c7120f057b18c4062af92fe097`.
-- Текущий релиз: [v2.7.0 «Мастера и шаблоны»](https://github.com/enkolesnikov/AnOOPlan/releases/tag/v2.7.0) —
-  подписанный APK `AnOOPlan-2.7.0.apk` (versionCode 38), описание из аннотации тега и 4 скриншота
-  (`01-templates.png`, `02-kit.png`, `03-catalog-import.png`, `04-onboarding.png`) в assets.
-- Предыдущий релиз: [v2.6.2 «Техдолг»](https://github.com/enkolesnikov/AnOOPlan/releases/tag/v2.6.2) —
-  APK `AnOOPlan-2.6.2.apk` (versionCode 37), 1 скриншот подтверждения.
+- Текущий релиз: [v2.8.0 «Medeo и вершины»](https://github.com/enkolesnikov/AnOOPlan/releases/tag/v2.8.0) —
+  подписанный APK `AnOOPlan-2.8.0.apk` (versionCode 39), описание из аннотации тега и 3 скриншота
+  (`01-font-ui.png`, `02-vertex.png`, `03-mobile-font.png`) в assets.
+- Предыдущий релиз: [v2.7.0 «Мастера и шаблоны»](https://github.com/enkolesnikov/AnOOPlan/releases/tag/v2.7.0) —
+  APK `AnOOPlan-2.7.0.apk` (versionCode 38), 4 скриншота в assets.
+
+### Состояние на 2026-10-27 (2.8.0)
+
+- **Medeo Sans:** `src/assets/fonts/MedeoSans-AnOOPlan.woff2` — сабсет variable-шрифта 64,5 КБ
+  (OFL 1.1, © 2026 The Medeo Project Authors), `@font-face` и `--font` стек в `styles.css`;
+  полный файл 138 КБ не включён из-за APK ≤1,6 МБ. Лицензия — `Medeo-OFL.txt` + «О программе».
+- **Вставка вершины:** `src/plan-edits.ts` (`segmentSplitPoint`, `splitSegment`,
+  `replaceCableSegment`), `insertVertex` в `use-plan-editing`; двойной клик по сегменту в режиме
+  выбора делит его, сохраняет размеры/запасы и порядок кабелей, один undo. Межэтажные стояки — отказ.
+- **Проверки:** 270 тестов, 231 смоук, 4 E2E, 4 визуальных эталона; покрытие 95,2/87,4/95,3 %;
+  JS 455,7 КБ / CSS 37,7 КБ (JS-запас 4 КБ); APK 1 595 955 Б, versionCode 39.
+- **Осталось 2.8.1:** удаление/перенос вершин, разделение/объединение трасс, привязки/ортогональность,
+  межэтажные размеры, векторный PDF; бюджет JS/APK почти исчерпан — новые фичи только с ленивой загрузкой.
 
 ### Состояние на 2026-10-27 (2.7.0)
 
@@ -396,7 +409,7 @@ APK всегда работает в режиме «Браузер»: запро
 
 ```bash
 npm ci                      # зависимости (Node 22.5+, проверено на Node 24)
-npm test                    # 266 тестов (движок, КНС/сегменты, иконки, смета, формы, миграции, API, экспорт)
+npm test                    # 270 тестов (движок, КНС/сегменты, иконки, смета, формы, миграции, API, экспорт)
 npm run lint                # ESLint (0 ошибок), шаг CI перед тестами
 npm run coverage            # тесты с покрытием и порогами + coverage/lcov.info (используется в CI)
 npm run size                # бюджет стартового бандла (после npm run build)
@@ -491,7 +504,7 @@ Android-инструменты; JDK на VPS уже установлен. Есл
 
 ## Тесты и что ими не покрыто
 
-- 266 юнит-тестов: движок, заполнение КНС и сегментные размеры (`tests/tray-fill.test.ts`), типы и
+- 270 юнит-тестов: движок, заполнение КНС и сегментные размеры (`tests/tray-fill.test.ts`), типы и
   цвета КНС (`tests/route-kinds.test.ts`), доступность (textZoom, тёмная тема, контраст —
   `tests/a11y.test.ts`, `tests/android-config.test.ts`), память рендера (`tests/render-plan.test.ts`),
   страницы плана и note в PDF (`tests/plan-pages.test.ts`, `tests/export.test.ts`), иконки и цвет
@@ -669,7 +682,7 @@ Android-инструменты; JDK на VPS уже установлен. Есл
 ## Первые шаги в новой сессии
 
 1. Клонировать репозиторий / открыть `/root/Anooplan`, `git checkout main && git pull`.
-2. `npm ci && npm run lint && npm test && npm run smoke` — убедиться, что база зелёная (266/231);
+2. `npm ci && npm run lint && npm test && npm run smoke` — убедиться, что база зелёная (270/231);
    `npm run coverage` и `npm run size` — пороги (93/85/92 %, JS ≤460 КБ, CSS ≤40 КБ).
 3. `bash scripts/fetch-tools.sh && bash scripts/build-apk.sh` — собрать APK 2.6.0 локально
    (на VPS keystore уже на месте); проверить версию/versionCode, сертификат и отсутствие `INTERNET`,
