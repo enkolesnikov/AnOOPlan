@@ -273,7 +273,7 @@ APK всегда работает в режиме «Браузер»: запро
 | Оболочка Android | `android/java/com/anooplan/app/` | `MainActivity`, `AssetServer`, `NativeBridge`, `PdfPrinter`, `ShareProvider` |
 | Сборка APK | `scripts/build-apk.sh`, `scripts/fetch-tools.sh` | aapt + javac + d8 + zipalign + apksigner, **без Gradle** |
 | Тесты | `tests/*.test.ts`, `tests/e2e/`, `scripts/smoke-dom.mjs` | 255 юнит-тестов (~10 с), смоук happy-dom (231 проверка) и 2 Playwright E2E; общие фикстуры — `tests/fixtures.ts`; покрытие ~95 % строк |
-| CI | `.github/workflows/ci.yml` | на push: lint, `tsc`, покрытие с порогами + lcov, сборка + бюджет бандла, смоук, E2E; Codacy — при наличии секрета; Pages и неподписанный APK — вручную |
+| CI | `.github/workflows/ci.yml` | на push: lint, `tsc`, покрытие с порогами + lcov, сборка + бюджет бандла, смоук, E2E; Codacy — при наличии секрета; Pages — авто при изменениях приложения, неподписанный APK — вручную |
 | Релиз-скрипты | `scripts/status.mjs`, `coverage.mjs`, `check-size.mjs` | статус проекта, пороги покрытия (+lcov для Codacy) и бюджета бандла без новых зависимостей |
 
 ### Ключевые решения (не пересматривать без причины)

@@ -1,9 +1,19 @@
 name: Deploy to GitHub Pages
 
-# Публикация веб-версии — только вручную: Android-приложение использует ту же сборку,
-# а автоматический деплой на каждый push тратил ~1 минуту runner-времени без пользы для APK.
+# Публикация веб-версии: автоматически при изменениях приложения (src/index/зависимости)
+# и вручную. Docs/CI-only пуши не тратят runner-время. APK собирается отдельно по тегу.
 on:
   workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'src/**'
+      - 'index.html'
+      - 'public/**'
+      - 'package.json'
+      - 'package-lock.json'
+      - 'vite.config.*'
+      - '.github/workflows/deploy.yml'
 
 permissions:
   contents: read
