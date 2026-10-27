@@ -96,7 +96,7 @@ export function PlanScreen({ ui }: { ui: AppUi }) {
     setMessage, cableFrom, setCableFrom, cableTo, setCableTo, setCableSegments, cableSegments, finishCable,
     setError, pdfError, pdfNote, stage, pointerDown, pointerMove, pointerUp, pointerCancel, stagePressDown,
     moveLongPress, cancelLongPress, zoomAt, armTap, position, startDrag, pinching, selection, setSelection,
-    setTab, setView, pointer, route, cable, setSheet, insertVertex, toolsMoreOpen, setToolsMoreOpen,
+    setTab, setView, pointer, route, cable, setSheet, insertVertex, deleteVertex, snapMark, toolsMoreOpen, setToolsMoreOpen,
   } = ui;
   const [dimensionFrom, setDimensionFrom] = useState<string | null>(null);
   const moreButtonRef = useRef<HTMLButtonElement>(null);
@@ -149,7 +149,7 @@ export function PlanScreen({ ui }: { ui: AppUi }) {
                 {(selected || chosen) && <text x={(s.a.x + s.b.x) / 2 + 6 / zoom} y={(s.a.y + s.b.y) / 2 - 7 / zoom} fontSize={11 / zoom} fill="#126e71" className="svg-label">{tool === 'cable' ? cableSegments.indexOf(s.id) + 1 || '' : `${r.number}.${index + 1}`}</text>}
               </g>;
             }))}
-            {route && tool === 'select' && Array.from(new Map(route.segments.flatMap(s => [s.a, s.b]).filter(v => v.floorId === floor.id).map(v => [v.id, v])).values()).map(v => <circle data-object="vertex" data-route={route.id} key={v.id} cx={v.x} cy={v.y} r={5 / zoom} fill="white" stroke="#008e94" strokeWidth={2 / zoom} className="vertex-handle" onPointerDown={e => startDrag(e, 'vertex', route.id, v.id)} />)}
+            {snapMark && <g className="snap-mark" pointerEvents="none"><circle cx={snapMark.x} cy={snapMark.y} r={7 / zoom} fill="none" stroke="#e78c22" strokeWidth={2 / zoom} /><path d={`M ${snapMark.x - 11 / zoom} ${snapMark.y} h ${22 / zoom} M ${snapMark.x} ${snapMark.y - 11 / zoom} v ${22 / zoom}`} stroke="#e78c22" strokeWidth={1.5 / zoom} /></g>}
             {(project.dimensions ?? []).map(dimension => {
               const geometry = dimensionGeometry(project, dimension);
               const from = project.equipment.find(item => item.id === dimension.fromId);
@@ -190,6 +190,7 @@ export function PlanScreen({ ui }: { ui: AppUi }) {
               <circle r={9 / zoom} fill={pin.status === 'closed' ? '#2f9e63' : '#e78c22'} stroke="#fff" strokeWidth={2 / zoom} />
               <text x={13 / zoom} y={4 / zoom} fontSize={12 / zoom} className="svg-label" fill="#122936">{pin.number}</text>
             </g>)}
+{route && tool === 'select' && Array.from(new Map(route.segments.flatMap(s => [s.a, s.b]).filter(v => v.floorId === floor.id).map(v => [v.id, v])).values()).map(v => <circle data-object="vertex" data-route={route.id} key={v.id} cx={v.x} cy={v.y} r={5 / zoom} fill="white" stroke="#008e94" strokeWidth={2 / zoom} className="vertex-handle" aria-label="Вершина трассы, двойной клик — удалить" onDoubleClick={event => { if (tool !== 'select') return; event.preventDefault(); event.stopPropagation(); deleteVertex(route.id, v.id); }} onPointerDown={e => startDrag(e, 'vertex', route.id, v.id)} />)}
             {draft.length > 0 && <g pointerEvents="none"><polyline points={draft.map(p => `${p.x},${p.y}`).join(' ')} fill="none" stroke="#e78c22" strokeWidth={3 / zoom} strokeDasharray={`${6 / zoom} ${3 / zoom}`} />{draft.map((p, i) => <circle key={i} cx={p.x} cy={p.y} r={4 / zoom} fill="#e78c22" />)}</g>}
             {calibration.map((p, i) => <circle key={i} cx={p.x} cy={p.y} r={6 / zoom} fill="#dc5071" pointerEvents="none" />)}
             {measure.length > 0 && <g pointerEvents="none">

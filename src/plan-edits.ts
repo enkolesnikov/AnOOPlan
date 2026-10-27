@@ -1,4 +1,4 @@
-import type { Cable, Point, Segment, Vertex } from './model';
+import type { Cable, Point, Route, Segment, Vertex } from './model';
 import { createUuid as uid } from './compat';
 
 /** Точка на сегменте: параметр 0..1 с отступом от концов, чтобы не плодить нулевые сегменты. */
@@ -36,4 +36,63 @@ export function splitSegment(segment: Segment, point: Point): { vertex: Vertex; 
 export function replaceCableSegment(cable: Cable, segmentId: string, firstId: string, secondId: string): Cable {
   if (!cable.segmentIds.includes(segmentId)) return cable;
   return { ...cable, segmentIds: cable.segmentIds.flatMap(id => id === segmentId ? [firstId, secondId] : [id]) };
+}
+
+
+export interface DeleteVertexResult {
+  route: Route;
+  oldSegmentIds: [string, string];
+  newSegmentId: string;
+  /** true — объединяемые сегменты имели разные размеры/запасы, взяты параметры первого. */
+  mergedProperties: boolean;
+  warning?: string;
+}
+
+/**
+ * Удаляет внутреннюю вершину трассы: два соседних сегмента сливаются в один.
+ * Концевые вершины (один сегмент) не удаляются — иначе трасса теряет сегмент.
+ */
+export function deleteVertex(route: Route, vertexId: string): DeleteVertexResult | null {
+  const touching = route.segments
+    .map((segment, index) => ({ segment, index }))
+    .filter(({ segment }) => segment.a.id === vertexId || segment.b.id === vertexId);
+  if (touching.length !== 2) return null;
+  const [first, second] = touching;
+  if (Math.abs(first.index - second.index) !== 1) return null;
+  const firstOuter = first.segment.a.id === vertexId ? first.segment.b : first.segment.a;
+  const secondOuter = second.segment.a.id === vertexId ? second.segment.b : second.segment.a;
+  if (firstOuter.id === secondOuter.id || (firstOuter.floorId === secondOuter.floorId && firstOuter.x === secondOuter.x && firstOuter.y === secondOuter.y)) return null;
+  const signature = (segment: Segment) => JSON.stringify([segment.mode, segment.reservePercent, segment.reserveFixed, segment.trayWidthMm, segment.trayHeightMm, segment.trayAreaMm2]);
+  const mergedProperties = signature(first.segment) !== signature(second.segment);
+  const newSegmentId = uid();
+  const merged: Segment = {
+    ...first.segment,
+    id: newSegmentId,
+    a: firstOuter,
+    b: secondOuter,
+  };
+  const start = Math.min(first.index, second.index);
+  const segments = [...route.segments];
+  segments.splice(start, 2, merged);
+  return {
+    route: { ...route, segments },
+    oldSegmentIds: [first.segment.id, second.segment.id],
+    newSegmentId,
+    mergedProperties,
+    warning: mergedProperties ? 'Сегменты имели разные размеры/запасы — у объединённого взяты параметры первого.' : undefined,
+  };
+}
+
+/** Меняет направление трассы: порядок сегментов и концы a/b. */
+export function reverseRoute(route: Route): Route {
+  return {
+    ...route,
+    segments: [...route.segments].reverse().map(segment => ({ ...segment, a: segment.b, b: segment.a })),
+  };
+}
+
+/** Цепочка кабеля при реверсе трассы идёт в обратном порядке. */
+export function reverseCableRoute(cable: Cable, routeSegmentIds: string[]): Cable {
+  if (!cable.segmentIds.some(id => routeSegmentIds.includes(id))) return cable;
+  return { ...cable, segmentIds: [...cable.segmentIds].reverse() };
 }

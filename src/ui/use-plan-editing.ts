@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import type { PointerEvent as ReactPointerEvent } from 'react';
 import type { Cable, Equipment, Pin, Point, Route, Vertex } from '../model';
 import { chainEnds } from '../engine';
@@ -6,7 +7,7 @@ import { CABLE_SNAP_LIMIT, SNAP_PX } from './constants';
 import { areaLabel, number } from './format';
 import { vibrate } from './native';
 import { nextPinNumber } from './project-helpers';
-import { replaceCableSegment, splitSegment } from '../plan-edits';
+import { deleteVertex as mergeVertex, replaceCableSegment, reverseCableRoute, reverseRoute as reverseRouteData, splitSegment } from '../plan-edits';
 import type { ObjectKind } from './types';
 import type { WorkspaceState } from './use-workspace-state';
 
@@ -38,14 +39,17 @@ export function usePlanEditing(s: WorkspaceState) {
       const candidates = [...project.equipment.filter(eq => eq.floorId === floor?.id), ...project.routes.flatMap(r => r.segments.flatMap(s => [s.a, s.b])).filter(v => v.floorId === floor?.id)];
       const near = candidates.find(p => Math.hypot(p.x - x, p.y - y) < SNAP_PX / zoom);
       if (near) {
-        if (!snapVibe.current) { snapVibe.current = true; vibrate(8); }
+        if (!snapVibe.current) { snapVibe.current = true; setSnapMark({ x: near.x, y: near.y }); vibrate(8); }
+        else setSnapMark({ x: near.x, y: near.y });
         return { x: near.x, y: near.y };
       }
       snapVibe.current = false;
+      setSnapMark(null);
       x = Math.round(x / gridSize) * gridSize; y = Math.round(y / gridSize) * gridSize;
-    }
+    } else setSnapMark(null);
     return { x, y };
   }
+  const [snapMark, setSnapMark] = useState<Point | null>(null);
   const TAP_SLOP = 10;
   const TAP_DELAY = 700;
   const tapSlop = { x: 0, y: 0 };
@@ -185,6 +189,7 @@ export function usePlanEditing(s: WorkspaceState) {
     if (active?.type === 'pinch') { if (pointers.current.size < 2) drag.current = null; return; }
     if (active && active.type !== 'pan' && JSON.stringify(active.before) !== JSON.stringify(projectRef.current)) recordHistory(active.before);
     drag.current = null;
+    setSnapMark(null);
     if (!active) runTap(e);
   }
   function pointerCancel(e: ReactPointerEvent) {
@@ -193,6 +198,7 @@ export function usePlanEditing(s: WorkspaceState) {
     pointers.current.delete(e.pointerId);
     if (pointers.current.size < 2) pinching.current = false;
     drag.current = null;
+    setSnapMark(null);
   }
 
   function finishRoute() {
@@ -332,10 +338,53 @@ export function usePlanEditing(s: WorkspaceState) {
     setMessage(`Вершина вставлена: ${target.number}.${(target.segments.findIndex(item => item.id === segmentId) + 1)} → два сегмента.`);
   }
 
+  /** Удаление внутренней вершины: два соседних сегмента сливаются, кабели перенаправляются. */
+  function deleteVertex(routeId: string, vertexId: string): void {
+    const source = projectRef.current;
+    const target = source.routes.find(item => item.id === routeId);
+    if (!target) return;
+    const merged = mergeVertex(target, vertexId);
+    if (!merged) { setMessage('Удалить можно только внутреннюю вершину с двумя соседними сегментами.'); return; }
+    mutate(project => {
+      const route = project.routes.find(item => item.id === routeId);
+      if (!route) return;
+      route.segments = merged.route.segments;
+      project.cables = project.cables.map(cable => {
+        if (!cable.segmentIds.includes(merged.oldSegmentIds[0]) && !cable.segmentIds.includes(merged.oldSegmentIds[1])) return cable;
+        const ids: string[] = [];
+        for (const id of cable.segmentIds) {
+          if (id === merged.oldSegmentIds[0] || id === merged.oldSegmentIds[1]) {
+            if (!ids.includes(merged.newSegmentId)) ids.push(merged.newSegmentId);
+          } else ids.push(id);
+        }
+        return { ...cable, segmentIds: ids };
+      });
+    }, 'Удаление вершины');
+    setSelection({ kind: 'route', id: routeId });
+    setMessage(`Вершина удалена, сегменты объединены.${merged.warning ? ` ${merged.warning}` : ''}`);
+  }
+
+  /** Разворот трассы: меняются порядок сегментов и направление кабелей. */
+  function reverseRoute(routeId: string): void {
+    const source = projectRef.current;
+    const target = source.routes.find(item => item.id === routeId);
+    if (!target) return;
+    const reversed = reverseRouteData(target);
+    const ids = new Set(reversed.segments.map(segment => segment.id));
+    mutate(project => {
+      const route = project.routes.find(item => item.id === routeId);
+      if (!route) return;
+      route.segments = reversed.segments;
+      project.cables = project.cables.map(cable => reverseCableRoute(cable, [...ids]));
+    }, 'Разворот трассы');
+    setSelection({ kind: 'route', id: routeId });
+    setMessage(`Трасса ${target.number} развёрнута.`);
+  }
+
   return {
     fit, changeZoom, position, armTap, startDrag,
     pointerDown, pointerMove, pointerUp, pointerCancel,
-    finishRoute, createPin, finishCable, openObjectSheet, insertVertex,
+    finishRoute, createPin, finishCable, openObjectSheet, insertVertex, deleteVertex, reverseRoute, snapMark,
     cancelLongPress, moveLongPress, zoomAt, listPressDown, stagePressDown, pinching,
   };
 }
