@@ -978,6 +978,14 @@ check(typeof saveAndExit === 'function', 'оболочке доступна фу
 if (typeof saveAndExit === 'function') {
   await saveAndExit();
   check(exitCalled, 'после сохранения запрошен выход');
+
+  // P0: ошибка записи не должна закрывать приложение.
+  const originalSetItem = window.localStorage.setItem;
+  exitCalled = false;
+  Object.defineProperty(window.localStorage, 'setItem', { configurable: true, value: () => { throw new Error('QuotaExceededError'); } });
+  await saveAndExit();
+  check(!exitCalled, 'ошибка сохранения не закрывает приложение');
+  Object.defineProperty(window.localStorage, 'setItem', { configurable: true, value: originalSetItem });
 }
 
 check(reactWarnings.length === 0, `нет предупреждений React (найдено ${reactWarnings.length})`);
