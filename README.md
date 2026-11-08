@@ -10,10 +10,21 @@
 > Продолжаете работу в новой сессии? Начните с [контекст-хендоффа](docs/HANDOFF.md): архитектура, решения, техдолг и инфраструктура. План итераций — в [ROADMAP.md](docs/ROADMAP.md).
 
 
-[![Скачать APK](https://img.shields.io/badge/%D1%81%D0%BA%D0%B0%D1%87%D0%B0%D1%82%D1%8C-APK-2ea043?logo=android&logoColor=white)](https://github.com/enkolesnikov/AnOOPlan/releases/latest)
+<p align="center">
+  <img src="docs/store/anooplan-512.png" width="96" height="96" alt="AnOOPlan" />
+</p>
 
+<p align="center">
+  <a href="https://github.com/enkolesnikov/AnOOPlan/releases/latest"><img alt="Скачать APK" src="https://img.shields.io/badge/скачать-APK-2ea043?logo=android&logoColor=white"></a>
+  <a href="https://enkolesnikov.github.io/AnOOPlan/"><img alt="Сайт" src="https://img.shields.io/badge/сайт-открыть-38c6c9"></a>
+  <a href="https://enkolesnikov.github.io/AnOOPlan/app/"><img alt="Веб-версия" src="https://img.shields.io/badge/веб--версия-открыть-122936"></a>
+</p>
+
+<p align="center"><img src="docs/store/screenshots/01-plan.png" width="240" alt="План с кабельными трассами"></p>
+
+- **Сайт:** [enkolesnikov.github.io/AnOOPlan](https://enkolesnikov.github.io/AnOOPlan/) — возможности, скриншоты и загрузка;
 - **APK:** [последний релиз](https://github.com/enkolesnikov/AnOOPlan/releases/latest) (`AnOOPlan-2.8.5.apk`) — около 1,5 МБ со встроенными сабсетами шрифтов, Android 7.0+ (minSdk 24, WebView 98+, targetSdk 35), без интернета;
-- **Веб-версия:** [enkolesnikov.github.io/AnOOPlan](https://enkolesnikov.github.io/AnOOPlan/) — та же сборка, публикуется автоматически при изменениях приложения (ручной `workflow_dispatch` сохранён);
+- **Веб-версия:** [enkolesnikov.github.io/AnOOPlan/app/](https://enkolesnikov.github.io/AnOOPlan/app/) — та же сборка, публикуется автоматически при изменениях приложения (ручной `workflow_dispatch` сохранён);
 - **Исходный проект:** [enkolesnikov/ooplan](https://github.com/enkolesnikov/ooplan).
 
 Установка: скачайте APK на телефон → откройте файл → «Установить» (разрешите установку из этого источника для браузера или файлового менеджера).
@@ -95,7 +106,7 @@ npm run dev
 
 ## Онлайн-версия (GitHub Pages)
 
-Статическая версия доступна на GitHub Pages: **https://enkolesnikov.github.io/AnOOPlan/**
+Веб-приложение доступно на GitHub Pages: **https://enkolesnikov.github.io/AnOOPlan/app/** (лендинг — в корне сайта)
 
 Онлайн-версия работает без бэкенда в режиме хранения «Браузер»: проекты автоматически сохраняются в localStorage, исходные PDF — в IndexedDB без лимита 5 МБ, поэтому доступны большие чертежи. Экспорт CSV/XLSX/PDF выполняется на клиенте и работает так же, как в APK; локальный сервер (`npm start`) добавляет хранение проектов в SQLite.
 

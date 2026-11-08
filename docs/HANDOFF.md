@@ -11,7 +11,8 @@
 
 - Репозиторий: <https://github.com/enkolesnikov/AnOOPlan>
 - Релизы с APK: <https://github.com/enkolesnikov/AnOOPlan/releases>
-- Веб-версия: <https://enkolesnikov.github.io/AnOOPlan/> — та же сборка, что и APK; публикуется
+- Сайт: <https://enkolesnikov.github.io/AnOOPlan/> — лендинг с возможностями и скриншотами.
+- Веб-версия: <https://enkolesnikov.github.io/AnOOPlan/app/> — та же сборка, что и APK; публикуется
   автоматически при изменениях приложения (ручной `workflow_dispatch` сохранён).
 - Текущая версия: **2.8.5**, versionCode 44, `com.anooplan.app`, minSdk 24, targetSdk 35.
   APK ~1,5 МБ, WebView 98+, 294 юнит-теста + 235 проверок смоука + 8 E2E.
@@ -95,7 +96,7 @@
   и 60,7 % по всем src; JS 458,6 КБ / CSS 37,7 КБ; APK 1 600 200 Б, versionCode 41.
 - **Отложено:** UX-01/02/03/05, F-10/F-11/F-12, распил AppUi/export-pdf/MainActivity.
 - **Релиз:** тег `v2.8.2` на `170591c`; CI/CodeQL и Pages зелёные (job CI 103 с); Release [v2.8.2](https://github.com/enkolesnikov/AnOOPlan/releases/tag/v2.8.2) —
-  APK 1 600 200 Б и скриншот «О программе»; веб-версия задеплоена на https://enkolesnikov.github.io/AnOOPlan/.
+  APK 1 600 200 Б и скриншот «О программе»; веб-версия задеплоена на https://enkolesnikov.github.io/AnOOPlan/app/.
 
 ### Состояние на 2026-10-28 (2.8.1)
 
@@ -320,8 +321,8 @@
 
 APK всегда работает в режиме «Браузер»: запрос `/api/health` получает 404, приложение включает
 `staticMode`. Серверная часть остаётся для локального веба и не входит в APK. Веб-версия — это та же
-статическая сборка; на GitHub Pages она публикуется автоматически при изменениях приложения
-(`deploy.yml`, push-триггер) или вручную через `workflow_dispatch`.
+статическая сборка; на GitHub Pages лендинг лежит в корне, приложение — в `/app/`, публикация
+автоматическая при изменениях приложения (`deploy.yml`, push-триггер) или вручную.
 
 ## Стек и устройство
 
