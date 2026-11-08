@@ -329,12 +329,14 @@ export function routeAngleStats(route: Route): RouteAngleStats {
 }
 
 export interface DimensionGeometry {
-  /** Расстояние по прямой в единицах PDF. */
+  /** Расстояние по прямой в единицах PDF (для межэтажного — null). */
   units: number | null;
-  /** Расстояние по прямой в метрах; null, если масштаб этажа неизвестен. */
+  /** Расстояние по прямой в метрах; null, если масштаб/отметки неизвестны. */
   meters: number | null;
   floorId: string | null;
   problem: string | null;
+  /** Размер между разными этажами: учитывает отметки и высоты оборудования. */
+  interFloor?: boolean;
 }
 
 /**
@@ -345,13 +347,29 @@ export function dimensionGeometry(project: Project, dimension: Dimension): Dimen
   const from = project.equipment.find(item => item.id === dimension.fromId);
   const to = project.equipment.find(item => item.id === dimension.toId);
   if (!from || !to) return { units: null, meters: null, floorId: null, problem: 'Оборудование не найдено' };
-  if (from.floorId !== to.floorId) return { units: null, meters: null, floorId: from.floorId, problem: 'Оборудование на разных этажах' };
+  if (from.floorId !== to.floorId) {
+    const fromFloor = project.floors.find(item => item.id === from.floorId);
+    const toFloor = project.floors.find(item => item.id === to.floorId);
+    if (!fromFloor || !toFloor) return { units: null, meters: null, floorId: fromFloor?.id ?? null, problem: 'Этаж оборудования не найден', interFloor: true };
+    const fromScale = fromFloor.metersPerUnit;
+    const toScale = toFloor.metersPerUnit;
+    if (!finite(fromScale) || fromScale <= 0 || !finite(toScale) || toScale <= 0) {
+      return { units: null, meters: null, floorId: fromFloor.id, problem: 'Для межэтажного размера нужен масштаб обоих этажей', interFloor: true };
+    }
+    if (!finite(fromFloor.elevation) || !finite(toFloor.elevation)) {
+      return { units: null, meters: null, floorId: fromFloor.id, problem: 'Задайте отметки обоих этажей', interFloor: true };
+    }
+    const horizontal = Math.hypot(to.x * toScale - from.x * fromScale, to.y * toScale - from.y * fromScale);
+    const vertical = Math.abs((toFloor.elevation + (to.height ?? 0)) - (fromFloor.elevation + (from.height ?? 0)));
+    const meters = Math.hypot(horizontal, vertical);
+    return { units: null, meters, floorId: fromFloor.id, problem: null, interFloor: true };
+  }
   const units = Math.hypot(to.x - from.x, to.y - from.y);
   if (!finite(units)) return { units: null, meters: null, floorId: from.floorId, problem: 'Неверные координаты оборудования' };
   const floor = project.floors.find(item => item.id === from.floorId);
   const scale = floor?.metersPerUnit;
   const meters = finite(scale) && scale > 0 ? units * scale : null;
-  return { units, meters, floorId: from.floorId, problem: null };
+  return { units, meters, floorId: from.floorId, problem: null, interFloor: false };
 }
 
 /** Подпись относительного размера: миллиметры до 1 м, иначе метры; без масштаба — единицы PDF. */

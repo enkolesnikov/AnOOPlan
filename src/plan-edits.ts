@@ -1,4 +1,4 @@
-import type { Cable, Point, Route, Segment, Vertex } from './model';
+import type { Cable, Dimension, Point, Route, Segment, Vertex } from './model';
 import { createUuid as uid } from './compat';
 
 /** Точка на сегменте: параметр 0..1 с отступом от концов, чтобы не плодить нулевые сегменты. */
@@ -95,4 +95,48 @@ export function reverseRoute(route: Route): Route {
 export function reverseCableRoute(cable: Cable, routeSegmentIds: string[]): Cable {
   if (!cable.segmentIds.some(id => routeSegmentIds.includes(id))) return cable;
   return { ...cable, segmentIds: [...cable.segmentIds].reverse() };
+}
+
+
+export interface SplitRouteResult {
+  first: Route;
+  second: Route;
+  vertexId: string;
+}
+
+/**
+ * Разделяет трассу по внутренней вершине на две. Сегменты не меняются,
+ * поэтому кабели продолжают ссылаться на те же id; новая трасса получает новый id.
+ */
+export function splitRouteAtVertex(route: Route, vertexId: string, secondId = uid()): SplitRouteResult | null {
+  const index = route.segments.findIndex((segment, position) => {
+    const next = route.segments[position + 1];
+    return Boolean(next) && (segment.a.id === vertexId || segment.b.id === vertexId) && (next.a.id === vertexId || next.b.id === vertexId);
+  });
+  if (index < 0) return null;
+  return {
+    first: { ...route, segments: route.segments.slice(0, index + 1) },
+    second: { ...route, id: secondId, segments: route.segments.slice(index + 1) },
+    vertexId,
+  };
+}
+
+const sameVertexPoint = (a: Vertex, b: Vertex): boolean =>
+  a.floorId === b.floorId && Math.abs(a.x - b.x) < 1e-6 && Math.abs(a.y - b.y) < 1e-6 && a.height === b.height;
+
+/** Объединяет две трассы, если конец одной совпадает с началом/концом другой. */
+export function mergeRoutes(first: Route, second: Route): Route | null {
+  const firstLast = first.segments[first.segments.length - 1]?.b;
+  const secondFirst = second.segments[0]?.a;
+  const secondLast = second.segments[second.segments.length - 1]?.b;
+  if (!firstLast || !secondFirst || !secondLast) return null;
+  if (sameVertexPoint(firstLast, secondFirst)) return { ...first, segments: [...first.segments, ...second.segments] };
+  if (sameVertexPoint(firstLast, secondLast)) return { ...first, segments: [...first.segments, ...reverseRoute(second).segments] };
+  return null;
+}
+
+
+/** Размеры между соседними точками цепочки: один mutate на всю цепочку. */
+export function chainDimensions(ids: string[]): Dimension[] {
+  return ids.slice(1).map((toId, index) => ({ id: uid(), fromId: ids[index], toId }));
 }

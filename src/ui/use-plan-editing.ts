@@ -7,7 +7,7 @@ import { CABLE_SNAP_LIMIT, SNAP_PX } from './constants';
 import { areaLabel, number } from './format';
 import { vibrate } from './native';
 import { nextPinNumber } from './project-helpers';
-import { deleteVertex as mergeVertex, replaceCableSegment, reverseCableRoute, reverseRoute as reverseRouteData, splitSegment } from '../plan-edits';
+import { deleteVertex as mergeVertex, mergeRoutes as mergeRouteData, replaceCableSegment, reverseCableRoute, reverseRoute as reverseRouteData, splitRouteAtVertex, splitSegment } from '../plan-edits';
 import type { ObjectKind } from './types';
 import type { WorkspaceState } from './use-workspace-state';
 
@@ -364,6 +364,47 @@ export function usePlanEditing(s: WorkspaceState) {
     setMessage(`Вершина удалена, сегменты объединены.${merged.warning ? ` ${merged.warning}` : ''}`);
   }
 
+  /** Разделение трассы по внутренней вершине на две независимые трассы. */
+  function splitRoute(routeId: string, vertexId: string): void {
+    const source = projectRef.current;
+    const target = source.routes.find(item => item.id === routeId);
+    if (!target) return;
+    const split = splitRouteAtVertex(target, vertexId);
+    if (!split) { setMessage('Разделить можно только по внутренней вершине с двумя соседними сегментами.'); return; }
+    let secondNumber = '';
+    mutate(project => {
+      const index = project.routes.findIndex(item => item.id === routeId);
+      if (index < 0) return;
+      const used = new Set(project.routes.map(item => item.number));
+      let suffix = 2;
+      while (used.has(`${target.number}-${suffix}`)) suffix += 1;
+      secondNumber = `${target.number}-${suffix}`;
+      project.routes[index] = split.first;
+      project.routes.push({ ...split.second, number: secondNumber });
+    }, 'Разделение трассы');
+    setSelection({ kind: 'route', id: split.first.id });
+    setMessage(`Трасса ${target.number} разделена: ${target.number} и ${secondNumber}.`);
+  }
+
+  /** Объединение двух трасс с совпадающим концом. */
+  function mergeRoute(routeId: string, otherId: string): void {
+    const source = projectRef.current;
+    const first = source.routes.find(item => item.id === routeId);
+    const second = source.routes.find(item => item.id === otherId);
+    if (!first || !second || first.id === second.id) return;
+    const merged = mergeRouteData(first, second);
+    if (!merged) { setMessage('Трассы не соединяются концами (или концы имеют разные высоты).'); return; }
+    const removed = second.number;
+    mutate(project => {
+      const index = project.routes.findIndex(item => item.id === routeId);
+      if (index < 0) return;
+      project.routes[index] = merged;
+      project.routes = project.routes.filter(item => item.id !== otherId);
+    }, 'Объединение трасс');
+    setSelection({ kind: 'route', id: routeId });
+    setMessage(`Трассы ${first.number} и ${removed} объединены.`);
+  }
+
   /** Разворот трассы: меняются порядок сегментов и направление кабелей. */
   function reverseRoute(routeId: string): void {
     const source = projectRef.current;
@@ -384,7 +425,7 @@ export function usePlanEditing(s: WorkspaceState) {
   return {
     fit, changeZoom, position, armTap, startDrag,
     pointerDown, pointerMove, pointerUp, pointerCancel,
-    finishRoute, createPin, finishCable, openObjectSheet, insertVertex, deleteVertex, reverseRoute, snapMark,
+    finishRoute, createPin, finishCable, openObjectSheet, insertVertex, deleteVertex, reverseRoute, splitRoute, mergeRoute, snapMark,
     cancelLongPress, moveLongPress, zoomAt, listPressDown, stagePressDown, pinching,
   };
 }

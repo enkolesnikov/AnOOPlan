@@ -255,8 +255,10 @@ test('относительный размер между оборудовани�
   const small = dimensionGeometry(p, { id: 'd2', fromId: 'a', toId: 'b' });
   assert.equal(dimensionText({ ...small, meters: 0.5 }), '500 мм');
   const across = dimensionGeometry(p, { id: 'd3', fromId: 'a', toId: 'c' });
-  assert.equal(across.problem, 'Оборудование на разных этажах');
-  assert.equal(across.meters, null);
+  assert.equal(across.problem, null);
+  assert.equal(across.interFloor, true);
+  assert.deepEqual(across.meters, 4);
+  assert.equal(dimensionText(across), '4,00 м');
 });
 
 
