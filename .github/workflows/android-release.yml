@@ -47,6 +47,9 @@ jobs:
       - name: Зависимости
         run: npm ci
 
+      - name: Проверка на секреты
+        run: npm run check:secrets
+
       - name: Тесты
         run: npm test
 

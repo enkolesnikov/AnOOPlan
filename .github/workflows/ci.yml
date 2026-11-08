@@ -31,6 +31,8 @@ jobs:
           node-version: 24
           cache: npm
       - run: npm ci
+      - name: Проверка на секреты
+        run: npm run check:secrets
       - name: Линт (ESLint)
         run: npm run lint
       - name: Мёртвый код (knip)

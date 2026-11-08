@@ -35,6 +35,8 @@ jobs:
           node-version: 24
           cache: npm
       - run: npm ci
+      - name: Проверка на секреты
+        run: npm run check:secrets
       - run: npm test
       - name: Build web app under /app/
         run: BASE_URL=/AnOOPlan/app/ npm run build

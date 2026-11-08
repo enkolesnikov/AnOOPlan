@@ -27,3 +27,20 @@ tools/
 /*.txt
 /dl/
 /work/
+
+# Секреты и ключи (не коммитить)
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+*.jks
+*.keystore
+*.token
+*.secret
+secrets.*
+credentials.*
+android/keystore.properties
+keystore.properties
