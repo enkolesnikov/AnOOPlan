@@ -1,0 +1,16 @@
+# graphify: исключаем тестовую обвязку, сборки и артефакты
+tests/
+android/build/
+android/app/build/
+android/.gradle/
+android/capacitor-cordova-android-plugins/
+node_modules/
+dist/
+build/
+coverage/
+graphify-out/
+*.min.js
+scripts/smoke-dom.mjs
+*.test.ts
+*.spec.ts
+*.test.mjs

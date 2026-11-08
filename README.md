@@ -13,7 +13,7 @@
 [![Скачать APK](https://img.shields.io/badge/%D1%81%D0%BA%D0%B0%D1%87%D0%B0%D1%82%D1%8C-APK-2ea043?logo=android&logoColor=white)](https://github.com/enkolesnikov/AnOOPlan/releases/latest)
 
 - **APK:** [последний релиз](https://github.com/enkolesnikov/AnOOPlan/releases/latest) (`AnOOPlan-2.8.4.apk`) — около 1,5 МБ со встроенными сабсетами шрифтов, Android 7.0+ (minSdk 24, WebView 98+, targetSdk 35), без интернета;
-- **Веб-версия:** [enkolesnikov.github.io/AnOOPlan](https://enkolesnikov.github.io/AnOOPlan/) — та же сборка, публикуется вручную по запросу (приоритет — Android);
+- **Веб-версия:** [enkolesnikov.github.io/AnOOPlan](https://enkolesnikov.github.io/AnOOPlan/) — та же сборка, публикуется автоматически при изменениях приложения (ручной `workflow_dispatch` сохранён);
 - **Исходный проект:** [enkolesnikov/ooplan](https://github.com/enkolesnikov/ooplan).
 
 Установка: скачайте APK на телефон → откройте файл → «Установить» (разрешите установку из этого источника для браузера или файлового менеджера).
@@ -546,7 +546,7 @@ APK — это нативная оболочка (WebView) вокруг той �
 
 ```bash
 bash scripts/fetch-tools.sh   # android.jar (SDK 35) + build-tools 35 + r8.jar с d8 в tools/
-bash scripts/build-apk.sh     # результат: build/AnOOPlan-2.5.0.apk
+bash scripts/build-apk.sh     # результат: build/AnOOPlan-<version>.apk (версия из package.json)
 ```
 
 Нужны `JDK 17+`, `aapt`, `zipalign`, `apksigner`, `zip`, Node.js и Python 3 (генерация иконок).

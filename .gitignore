@@ -4,6 +4,7 @@ data/
 test-results/
 playwright-report/
 coverage/
+graphify-out/
 *.log
 
 # Android / сборка
