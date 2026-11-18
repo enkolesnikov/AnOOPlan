@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import 'fake-indexeddb/auto';
 import type { Project } from '../src/model';
 import { collectStorageGarbage } from '../src/garbage-collector';
+import { AUTOSAVE_KEY } from '../src/local-projects';
 import { idbDelete, idbGet, idbPut } from '../src/idb';
 import { baseProject, device, floor } from './fixtures';
 
@@ -11,6 +12,30 @@ const project = (pdf: string, photo: string): Project => baseProject({
   floors: [floor('f1', { name: 'Этаж', metersPerUnit: 1, pdfId: `idb:${pdf}` })],
   equipment: [device('e1', 0, { number: 'E1', name: 'Камера', type: 'Камера', height: null, properties: {}, photos: [photo] })],
   routes: [], cables: [], pins: [],
+});
+
+test('GC сохраняет вложения проекта из черновика другой вкладки', async () => {
+  const suffix = Date.now();
+  const draftPdf = `draft-pdf-${suffix}`;
+  const draftPhoto = `draft-photo-${suffix}`;
+  const draft = project(draftPdf, draftPhoto);
+  draft.id = `draft-${suffix}`;
+  await idbPut(draftPdf, new Blob(['draft']));
+  await idbPut('photo:' + draftPhoto, new Blob(['draft-photo']));
+  const previous = Object.getOwnPropertyDescriptor(globalThis, 'localStorage');
+  Object.defineProperty(globalThis, 'localStorage', {
+    configurable: true,
+    value: { getItem: (key: string) => key === AUTOSAVE_KEY ? JSON.stringify(draft) : null, setItem: () => { /* not used */ } },
+  });
+  try {
+    await collectStorageGarbage([]);
+    assert.ok(await idbGet(draftPdf));
+    assert.ok(await idbGet('photo:' + draftPhoto));
+  } finally {
+    if (previous) Object.defineProperty(globalThis, 'localStorage', previous);
+    else Reflect.deleteProperty(globalThis, 'localStorage');
+    for (const key of [draftPdf, 'photo:' + draftPhoto]) await idbDelete(key);
+  }
 });
 
 test('GC удаляет PDF/фото, на которые нет ссылок, и сохраняет используемые', async () => {

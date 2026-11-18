@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import type { Project } from '../src/model';
-import { deleteLocalProject, readLocalProjects, saveLocalProject, type ProjectStorage } from '../src/local-projects';
+import { CORRUPT_PROJECTS_KEY, deleteLocalProject, readLocalProjects, saveLocalProject, type ProjectStorage } from '../src/local-projects';
 import { baseProject } from './fixtures';
 
 function storage(): ProjectStorage & { data: Map<string, string> } {
@@ -28,6 +28,12 @@ test('повреждённое хранилище не ломает загруз
   assert.deepEqual(readLocalProjects(store), []);
   store.data.set('cableplan:projects', '{"not":"array"}');
   assert.deepEqual(readLocalProjects(store), []);
-  saveLocalProject(project('p3'), store);
-  assert.deepEqual(readLocalProjects(store).map(item => item.id), ['p3']);
+});
+
+test('повреждённый список не затирается: копия сохранена, запись отклонена', () => {
+  const store = storage();
+  store.setItem('cableplan:projects', '{bad json');
+  assert.throws(() => saveLocalProject(project('p3'), store), /повреждён/);
+  assert.equal(store.getItem('cableplan:projects'), '{bad json');
+  assert.equal(store.getItem(CORRUPT_PROJECTS_KEY), '{bad json');
 });
