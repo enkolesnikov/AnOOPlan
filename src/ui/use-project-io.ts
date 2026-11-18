@@ -9,6 +9,7 @@ import { collectStorageGarbage } from '../garbage-collector';
 import { verifyAttachmentManifest, type AttachmentManifest } from '../attachment-manifest';
 import { snapshotProjectId } from '../snapshot-key';
 import { api, jsonOptions } from './api';
+import { freshProject } from './project-factory';
 import { nativeBridge } from './native';
 import type { WorkspaceState } from './use-workspace-state';
 
@@ -45,12 +46,14 @@ export function useProjectIo(s: WorkspaceState) {
         const snapshotKeys = (await idbStoreKeys('snapshots')).filter(key => snapshotProjectId(key) === id);
         for (const key of snapshotKeys) { try { await idbStoreDelete('snapshots', key); } catch { /* хранилище недоступно */ } }
       } catch { /* хранилище недоступно — проект всё равно удаляем */ }
-      const target = readLocalProjects().find(p => p.id === id);
       // Блобы не удаляем здесь: GC проверит оставшиеся проекты, undo и снимки.
       deleteLocalProject(id);
       void collectStorageGarbage([projectRef.current]);
     } else await api('/api/projects/' + id, { method: 'DELETE' });
     setProjects(list => list ? list.filter(p => p.id !== id) : null);
+    // Удалённый открытый проект нельзя оставлять в памяти: автосохранение
+    // через 1,5 с записало бы его обратно в список.
+    if (id === projectRef.current.id) load(freshProject(), false);
     setMessage(`Проект «${name}» удалён.`);
   }
   function mayLeave() { return !dirty || window.confirm('Есть несохранённые изменения. Продолжить без сохранения?'); }
@@ -102,9 +105,40 @@ export function useProjectIo(s: WorkspaceState) {
       return;
     }
     if (parsed && typeof parsed === 'object' && 'project' in parsed) {
-      const result = await api<Project>('/api/restore', jsonOptions('POST', parsed));
+      if (parsed.manifest && typeof parsed.manifest === 'object') {
+        await verifyAttachmentManifest(
+          parsed.manifest as AttachmentManifest,
+          Array.isArray(parsed.pdfs) ? parsed.pdfs as { id: string; name: string; dataBase64: string }[] : [],
+          Array.isArray(parsed.photos) ? parsed.photos as { key: string; name: string; mime: string; dataBase64: string }[] : [],
+        );
+      }
+      // Сервер хранит только PDF. Фото из .anooplan кладём в локальный IndexedDB
+      // и переназначаем ключи до записи проекта, иначе они молча пропадут.
+      const rawPhotos = Array.isArray(parsed.photos) ? parsed.photos as { key?: string; dataBase64?: string; mime?: string }[] : [];
+      const lost: string[] = [];
+      const photoKeys = new Map<string, string>();
+      for (const photo of rawPhotos) {
+        if (!photo?.key || !photo.dataBase64) { lost.push('фото'); continue; }
+        try {
+          const bytes = Uint8Array.from(atob(photo.dataBase64), c => c.charCodeAt(0));
+          const localKey = uid();
+          await idbPut('photo:' + localKey, new Blob([bytes], { type: photo.mime || 'image/jpeg' }));
+          photoKeys.set(photo.key, localKey);
+        } catch (error) { logDiagnostic('error', error, 'restore-photo'); lost.push('фото'); }
+      }
+      const project = migrateProject(parsed.project);
+      if (photoKeys.size) {
+        for (const item of [...project.equipment, ...(project.pins ?? [])]) {
+          if (item.photos?.length) item.photos = item.photos.map(key => photoKeys.get(key) ?? key);
+        }
+      }
+      const manifest = parsed.manifest as AttachmentManifest | undefined;
+      const pdfManifest = manifest ? { version: 1 as const, files: manifest.files.filter(entry => entry.kind === 'pdf') } : undefined;
+      const payload = { ...parsed, project, photos: [], ...(pdfManifest ? { manifest: pdfManifest } : {}) };
+      const result = await api<Project>('/api/restore', jsonOptions('POST', payload));
       load(result, true);
       setMessage('Резервная копия с PDF восстановлена.');
+      if (lost.length) setError(`Проект восстановлен, но фото не сохранились: ${lost.length}. Проверьте свободное место и повторите импорт.`);
       return;
     }
     load(parsed, false);
@@ -125,11 +159,11 @@ export function useProjectIo(s: WorkspaceState) {
         // с другого устройства или из серверного режима, поэтому старые id не переиспользуем.
         const pdfKeys = new Map<string, string>();
         for (const pdf of parsed.pdfs) {
-          if (!pdf?.id || !pdf.dataBase64) continue;
+          if (!pdf?.id || !pdf.dataBase64) { lost.push('PDF'); continue; }
           const bytes = (() => {
             try { return Uint8Array.from(atob(pdf.dataBase64), c => c.charCodeAt(0)); } catch { return null; }
           })();
-          if (!bytes) continue;
+          if (!bytes) { lost.push('PDF'); continue; }
           const pdfBlob = new Blob([bytes], { type: 'application/pdf' });
           if (!staticMode) {
             // Серверный режим: PDF снова загружаем в хранилище сервера, чтобы проект

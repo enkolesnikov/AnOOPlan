@@ -41,7 +41,9 @@ const optionalNumber = (value: unknown): number | undefined => {
  * кладётся функция 1 → 2, и migrateProject применит её к старым файлам.
  */
 const MIGRATIONS: Record<number, (project: RawProject) => RawProject> = {
-  1: project => ({ ...project, schemaVersion: 2, pins: [] }),
+  // Пины появились в v2, но сторонний/ручной v1-файл может их уже содержать —
+  // не стираем то, что понимаем.
+  1: project => ({ ...project, schemaVersion: 2, pins: Array.isArray(project.pins) ? project.pins : [] }),
 };
 
 function normalizeFloor(value: unknown): Project['floors'][number] {
