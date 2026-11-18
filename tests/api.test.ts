@@ -356,6 +356,21 @@ test('restore: фото отклоняются, подменённый мани�
   } finally { await h.close(); }
 });
 
+test('restore отклоняет фото и подменённый манифест PDF', async () => {
+  const h = await harness();
+  try {
+    const base = fixture();
+    base.floors[0].pdfId = 'pdf-1';
+    const backup = {
+      schemaVersion: 2, project: base, photos: [{ key: 'k', name: 'f.jpg', mime: 'image/jpeg', dataBase64: 'AAAA' }],
+      pdfs: [{ id: 'pdf-1', name: 'plan.pdf', dataBase64: originalPdf.toString('base64') }],
+    };
+    assert.equal((await h.request('/api/restore', 'POST', backup)).status, 422);
+    const withManifest = { ...backup, photos: [], manifest: { version: 1, files: [{ kind: 'pdf', id: 'pdf-1', size: 1, sha256: 'bad' }] } };
+    assert.equal((await h.request('/api/restore', 'POST', withManifest)).status, 409);
+  } finally { await h.close(); }
+});
+
 test('повтор имени оборудования отклоняется', async () => {
   const h = await harness();
   try {
