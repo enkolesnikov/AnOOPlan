@@ -25,7 +25,7 @@
         </a>
         <nav aria-label="Основная навигация">
           <a href="#features">Возможности</a>
-          <a href="#audit">Аудит 2.9</a>
+          <a href="#audit">Что нового</a>
           <a href="#screens">Скриншоты</a>
           <a href="#start">Как начать</a>
           <a href="#download">Скачать</a>
@@ -103,14 +103,16 @@
         <div class="audit-card">
           <div>
             <p class="eyebrow">Аудит 2.9 · ноябрь 2026</p>
-            <h2>Надёжность данных — прежде всего</h2>
-            <p class="section-lead">Независимый аудит проверил сохранность проектов, расчёты, экспорт, производительность, доступность и офлайн-контракт. Подтверждённые дефекты закрываются отдельными коммитами с тестами.</p>
+            <h2>Что исправлено в 2.9</h2>
+            <p class="section-lead">Аудит проверил сохранность проектов, расчёты, экспорт, производительность, доступность и офлайн-контракт. Подтверждённые дефекты закрыты отдельными коммитами с регрессионными тестами.</p>
+            <p class="audit-more"><a href="https://github.com/enkolesnikov/AnOOPlan/blob/main/docs/AUDIT-2.9.md">Полный отчёт аудита <span aria-hidden="true">↗</span></a></p>
           </div>
           <ul class="audit-list">
-            <li><b>Снимки версий</b><span>история проекта с «:» в id больше не пересекается с чужой историей</span></li>
-            <li><b>Локальная сеть</b><span>API в LAN требует токен; без него сервер не выходит за loopback</span></li>
-            <li><b>319 юнит-тестов</b><span>каждый фикс сопровождается регрессионным тестом</span></li>
-            <li><b>Офлайн-контракт</b><span>манифест без INTERNET, ни одного внешнего запроса в APK</span></li>
+            <li><b>Сохранность фото</b><span>удаление этажа или проекта не стирает снимки в обход undo — вложения восстанавливаются вместе с проектом</span></li>
+            <li><b>GC вложений</b><span>сборка мусора учитывает проект, открытый в другой вкладке, undo/redo и снимки версий</span></li>
+            <li><b>Точность расчётов</b><span>вставка вершины не удваивает запас, разнотипные трассы не объединяются, неизвестная высота даёт «нет данных», а не 0</span></li>
+            <li><b>Оглавление PDF</b><span>многостраничное оглавление не обрезается, а примечание не разрывает лист плана</span></li>
+            <li><b>LAN-токен</b><span>API по сети доступен только с токеном ANOOPLAN_TOKEN; без него сервер слушает loopback</span></li>
           </ul>
         </div>
       </section>
@@ -159,7 +161,7 @@
     <footer class="footer">
       <div class="wrap footer-inner">
         <span>© 2026 AnOOPlan</span>
-        <span class="footer-links"><a href="https://github.com/enkolesnikov/AnOOPlan">GitHub</a><a href="https://github.com/enkolesnikov/AnOOPlan/releases">Релизы</a><a href="https://github.com/enkolesnikov/AnOOPlan/blob/main/docs/HANDOFF.md">Документация</a></span>
+        <span class="footer-links"><a href="https://github.com/enkolesnikov/AnOOPlan">GitHub</a><a href="https://github.com/enkolesnikov/AnOOPlan/releases">Релизы</a><a href="https://github.com/enkolesnikov/AnOOPlan/blob/main/docs/HANDOFF.md">Документация</a><a href="https://github.com/enkolesnikov/AnOOPlan/blob/main/LICENSE">Лицензия</a></span>
       </div>
     </footer>
   </body>
