@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import type { Project } from '../src/model';
-import { CORRUPT_PROJECTS_KEY, deleteLocalProject, readLocalProjects, saveLocalProject, type ProjectStorage } from '../src/local-projects';
+import { AUTOSAVE_KEY, CORRUPT_PROJECTS_KEY, deleteLocalProject, readAutosaveDraft, readLocalProjects, saveLocalProject, type ProjectStorage } from '../src/local-projects';
 import { baseProject } from './fixtures';
 
 function storage(): ProjectStorage & { data: Map<string, string> } {
@@ -36,4 +36,12 @@ test('повреждённый список не затирается: копи�
   assert.throws(() => saveLocalProject(project('p3'), store), /повреждён/);
   assert.equal(store.getItem('cableplan:projects'), '{bad json');
   assert.equal(store.getItem(CORRUPT_PROJECTS_KEY), '{bad json');
+  assert.throws(() => deleteLocalProject('p1', store), /повреждён/);
+  assert.equal(store.getItem('cableplan:projects'), '{bad json', 'удаление не должно затирать битый список');
+});
+
+test('черновик с неполной структурой не ломает GC', () => {
+  const store = storage();
+  store.setItem(AUTOSAVE_KEY, JSON.stringify({ id: 'draft' }));
+  assert.equal(readAutosaveDraft(store), null);
 });

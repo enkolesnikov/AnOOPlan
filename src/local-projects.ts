@@ -28,6 +28,16 @@ export function readLocalProjects(storage: ProjectStorage | null = defaultStorag
   }
 }
 
+/** Разбор списка; null — значение повреждено (не массив/не JSON). */
+function parseProjects(raw: string | null): Project[] | null {
+  if (!raw) return [];
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed as Project[] : null;
+  } catch {
+    return null;
+  }
+}
 /**
  * Черновик последнего открытого проекта. Нужен GC: в другой вкладке проект может
  * быть ещё не сохранён в список, но его блобы обязаны остаться живыми.
@@ -36,10 +46,13 @@ export function readAutosaveDraft(storage: ProjectStorage | null = defaultStorag
   try {
     const raw = storage?.getItem(AUTOSAVE_KEY);
     if (!raw) return null;
-    const draft: unknown = JSON.parse(raw);
-    return draft && typeof draft === 'object' && !Array.isArray(draft) && typeof (draft as Project).id === 'string'
-      ? draft as Project
-      : null;
+    const draft = JSON.parse(raw) as Partial<Project> | null;
+    // GC пойдёт по floors/equipment: неполный объект там уронил бы всю уборку.
+    const valid = draft && typeof draft === 'object' && !Array.isArray(draft)
+      && typeof draft.id === 'string'
+      && Array.isArray(draft.floors) && Array.isArray(draft.equipment)
+      && Array.isArray(draft.routes) && Array.isArray(draft.cables);
+    return valid ? draft as Project : null;
   } catch {
     return null;
   }
@@ -72,5 +85,10 @@ export function saveLocalProject(project: Project, storage: ProjectStorage | nul
 
 export function deleteLocalProject(id: string, storage: ProjectStorage | null = defaultStorage()): void {
   if (!storage) return;
-  storage.setItem(PROJECTS_KEY, JSON.stringify(readLocalProjects(storage).filter(item => item.id !== id)));
+  const list = parseProjects(storage.getItem(PROJECTS_KEY));
+  if (list === null) {
+    // Не превращаем повреждённый список в [] — это уничтожило бы все проекты.
+    throw new Error('Список проектов повреждён: удаление не выполнено, данные сохранены как есть.');
+  }
+  storage.setItem(PROJECTS_KEY, JSON.stringify(list.filter(item => item.id !== id)));
 }

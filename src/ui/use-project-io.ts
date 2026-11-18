@@ -53,7 +53,12 @@ export function useProjectIo(s: WorkspaceState) {
     setProjects(list => list ? list.filter(p => p.id !== id) : null);
     // Удалённый открытый проект нельзя оставлять в памяти: автосохранение
     // через 1,5 с записало бы его обратно в список.
-    if (id === projectRef.current.id) load(freshProject(), false);
+    if (id === projectRef.current.id) {
+      const fresh = freshProject();
+      load(fresh, false);
+      // Новый пустой проект ещё не меняли: не просим сохранить пустышку при выходе.
+      setSaved(JSON.stringify(fresh));
+    }
     setMessage(`Проект «${name}» удалён.`);
   }
   function mayLeave() { return !dirty || window.confirm('Есть несохранённые изменения. Продолжить без сохранения?'); }

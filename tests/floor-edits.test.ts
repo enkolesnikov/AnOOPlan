@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { removeFloor } from '../src/floor-edits';
 import type { Project } from '../src/model';
-import { baseProject, cable, device, floor, pin, route, segment, vertex } from './fixtures';
+import { baseProject, cable, device, floor, pin, readRepoFile, route, segment, vertex } from './fixtures';
 
 function project(): Project {
   return baseProject({
@@ -32,10 +32,11 @@ test('removeFloor удаляет объекты и сегменты этажа �
   assert.equal(p.cables.length, 0);
 });
 
-test('removeFloor не трогает фото-ссылки: блобы очищает GC', () => {
-  const p = project();
-  removeFloor(p, 'f2');
-  assert.deepEqual(p.equipment[0].photos, ['photo-1']);
+test('панель этажа не удаляет блобы напрямую (защита от возврата D-01)', () => {
+  const source = readRepoFile('src/ui/properties-panel.tsx');
+  assert.ok(source.includes('removeFloor'), 'удаление этажа должно идти через removeFloor');
+  assert.ok(!source.includes('idbDelete'), 'панель не должна импортировать idbDelete');
+  assert.ok(!source.includes('purgePhotoBlobs'), 'второго пути очистки быть не должно');
 });
 
 test('removeFloor: единственный этаж и неизвестный id не удаляются', () => {
