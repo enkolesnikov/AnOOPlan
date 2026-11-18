@@ -229,7 +229,7 @@ CI: lint → knip → tsc → покрытие → сборка/размер →
 | `npm run smoke` | 235 проверок, успех |
 | `npx playwright test` | 8 E2E, успех |
 | `npm run test:visual` | 4 эталона, успех |
-| `npm run size` | JS 486,2 КБ / CSS 40,9 КБ — в бюджете |
+| `npm run size` | JS 486,6 КБ / CSS 40,9 КБ — в бюджете |
 | `npm run build:apk` | APK 1 608 392 Б, versionCode 44, без `INTERNET` |
 | `npm audit` | 0 high; 9 moderate только dev (ESLint/minimatch) |
 
