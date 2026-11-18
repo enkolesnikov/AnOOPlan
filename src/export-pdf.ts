@@ -356,7 +356,10 @@ class Renderer {
     for (const item of items) {
       // Заголовок и изображение должны попасть на один лист: иначе план уезжает на следующую
       // страницу, а заголовок остаётся сиротой внизу предыдущей.
-      this.ensure(440);
+      // Учитываем высоту примечания заранее: иначе заголовок остаётся на одном
+      // листе, а картинка уезжает на следующий (регрессия 2.3.0).
+      const noteLines = item.note ? wrapText(item.note, this.regular, 8.6, CONTENT).length : 0;
+      this.ensure(440 + noteLines * 13);
       const title = `План: ${item.title}`;
       const page = this.heading(title, 'Подложка этажа и нанесённые трассы с оборудованием — лист для подписи.');
       entries.push({ title, page });
@@ -379,18 +382,23 @@ class Renderer {
   }
 
   /** Оглавление: рисуется в конце, когда известны фактические страницы разделов. */
-  drawContents(page: PDFPage, entries: TocEntry[]): void {
-    page.drawText('Оглавление', { x: MARGIN, y: PAGE.height - MARGIN - 22, size: 16, font: this.bold, color: BRAND });
-    page.drawLine({ start: { x: MARGIN, y: PAGE.height - MARGIN - 34 }, end: { x: PAGE.width - MARGIN, y: PAGE.height - MARGIN - 34 }, thickness: 0.8, color: BORDER });
+  drawContents(pages: PDFPage[], entries: TocEntry[]): void {
     const size = 10.5;
-    let y = PAGE.height - MARGIN - 64;
-    for (let index = 0; index < entries.length; index += 1) {
+    let pageIndex = 0;
+    let page = pages[0];
+    const header = (target: PDFPage, continued: boolean): number => {
+      target.drawText(continued ? 'Оглавление (продолжение)' : 'Оглавление', { x: MARGIN, y: PAGE.height - MARGIN - 22, size: 16, font: this.bold, color: BRAND });
+      target.drawLine({ start: { x: MARGIN, y: PAGE.height - MARGIN - 34 }, end: { x: PAGE.width - MARGIN, y: PAGE.height - MARGIN - 34 }, thickness: 0.8, color: BORDER });
+      return PAGE.height - MARGIN - 64;
+    };
+    let y = header(page, false);
+    for (const entry of entries) {
       if (y < CONTENT_BOTTOM + 20) {
-        // Оглавление не переносится: при большом числе планов показываем остаток одной строкой.
-        page.drawText(`…ещё разделов: ${entries.length - index}`, { x: MARGIN, y, size: 9, font: this.regular, color: MUTED });
-        break;
+        pageIndex += 1;
+        if (pageIndex >= pages.length) break;
+        page = pages[pageIndex];
+        y = header(page, true);
       }
-      const entry = entries[index];
       page.drawText(entry.title, { x: MARGIN, y, size, font: this.regular, color: BRAND });
       const numberText = String(entry.page);
       const numberWidth = this.regular.widthOfTextAtSize(numberText, size);
@@ -764,15 +772,23 @@ export async function buildJournalPdf(project: Project, fonts: JournalFonts, opt
   document.setProducer('AnOOPlan');
 
   const renderer = new Renderer(document, regular, bold);
-  // Титульный лист (страница 1) и оглавление (страница 2) выводятся всегда.
+  // Титульный лист (страница 1) и оглавление выводятся всегда. Оглавление может
+  // занять несколько листов: резервируем их заранее, пока номера разделов ещё не посчитаны.
   renderer.titlePage(project);
-  const contentsPage = renderer.addPage();
-  renderer.addPage();
-  const toc: TocEntry[] = [];
-
   const estimateResult = estimate(project);
   const include = new Set<JournalSectionId>(options.include ?? DEFAULT_JOURNAL_SECTIONS);
-  for (const section of buildSections(project, estimateResult)) {
+  const sections = buildSections(project, estimateResult);
+  const expectedEntries = sections.filter(section => include.has(section.id)).length
+    + (include.has('plans') ? (options.plans?.length ?? 0) : 0)
+    + (include.has('photos') && options.photos?.length ? 1 : 0)
+    + (include.has('pinPhotos') && options.pinPhotos?.length ? 1 : 0)
+    + 1;
+  // Емкость одного листа при шаге 23 pt — около 18 строк.
+  const tocPageCount = Math.max(1, Math.ceil(expectedEntries / 18));
+  const tocPages = Array.from({ length: tocPageCount }, () => renderer.addPage());
+  renderer.addPage();
+  const toc: TocEntry[] = [];
+  for (const section of sections) {
     if (!include.has(section.id)) continue;
     // Заголовок раздела не должен оставаться один внизу страницы: оставляем место
     // хотя бы под шапку таблицы и пару строк.
@@ -805,7 +821,7 @@ export async function buildJournalPdf(project: Project, fonts: JournalFonts, opt
 
   renderer.totals(project);
   renderer.signatures(project);
-  renderer.drawContents(contentsPage, toc);
+  renderer.drawContents(tocPages, toc);
   renderer.finish(project);
   return document.save();
 }
