@@ -281,6 +281,16 @@ test('смета считается по цене за метр и не подм
   assert.ok(typeof priceRow[17] === 'number');
 });
 
+test('PDF: оглавление не теряет разделы при большом числе планов', async () => {
+  const png = new Uint8Array(Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAFgwJ/lK3rWQAAAABJRU5ErkJggg==', 'base64'));
+  const plans = Array.from({ length: 24 }, (_, index) => ({ title: `Этаж ${index + 1}`, png, note: index === 0 ? 'Первый план с примечанием.' : undefined }));
+  const { text, pages } = await pdfText(await buildJournalPdf(createDemoProject(), fonts, { plans }));
+  assert.ok(pages > 24, 'должны быть все листы планов');
+  assert.ok(text.includes('План: Этаж 24'), 'последний план не потерян');
+  assert.ok(!text.includes('ещё разделов'), 'оглавление не обрезается');
+  assert.ok(text.includes('Оглавление (продолжение)'), 'оглавление переносится на следующий лист');
+});
+
 test('CSV содержит диаметр, сечение и раздел заполнения лотков', () => {
   const project = createDemoProject();
   const csv = clientCsv(project);
