@@ -1,13 +1,38 @@
-import express, { type ErrorRequestHandler } from 'express';
+import express, { type ErrorRequestHandler, type RequestHandler } from 'express';
 import multer from 'multer';
-import { randomUUID } from 'node:crypto';
+import { randomUUID, timingSafeEqual } from 'node:crypto';
 import { resolve } from 'node:path';
 import { existsSync } from 'node:fs';
 import { Store, type PdfRecord } from './store.js';
 import { ApiError, assertProject, decodePdf, isPdf } from './validation.js';
 import { validateProject } from '../src/engine.js';
 
-export function createApp(options?: { dataDir: string }) {
+/** Сравнение токенов без утечки длины/позиции первого различия. */
+function tokenMatches(header: string, expected: string): boolean {
+  const given = Buffer.from(header, 'utf8');
+  const wanted = Buffer.from(expected, 'utf8');
+  return given.length === wanted.length && timingSafeEqual(given, wanted);
+}
+
+/**
+ * Токен для доступа к /api. Нужен, когда сервер слушает не loopback:
+ * без него любой в локальной сети читает и меняет проекты (F-08 аудита 2.8.1).
+ */
+function authMiddleware(token: string): RequestHandler {
+  return (req, _res, next) => {
+    if (req.path === '/health') { next(); return; }
+    const authorization = req.get('authorization') ?? '';
+    const bearer = authorization.startsWith('Bearer ') ? authorization.slice(7) : '';
+    const given = bearer || req.get('x-anooplan-token') || '';
+    if (!given || !tokenMatches(given, token)) {
+      next(new ApiError(401, 'Требуется токен доступа к API (Authorization: Bearer …)'));
+      return;
+    }
+    next();
+  };
+}
+
+export function createApp(options?: { dataDir?: string; authToken?: string }) {
   const app = express();
   const store = new Store(options?.dataDir ?? resolve(process.cwd(), 'data'));
   app.locals.store = store;
@@ -28,6 +53,7 @@ export function createApp(options?: { dataDir: string }) {
     res.setHeader('X-Project-Warnings', String(validateProject(project).length));
   };
   app.get('/api/health', (_req, res) => { res.json({ ok: true }); });
+  if (options?.authToken) app.use('/api', authMiddleware(options.authToken));
   app.get('/api/projects', (_req, res) => { res.json(store.list()); });
   app.post('/api/projects', (req, res) => {
     assertProject(req.body, id => store.hasPdf(id));

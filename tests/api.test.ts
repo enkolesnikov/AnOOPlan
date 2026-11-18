@@ -21,15 +21,22 @@ function fixture(): Project {
     cables: [{ id: 'cable-1', number: 'К1', name: 'Кабель', brand: 'ВВГ', purpose: 'Питание', fromId: 'equipment-1', toId: 'equipment-2', segmentIds: ['segment-1'], reservePercent: 0, reserveFixed: 0, startReserve: 0, endReserve: 0, quantity: 2, note: '' }],
   };
 }
-async function harness() {
+async function harness(authToken?: string) {
   const dir = await mkdtemp(join(tmpdir(), 'ooplan-api-'));
-  const app = createApp({ dataDir: dir });
+  const app = createApp({ dataDir: dir, authToken });
   const server = app.listen(0, '127.0.0.1');
   await new Promise<void>(resolve => server.once('listening', resolve));
   const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
   return {
     base, app, dir,
-    request: (path: string, method = 'GET', body?: unknown) => fetch(base + path, { method, ...(body === undefined ? {} : { headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }) }),
+    request: (path: string, method = 'GET', body?: unknown, token = authToken) => fetch(base + path, {
+      method,
+      headers: {
+        ...(body === undefined ? {} : { 'Content-Type': 'application/json' }),
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+      ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+    }),
     close: async () => { await new Promise<void>((resolve, reject) => server.close(error => error ? reject(error) : resolve())); app.locals.close(); await rm(dir, { recursive: true, force: true }); },
   };
 }
@@ -276,6 +283,20 @@ test('DELETE удаляет осиротевшие PDF, но сохраняет 
     assert.equal((await h.request('/api/pdfs/' + record.id)).status, 200);
     assert.equal((await h.request('/api/projects/project-1', 'DELETE')).status, 200);
     assert.equal((await h.request('/api/pdfs/' + record.id)).status, 404);
+  } finally { await h.close(); }
+});
+
+test('LAN-токен: без токена API закрыт, с токеном работает, health открыт', async () => {
+  const h = await harness('test-token-1234567890');
+  try {
+    assert.equal((await h.request('/api/health', 'GET', undefined, '')).status, 200);
+    assert.equal((await h.request('/api/projects', 'GET', undefined, '')).status, 401);
+    assert.equal((await h.request('/api/projects', 'GET', undefined, 'wrong-token-1234567890')).status, 401);
+    assert.equal((await h.request('/api/projects', 'GET', undefined, 'short')).status, 401);
+    assert.equal((await h.request('/api/projects')).status, 200);
+    assert.equal((await h.request('/api/projects', 'POST', fixture())).status, 201);
+    assert.equal((await h.request('/api/projects/project-1', 'DELETE', undefined, '')).status, 401);
+    assert.equal((await h.request('/api/projects/project-1')).status, 200, 'проект не удалён без токена');
   } finally { await h.close(); }
 });
 
