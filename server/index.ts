@@ -17,7 +17,9 @@ if (!LOOPBACK.has(host)) {
   console.log(`LAN-режим: откройте http://${host}:${port}/?token=${encodeURIComponent(authToken)} — токен сохранится в cookie сессии.`);
 }
 
-const app = createApp({ authToken: authToken || undefined });
+// Токен имеет смысл только в LAN: на loopback случайно оставленная переменная
+// окружения ломала бы локальный UI без подсказки.
+const app = createApp({ authToken: LOOPBACK.has(host) ? undefined : (authToken || undefined) });
 const server = app.listen(port, host, () => {
   console.log(`API listening on http://${host}:${port}`);
 });
