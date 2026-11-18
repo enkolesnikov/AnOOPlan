@@ -783,8 +783,9 @@ export async function buildJournalPdf(project: Project, fonts: JournalFonts, opt
     + (include.has('photos') && options.photos?.length ? 1 : 0)
     + (include.has('pinPhotos') && options.pinPhotos?.length ? 1 : 0)
     + 1;
-  // Емкость одного листа при шаге 23 pt — около 18 строк.
-  const tocPageCount = Math.max(1, Math.ceil(expectedEntries / 18));
+  // На лист при шаге 23 pt влезает 16 строк: старт ниже заголовка и нижняя
+  // граница рамки не дают 18. Занижать нельзя — последние строки исчезнут.
+  const tocPageCount = Math.max(1, Math.ceil(expectedEntries / 16));
   const tocPages = Array.from({ length: tocPageCount }, () => renderer.addPage());
   renderer.addPage();
   const toc: TocEntry[] = [];

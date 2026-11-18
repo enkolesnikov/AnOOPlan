@@ -283,12 +283,14 @@ test('смета считается по цене за метр и не подм
 
 test('PDF: оглавление не теряет разделы при большом числе планов', async () => {
   const png = new Uint8Array(Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAFgwJ/lK3rWQAAAABJRU5ErkJggg==', 'base64'));
-  const plans = Array.from({ length: 24 }, (_, index) => ({ title: `Этаж ${index + 1}`, png, note: index === 0 ? 'Первый план с примечанием.' : undefined }));
-  const { text, pages } = await pdfText(await buildJournalPdf(createDemoProject(), fonts, { plans }));
-  assert.ok(pages > 24, 'должны быть все листы планов');
-  assert.ok(text.includes('План: Этаж 24'), 'последний план не потерян');
-  assert.ok(!text.includes('ещё разделов'), 'оглавление не обрезается');
-  assert.ok(text.includes('Оглавление (продолжение)'), 'оглавление переносится на следующий лист');
+  for (const count of [6, 24]) {
+    const plans = Array.from({ length: count }, (_, index) => ({ title: `Этаж ${index + 1}`, png, note: index === 0 ? 'Первый план с примечанием.' : undefined }));
+    const { text, pageTexts, pages } = await pdfText(await buildJournalPdf(createDemoProject(), fonts, { plans }));
+    assert.ok(pages > count, 'должны быть все листы планов');
+    // Заголовок плана есть и в оглавлении, и в разделе: две штуки = запись не потеряна.
+    assert.equal((text.match(new RegExp(`План: Этаж ${count}`, 'g')) ?? []).length, 2, `оглавление потеряло план ${count}`);
+    assert.ok(pageTexts.some(page => page.includes('Оглавление (продолжение)')), 'оглавление переносится на следующий лист');
+  }
 });
 
 test('CSV содержит диаметр, сечение и раздел заполнения лотков', () => {
