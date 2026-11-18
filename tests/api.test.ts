@@ -4,6 +4,7 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { AddressInfo } from 'node:net';
+import { createHash } from 'node:crypto';
 import { createApp } from '../server/app.js';
 import type { Project } from '../src/model.js';
 
@@ -286,6 +287,16 @@ test('DELETE удаляет осиротевшие PDF, но сохраняет 
   } finally { await h.close(); }
 });
 
+test('LAN-токен принимается из cookie, которую ставит страница', async () => {
+  const h = await harness('cookie-token-123456');
+  try {
+    const response = await fetch(h.base + '/api/projects', { headers: { Cookie: 'anooplan_token=cookie-token-123456' } });
+    assert.equal(response.status, 200);
+    const wrong = await fetch(h.base + '/api/projects', { headers: { Cookie: 'anooplan_token=nope' } });
+    assert.equal(wrong.status, 401);
+  } finally { await h.close(); }
+});
+
 test('LAN-токен: без токена API закрыт, с токеном работает, health открыт', async () => {
   const h = await harness('test-token-1234567890');
   try {
@@ -297,6 +308,51 @@ test('LAN-токен: без токена API закрыт, с токеном р
     assert.equal((await h.request('/api/projects', 'POST', fixture())).status, 201);
     assert.equal((await h.request('/api/projects/project-1', 'DELETE', undefined, '')).status, 401);
     assert.equal((await h.request('/api/projects/project-1')).status, 200, 'проект не удалён без токена');
+  } finally { await h.close(); }
+});
+
+test('LAN-токен принимается cookie, поставленной страницей', async () => {
+  const h = await harness('cookie-token-1234567890');
+  try {
+    const response = await fetch(h.base + '/api/projects', { headers: { Cookie: 'anooplan_token=cookie-token-1234567890' } });
+    assert.equal(response.status, 200);
+    const wrong = await fetch(h.base + '/api/projects', { headers: { Cookie: 'anooplan_token=nope' } });
+    assert.equal(wrong.status, 401);
+  } finally { await h.close(); }
+});
+
+test('restore: фото отклоняются, манифест PDF проверяется до записи', async () => {
+  const h = await harness();
+  try {
+    const base = { schemaVersion: 2, project: fixture(), pdfs: [] as unknown[], photos: [{ key: 'k', name: 'f.jpg', mime: 'image/jpeg', dataBase64: 'AAAA' }] };
+    assert.equal((await h.request('/api/restore', 'POST', base)).status, 422);
+    const withPdf = {
+      schemaVersion: 2,
+      project: { ...fixture(), floors: [{ ...fixture().floors[0], pdfId: 'pdf-1' }] },
+      pdfs: [{ id: 'pdf-1', name: 'plan.pdf', dataBase64: originalPdf.toString('base64') }],
+      photos: [],
+    };
+    const bad = { ...withPdf, manifest: { version: 1, files: [{ kind: 'pdf', id: 'pdf-1', size: 1, sha256: 'bad' }] } };
+    assert.equal((await h.request('/api/restore', 'POST', bad)).status, 409);
+    const { createHash } = await import('node:crypto');
+    const good = { ...withPdf, manifest: { version: 1, files: [{ kind: 'pdf', id: 'pdf-1', size: originalPdf.length, sha256: createHash('sha256').update(originalPdf).digest('hex') }] } };
+    assert.equal((await h.request('/api/restore', 'POST', good)).status, 201);
+  } finally { await h.close(); }
+});
+
+test('restore: фото отклоняются, подменённый манифест не проходит', async () => {
+  const h = await harness();
+  try {
+    const project = fixture();
+    project.floors[0].pdfId = 'plan-1';
+    const dataBase64 = originalPdf.toString('base64');
+    const base = { schemaVersion: 2, project, pdfs: [{ id: 'plan-1', name: 'plan.pdf', dataBase64 }] };
+    assert.equal((await h.request('/api/restore', 'POST', { ...base, photos: [{ key: 'k', name: 'f.jpg', mime: 'image/jpeg', dataBase64: 'AAAA' }] })).status, 422);
+    const sha256 = createHash('sha256').update(originalPdf).digest('hex');
+    const good = { ...base, manifest: { version: 1, files: [{ kind: 'pdf', id: 'plan-1', size: originalPdf.length, sha256 }] } };
+    assert.equal((await h.request('/api/restore', 'POST', good)).status, 201);
+    const bad = { ...good, manifest: { version: 1, files: [{ kind: 'pdf', id: 'plan-1', size: originalPdf.length, sha256: '0'.repeat(64) }] } };
+    assert.equal((await h.request('/api/restore', 'POST', bad)).status, 409);
   } finally { await h.close(); }
 });
 

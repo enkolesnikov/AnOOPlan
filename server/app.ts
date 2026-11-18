@@ -1,6 +1,6 @@
 import express, { type ErrorRequestHandler, type RequestHandler } from 'express';
 import multer from 'multer';
-import { randomUUID, timingSafeEqual } from 'node:crypto';
+import { createHash, randomUUID, timingSafeEqual } from 'node:crypto';
 import { resolve } from 'node:path';
 import { existsSync } from 'node:fs';
 import { Store, type PdfRecord } from './store.js';
@@ -18,12 +18,51 @@ function tokenMatches(header: string, expected: string): boolean {
  * Токен для доступа к /api. Нужен, когда сервер слушает не loopback:
  * без него любой в локальной сети читает и меняет проекты (F-08 аудита 2.8.1).
  */
+function cookieValue(header: string | undefined, name: string): string {
+  if (!header) return '';
+  for (const part of header.split(';')) {
+    const index = part.indexOf('=');
+    if (index < 0) continue;
+    if (part.slice(0, index).trim() === name) {
+      try { return decodeURIComponent(part.slice(index + 1).trim()); } catch { return ''; }
+    }
+  }
+  return '';
+}
+
+/**
+ * Токен доступа: заголовок Authorization/x-anooplan-token или cookie, которую
+ * ставит страница при открытии ссылки с ?token=… (см. src/api-token.ts).
+ */
+function sha256(bytes: Buffer): string {
+  return createHash('sha256').update(bytes).digest('hex');
+}
+
+/** Манифест вложений: набор, размеры и SHA-256 должны совпасть до записи. */
+function verifyRestoreManifest(manifest: unknown, records: PdfRecord[]): void {
+  if (!manifest || typeof manifest !== 'object' || !Array.isArray((manifest as { files?: unknown }).files)) {
+    throw new ApiError(422, 'Некорректный манифест вложений');
+  }
+  const files = (manifest as { files: unknown[] }).files;
+  const pdfs = files.filter((entry): entry is Record<string, unknown> => Boolean(entry) && typeof entry === 'object' && (entry as Record<string, unknown>).kind === 'pdf');
+  if (pdfs.length !== records.length) throw new ApiError(422, 'Манифест не соответствует набору PDF');
+  const expected = new Map(pdfs.map(entry => [String(entry.id), entry]));
+  for (const record of records) {
+    const entry = expected.get(record.id);
+    if (!entry) throw new ApiError(422, `PDF ${record.id} отсутствует в манифесте`);
+    const digest = sha256(record.bytes);
+    if (entry.size !== record.bytes.length || entry.sha256 !== digest) {
+      throw new ApiError(409, `PDF ${record.id} повреждён: SHA-256 не совпал`);
+    }
+  }
+}
+
 function authMiddleware(token: string): RequestHandler {
   return (req, _res, next) => {
     if (req.path === '/health') { next(); return; }
     const authorization = req.get('authorization') ?? '';
     const bearer = authorization.startsWith('Bearer ') ? authorization.slice(7) : '';
-    const given = bearer || req.get('x-anooplan-token') || '';
+    const given = bearer || req.get('x-anooplan-token') || cookieValue(req.headers.cookie, 'anooplan_token');
     if (!given || !tokenMatches(given, token)) {
       next(new ApiError(401, 'Требуется токен доступа к API (Authorization: Bearer …)'));
       return;
@@ -45,6 +84,9 @@ export function createApp(options?: { dataDir?: string; authToken?: string }) {
     res.setHeader('Referrer-Policy', 'no-referrer');
     next();
   });
+  // Авторизация до разбора тела: иначе LAN-клиент без токена может прислать
+  // 80 МБ JSON и занять память ещё до проверки.
+  if (options?.authToken) app.use('/api', authMiddleware(options.authToken));
   // 80 МБ: запас под backup с PDF/фото, но не 150 МБ на memoryStorage.
   app.use(express.json({ limit: '80mb' }));
   const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 30 * 1024 * 1024, files: 1, fields: 0 } });
@@ -53,7 +95,6 @@ export function createApp(options?: { dataDir?: string; authToken?: string }) {
     res.setHeader('X-Project-Warnings', String(validateProject(project).length));
   };
   app.get('/api/health', (_req, res) => { res.json({ ok: true }); });
-  if (options?.authToken) app.use('/api', authMiddleware(options.authToken));
   app.get('/api/projects', (_req, res) => { res.json(store.list()); });
   app.post('/api/projects', (req, res) => {
     assertProject(req.body, id => store.hasPdf(id));
@@ -104,11 +145,17 @@ export function createApp(options?: { dataDir?: string; authToken?: string }) {
   app.post('/api/restore', (req, res) => {
     const backup = req.body;
     if (!backup || typeof backup !== 'object' || (backup.schemaVersion !== undefined && backup.schemaVersion !== 1 && backup.schemaVersion !== 2) || !Array.isArray(backup.pdfs) || backup.pdfs.length > 1000) throw new ApiError(422, 'Некорректный backup');
+    // Сервер хранит только PDF: фото сюда не помещаются. Лучше честная ошибка,
+    // чем «успешное» восстановление без фотографий.
+    if (Array.isArray(backup.photos) && backup.photos.length > 0) {
+      throw new ApiError(422, 'Серверное восстановление не хранит фотографии. Откройте .anooplan в приложении или браузере — фото сохранятся на устройстве.');
+    }
     const ids = new Set<string>();
     const records: PdfRecord[] = backup.pdfs.map((raw: any) => {
       if (!raw || typeof raw.id !== 'string' || !raw.id.trim() || raw.id.length > 10000 || ids.has(raw.id) || typeof raw.name !== 'string' || raw.name.length > 10000) throw new ApiError(422, 'Некорректный или повторяющийся PDF ID');
       ids.add(raw.id); return { id: raw.id, name: raw.name, bytes: decodePdf(raw.dataBase64) };
     });
+    if (backup.manifest !== undefined) verifyRestoreManifest(backup.manifest, records);
     // A portable backup must supply every referenced original, even if one exists locally.
     assertProject(backup.project, id => ids.has(id));
     const project = backup.project;

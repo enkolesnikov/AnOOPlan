@@ -14,7 +14,7 @@ if (!LOOPBACK.has(host) && authToken.length < 16) {
   process.exit(1);
 }
 if (!LOOPBACK.has(host)) {
-  console.log(`LAN-режим: API на http://${host}:${port} требует токен ANOOPLAN_TOKEN.`);
+  console.log(`LAN-режим: откройте http://${host}:${port}/?token=${encodeURIComponent(authToken)} — токен сохранится в cookie сессии.`);
 }
 
 const app = createApp({ authToken: authToken || undefined });
