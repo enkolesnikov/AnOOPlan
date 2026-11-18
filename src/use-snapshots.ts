@@ -3,6 +3,7 @@ import type { MutableRefObject } from 'react';
 import type { Project } from './model';
 import { cloneValue as clone } from './compat';
 import { idbStoreDelete, idbStoreGet, idbStoreKeys, idbStorePut } from './idb';
+import { projectSnapshotKeys, snapshotKeyPrefix } from './snapshot-key';
 
 export interface SnapshotEntry {
   key: string;
@@ -28,12 +29,9 @@ export function useSnapshots({ projectRef, load, onGarbageCollect, setError, set
 
   async function takeSnapshot(reason: string): Promise<void> {
     const snapshot = clone(projectRef.current);
-    const prefix = `${snapshot.id}:`;
-    const key = `${prefix}${Date.now()}`;
+    const key = `${snapshotKeyPrefix(snapshot.id)}${Date.now()}`;
     await idbStorePut('snapshots', key, { key, createdAt: new Date().toISOString(), reason, project: snapshot });
-    const keys = (await idbStoreKeys('snapshots'))
-      .filter(item => item.startsWith(prefix))
-      .sort((a, b) => Number(b.slice(prefix.length)) - Number(a.slice(prefix.length)));
+    const keys = projectSnapshotKeys(await idbStoreKeys('snapshots'), snapshot.id);
     for (const stale of keys.slice(SNAPSHOT_LIMIT)) await idbStoreDelete('snapshots', stale);
   }
 
@@ -42,10 +40,7 @@ export function useSnapshots({ projectRef, load, onGarbageCollect, setError, set
     setSnapshots(null);
     try {
       const projectId = projectRef.current.id;
-      const prefix = `${projectId}:`;
-      const keys = (await idbStoreKeys('snapshots'))
-        .filter(item => item.startsWith(prefix))
-        .sort((a, b) => Number(b.slice(prefix.length)) - Number(a.slice(prefix.length)));
+      const keys = projectSnapshotKeys(await idbStoreKeys('snapshots'), projectId);
       const list: SnapshotEntry[] = [];
       for (const key of keys) {
         const entry = await idbStoreGet<SnapshotEntry>('snapshots', key);

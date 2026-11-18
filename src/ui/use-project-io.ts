@@ -7,6 +7,7 @@ import { deleteLocalProject, readLocalProjects, saveLocalProject } from '../loca
 import { migrateProject } from '../migrations';
 import { collectStorageGarbage } from '../garbage-collector';
 import { verifyAttachmentManifest, type AttachmentManifest } from '../attachment-manifest';
+import { snapshotProjectId } from '../snapshot-key';
 import { api, jsonOptions } from './api';
 import { nativeBridge } from './native';
 import type { WorkspaceState } from './use-workspace-state';
@@ -40,7 +41,8 @@ export function useProjectIo(s: WorkspaceState) {
     if (staticMode) {
       // Снимки принадлежат проекту: без их удаления блобы PDF/фото останутся сиротами.
       try {
-        const snapshotKeys = (await idbStoreKeys('snapshots')).filter(key => key.startsWith(id + ':'));
+        // Сравниваем разобранный id, а не префикс: «a» не должно удалять снимки «a:b».
+        const snapshotKeys = (await idbStoreKeys('snapshots')).filter(key => snapshotProjectId(key) === id);
         for (const key of snapshotKeys) { try { await idbStoreDelete('snapshots', key); } catch { /* хранилище недоступно */ } }
       } catch { /* хранилище недоступно — проект всё равно удаляем */ }
       const target = readLocalProjects().find(p => p.id === id);
