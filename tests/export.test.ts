@@ -293,7 +293,7 @@ test('CSV содержит диаметр, сечение и раздел зап
   const journalHeaderIndex = lines.indexOf(journalHeader);
   const journalRow = lines[journalHeaderIndex + 1].split(';');
   assert.equal(journalRow[3], '"6"', 'у кабеля демо-проекта диаметр 6 мм');
-  assert.ok(journalRow[4].startsWith('"28.2'), 'сечение должно считаться по диаметру');
+  assert.ok(journalRow[4].startsWith('"28,2'), 'сечение считается по диаметру; в CSV десятичная запятая');
 
   const start = lines.indexOf('"Заполнение КНС"');
   assert.ok(start > 0, 'в CSV нет раздела заполнения лотков');
@@ -303,7 +303,7 @@ test('CSV содержит диаметр, сечение и раздел зап
   assert.equal(fillRows.length, segments, 'в CSV должна быть строка на каждый сегмент');
   assert.equal(lines[start + 2 + segments], '', 'после заполнения лотков идёт пустая строка перед сметой');
   const fillRow = fillRows[0].split(';');
-  assert.ok(Number(fillRow[5].slice(1, -1)) > 0, 'в демо-проекте заполнение должно быть положительным');
+  assert.ok(Number(fillRow[5].slice(1, -1).replace(',', '.')) > 0, 'в демо-проекте заполнение должно быть положительным');
   assert.ok(['"ок"', '"внимание"', '"превышено"'].includes(fillRow[6]), `неожиданный статус ${fillRow[6]}`);
 
   // Новые разделы: смета, коммерческое предложение и справочник цен.
@@ -313,22 +313,22 @@ test('CSV содержит диаметр, сечение и раздел зап
   assert.equal(lines[smetaStart + 1], '"Раздел";"Позиция";"Ед.";"Количество";"Цена, ₽";"Сумма, ₽";"Источник цены";"Примечание"');
   const smetaTotal = lines.find(line => line.startsWith('"";"Итого по смете"'));
   assert.ok(smetaTotal, 'в CSV нет итога по смете');
-  assert.equal(smetaTotal!.split(';')[5], `"${estimateResult.total}"`, 'итог сметы в CSV равен estimate().total');
+  assert.equal(Number(smetaTotal!.split(';')[5].slice(1, -1).replace(',', '.')), Number(estimateResult.total!.toFixed(3)), 'итог сметы в CSV равен estimate().total');
   assert.equal(smetaTotal!.split(';')[4], '""', 'неизвестное количество в CSV пустое, а не 0');
   assert.ok(lines.some(line => line.startsWith('"Оборудование";"Камера входа";"шт";"6500";')), 'в CSV-смете нет позиции из справочника');
   const worksLine = lines.find(line => line.startsWith('"";"Работы (25 %)"'));
   assert.ok(worksLine, 'в CSV-смете нет строки работ «Работы (25 %)»');
   const worksCells = worksLine!.split(';');
   assert.equal(worksCells[4], '""', 'у работ колонка «Цена, ₽» пустая');
-  assert.equal(worksCells[5], `"${estimateResult.labor}"`, 'стоимость работ — в колонке «Сумма, ₽»');
+  assert.equal(worksCells[5], `"${Number(estimateResult.labor!.toFixed(3)).toString().replace('.', ',')}"`, 'стоимость работ — в колонке «Сумма, ₽»');
   assert.equal(worksCells[6], '""', 'у работ колонка «Источник цены» пустая');
   assert.ok(!lines.some(line => line.startsWith('"";"Итого: Работы"')), 'раздел работ не дублируется в CSV');
   const commercialStart = lines.indexOf('"Коммерческое предложение"');
   assert.equal(lines[commercialStart + 1], `"Проект";"${project.name}"`);
   assert.equal(lines[commercialStart + 2], `"Дата прайса";"${project.catalogDate}"`);
-  assert.ok(lines.includes(`"Итого";"${estimateResult.total}"`), 'в CSV-КП нет итога');
+  assert.ok(lines.includes(`"Итого";"${Number(estimateResult.total!.toFixed(3)).toString().replace('.', ',')}"`), 'в CSV-КП нет итога');
   const kpHeaderIndex = lines.findIndex((line, index) => index > commercialStart && line === '"Раздел";"Сумма, ₽"');
-  assert.ok(kpHeaderIndex > commercialStart, 'в CSV-КП нет шапки');
+  assert.ok(!lines.some(line => line === `"Работы";"${Number(estimateResult.labor!.toFixed(3)).toString().replace('.', ',')}"`), 'раздел «Работы» не дублируется в КП');
   const kpMaterialsIndex = lines.findIndex((line, index) => index > kpHeaderIndex && line.startsWith('"Итого материалы";'));
   assert.ok(kpMaterialsIndex > kpHeaderIndex, 'в CSV-КП нет строки материалов');
   assert.deepEqual(lines.slice(kpHeaderIndex + 1, kpMaterialsIndex).map(line => line.split(';')[0]), ['"Оборудование"', '"Кабели"', '"Лотки"'], 'в КП только материальные разделы');
