@@ -5,9 +5,9 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="theme-color" content="#07171f" />
     <title>AnOOPlan — кабельные планы без интернета</title>
-    <meta name="description" content="AnOOPlan — Android-приложение для раскладки кабельных трасс по PDF-планам: оборудование, трассы, кабели, журнал и смета. Работает полностью офлайн." />
+    <meta name="description" content="AnOOPlan — Android-приложение для раскладки кабельных трасс по PDF-планам: оборудование, трассы, кабели, журнал, ведомости и смета. Работает полностью офлайн, без рекламы и аккаунтов." />
     <meta property="og:title" content="AnOOPlan — кабельные планы без интернета" />
-    <meta property="og:description" content="PDF-планы, трассы, кабели, журнал и смета в одном офлайн-приложении для Android." />
+    <meta property="og:description" content="PDF-планы, трассы, кабели, журнал, ведомости и смета в одном офлайн-приложении для Android." />
     <meta property="og:type" content="website" />
     <meta property="og:url" content="https://enkolesnikov.github.io/AnOOPlan/" />
     <meta property="og:image" content="https://enkolesnikov.github.io/AnOOPlan/assets/screenshots/01-plan.png" />
@@ -15,6 +15,8 @@
     <link rel="stylesheet" href="styles.css" />
   </head>
   <body>
+    <a class="skip" href="#main">Перейти к содержимому</a>
+
     <header class="top">
       <div class="wrap top-inner">
         <a class="brand" href="./" aria-label="AnOOPlan — главная">
@@ -23,6 +25,7 @@
         </a>
         <nav aria-label="Основная навигация">
           <a href="#features">Возможности</a>
+          <a href="#audit">Аудит 2.9</a>
           <a href="#screens">Скриншоты</a>
           <a href="#start">Как начать</a>
           <a href="#download">Скачать</a>
@@ -31,20 +34,20 @@
       </div>
     </header>
 
-    <main>
+    <main id="main">
       <section class="hero wrap">
         <div class="hero-copy">
           <p class="eyebrow"><span class="pulse" aria-hidden="true"></span> Android · офлайн · без рекламы</p>
           <h1>Кабельные планы<br /><span>без интернета</span></h1>
-          <p class="lead">Загрузите PDF-план, расставьте оборудование, проведите трассы и получите кабельный журнал, ведомости и смету — прямо на объекте, без сети и облака.</p>
+          <p class="lead">Загрузите PDF-план, расставьте оборудование, проведите трассы и получите кабельный журнал, ведомости и смету прямо на объекте — без сети, облака и аккаунтов.</p>
           <div class="actions">
             <a class="btn primary" href="https://github.com/enkolesnikov/AnOOPlan/releases/latest">Скачать APK <small>2.8.5 · 1,6 МБ</small></a>
             <a class="btn secondary" href="app/">Открыть веб-версию</a>
           </div>
           <ul class="proof" aria-label="Ключевые параметры">
             <li>Android 7+</li>
-            <li>PDF и XLSX</li>
-            <li>Нет выхода в интернет</li>
+            <li>PDF, XLSX, CSV</li>
+            <li>0 сетевых вызовов</li>
           </ul>
         </div>
         <div class="hero-visual">
@@ -58,8 +61,8 @@
       </section>
 
       <section class="stats wrap" aria-label="Коротко о приложении">
-        <div><strong>7</strong><span>типов объектов<i>оборудование, трассы, пины</i></span></div>
-        <div><strong>4</strong><span>формата экспорта<i>PDF, XLSX, CSV, JSON</i></span></div>
+        <div><strong>317</strong><span>юнит-тестов<i>плюс смоук, E2E и визуальные эталоны</i></span></div>
+        <div><strong>4</strong><span>формата экспорта<i>PDF, XLSX, CSV, .anooplan</i></span></div>
         <div><strong>∞</strong><span>этажей и проектов<i>всё хранится на устройстве</i></span></div>
         <div><strong>0 ₽</strong><span>без рекламы и подписок<i>никакой монетизации</i></span></div>
       </section>
@@ -67,14 +70,48 @@
       <section id="features" class="section wrap">
         <p class="eyebrow">Что внутри</p>
         <h2>От чертежа до комплекта документов</h2>
-        <p class="section-lead">Инструменты для проектировщика и монтажника: план, трассы, кабели, проверка и смета в одном приложении.</p>
+        <p class="section-lead">Инструменты для проектировщика и монтажника: план, трассы, кабели, проверка, ведомости и смета в одном приложении.</p>
         <div class="features">
-          <article class="feature"><span class="ico">⌖</span><h3>PDF-планы и этажи</h3><p>Подложка, калибровка по двум точкам, масштаб листа A4–A0, несколько этажей и межэтажные стояки.</p></article>
-          <article class="feature"><span class="ico">⌁</span><h3>Трассы и КНС</h3><p>Лоток, гофра, труба, кабель-канал; свои сечения на сегментах и расчёт заполнения по каждому участку.</p></article>
-          <article class="feature"><span class="ico">⌁</span><h3>Кабели и автопрокладка</h3><p>Маршрут по графу трасс, запасы в процентах и метрах, концевые запасы и проверка заполнения.</p></article>
-          <article class="feature"><span class="ico">▤</span><h3>Журнал и ведомости</h3><p>Кабельный журнал, спецификация КНС, схема трасс и ведомость замечаний — с печатью и экспортом.</p></article>
-          <article class="feature"><span class="ico">₽</span><h3>Смета и КП</h3><p>Материалы, работы и НДС по справочнику цен; цена и артикул КНС по сечению; коммерческое предложение.</p></article>
-          <article class="feature"><span class="ico">◌</span><h3>Офлайн без компромиссов</h3><p>Нет разрешения INTERNET, аналитики и аккаунтов. Проекты, PDF и фотографии остаются на устройстве.</p></article>
+          <article class="feature">
+            <span class="ico" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M4 5h16v14H4zM4 9h16M9 9v10" /></svg></span>
+            <h3>PDF-планы и этажи</h3><p>Подложка, калибровка по двум точкам, масштаб листа A4–A0, несколько этажей и межэтажные стояки.</p>
+          </article>
+          <article class="feature">
+            <span class="ico" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M3 17h7l4-10h7M3 7h4M17 17h4" /></svg></span>
+            <h3>Трассы и КНС</h3><p>Лоток, гофра, труба, кабель-канал; свои сечения на сегментах и заполнение по каждому участку.</p>
+          </article>
+          <article class="feature">
+            <span class="ico" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M6 4v16M18 4v16M6 8h12M6 16h12" /></svg></span>
+            <h3>Кабели и автопрокладка</h3><p>Маршрут по графу трасс, запасы в процентах и метрах, концевые запасы и проверка заполнения.</p>
+          </article>
+          <article class="feature">
+            <span class="ico" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M5 4h14v16H5zM8 8h8M8 12h8M8 16h5" /></svg></span>
+            <h3>Журнал и ведомости</h3><p>Кабельный журнал, спецификация КНС, схема трасс и ведомость замечаний — с печатью и экспортом.</p>
+          </article>
+          <article class="feature">
+            <span class="ico" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 4v16M7 9h10M8 14h8" /></svg></span>
+            <h3>Смета и КП</h3><p>Материалы, работы по проценту и итоги по справочнику цен; коммерческое предложение в PDF и XLSX.</p>
+          </article>
+          <article class="feature">
+            <span class="ico" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18zM3 12h18M12 3c3 3 3 15 0 18M12 3C9 6 9 18 12 21" /></svg></span>
+            <h3>Офлайн без компромиссов</h3><p>Нет разрешения INTERNET, аналитики и аккаунтов. Проекты, PDF и фотографии остаются на устройстве.</p>
+          </article>
+        </div>
+      </section>
+
+      <section id="audit" class="section wrap">
+        <div class="audit-card">
+          <div>
+            <p class="eyebrow">Аудит 2.9 · ноябрь 2026</p>
+            <h2>Надёжность данных — прежде всего</h2>
+            <p class="section-lead">Независимый аудит проверил сохранность проектов, расчёты, экспорт, производительность, доступность и офлайн-контракт. Подтверждённые дефекты закрываются отдельными коммитами с тестами.</p>
+          </div>
+          <ul class="audit-list">
+            <li><b>Снимки версий</b><span>история проекта с «:» в id больше не пересекается с чужой историей</span></li>
+            <li><b>Локальная сеть</b><span>API в LAN требует токен; без него сервер не выходит за loopback</span></li>
+            <li><b>317 проверок</b><span>каждый фикс сопровождается регрессионным тестом</span></li>
+            <li><b>Офлайн-контракт</b><span>манифест без INTERNET, ни одного внешнего запроса в APK</span></li>
+          </ul>
         </div>
       </section>
 
@@ -83,10 +120,10 @@
         <h2>Рабочее место в кармане</h2>
         <p class="section-lead">Телефонная версия: план, список оборудования, смета и шаблоны проектов.</p>
         <div class="screens">
-          <figure><img src="assets/screenshots/01-plan.png" alt="План с трассой и длинами сегментов" loading="lazy" /><figcaption><strong>План и трассы</strong><span>длины сегментов сразу на чертеже</span></figcaption></figure>
-          <figure><img src="assets/screenshots/02-equipment.png" alt="Список оборудования проекта" loading="lazy" /><figcaption><strong>Оборудование</strong><span>поиск, свойства и комплекты</span></figcaption></figure>
-          <figure><img src="assets/screenshots/03-estimate.png" alt="Смета и коммерческое предложение" loading="lazy" /><figcaption><strong>Смета</strong><span>материалы, работы и итоги</span></figcaption></figure>
-          <figure><img src="assets/screenshots/04-templates.png" alt="Шаблоны проектов" loading="lazy" /><figcaption><strong>Быстрый старт</strong><span>офис, склад, периметр</span></figcaption></figure>
+          <figure><img src="assets/screenshots/01-plan.png" alt="План с трассой и длинами сегментов" loading="lazy" width="1080" height="1920" /><figcaption><strong>План и трассы</strong><span>длины сегментов сразу на чертеже</span></figcaption></figure>
+          <figure><img src="assets/screenshots/02-equipment.png" alt="Список оборудования проекта" loading="lazy" width="1080" height="1920" /><figcaption><strong>Оборудование</strong><span>поиск, свойства и комплекты</span></figcaption></figure>
+          <figure><img src="assets/screenshots/03-estimate.png" alt="Смета и коммерческое предложение" loading="lazy" width="1080" height="1920" /><figcaption><strong>Смета</strong><span>материалы, работы и итоги</span></figcaption></figure>
+          <figure><img src="assets/screenshots/04-templates.png" alt="Шаблоны проектов" loading="lazy" width="1080" height="1920" /><figcaption><strong>Быстрый старт</strong><span>офис, склад, периметр</span></figcaption></figure>
         </div>
       </section>
 
@@ -110,7 +147,7 @@
             <a class="btn secondary" href="app/">Открыть в браузере</a>
           </div>
         </div>
-        <aside class="download-card">
+        <aside class="download-card" aria-label="Параметры релиза">
           <span class="eyebrow">Релиз</span>
           <strong>2.8.5</strong>
           <dl><div><dt>Размер</dt><dd>1,6 МБ</dd></div><div><dt>Подпись</dt><dd>release</dd></div><div><dt>Разрешения</dt><dd>VIBRATE</dd></div><div><dt>Сеть</dt><dd>не требуется</dd></div></dl>
