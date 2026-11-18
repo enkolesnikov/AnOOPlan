@@ -36,6 +36,22 @@ test('удаление вершины: разные размеры дают пр
   assert.equal(result.route.segments[0].trayWidthMm, undefined);
 });
 
+test('удаление вершины-изгиба не создаёт диагональный ортогональный сегмент', () => {
+  const elbow = route('r', [
+    segment('s1', vertex('a', 0, 0), vertex('m', 50, 0)),
+    segment('s2', vertex('m', 50, 0), vertex('b', 50, 50)),
+  ]);
+  assert.equal(deleteVertex(elbow, 'm'), null);
+});
+
+test('удаление стыка стояка с разными x/y отклоняется', () => {
+  const riser = route('r', [
+    segment('s1', vertex('a', 0, 0, 3, 'f1'), vertex('m', 50, 0, 3, 'f1')),
+    segment('s2', vertex('m', 50, 0, 3, 'f1'), vertex('b', 60, 0, 3, 'f2'), { mode: 'spatial' }),
+  ]);
+  assert.equal(deleteVertex(riser, 'm'), null);
+});
+
 test('реверс трассы меняет порядок и концы, кабель — порядок сегментов', () => {
   const reversed = reverseRoute(chain());
   assert.deepEqual(reversed.segments.map(segment => segment.id), ['s3', 's2', 's1']);

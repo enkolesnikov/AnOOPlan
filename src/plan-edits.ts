@@ -64,6 +64,15 @@ export function deleteVertex(route: Route, vertexId: string): DeleteVertexResult
   const firstOuter = first.segment.a.id === vertexId ? first.segment.b : first.segment.a;
   const secondOuter = second.segment.a.id === vertexId ? second.segment.b : second.segment.a;
   if (firstOuter.id === secondOuter.id || (firstOuter.floorId === secondOuter.floorId && firstOuter.x === secondOuter.x && firstOuter.y === secondOuter.y)) return null;
+  // Слияние не должно создавать заведомо недопустимый сегмент: изгиб в
+  // ортогональной трассе или невертикальный межэтажный переход.
+  const dx = Math.abs(firstOuter.x - secondOuter.x);
+  const dy = Math.abs(firstOuter.y - secondOuter.y);
+  if (firstOuter.floorId !== secondOuter.floorId) {
+    if (dx > 1e-6 || dy > 1e-6) return null;
+  } else if (first.segment.mode === 'orthogonal' && dx > 1e-6 && dy > 1e-6) {
+    return null;
+  }
   const signature = (segment: Segment) => JSON.stringify([segment.mode, segment.reservePercent, segment.reserveFixed, segment.trayWidthMm, segment.trayHeightMm, segment.trayAreaMm2]);
   const mergedProperties = signature(first.segment) !== signature(second.segment);
   const newSegmentId = uid();
