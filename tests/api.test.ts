@@ -287,6 +287,18 @@ test('DELETE удаляет осиротевшие PDF, но сохраняет 
   } finally { await h.close(); }
 });
 
+test('auth стоит до JSON: без токена битое тело даёт 401, а не 400', async () => {
+  const h = await harness('early-auth-token-123456');
+  try {
+    const response = await fetch(h.base + '/api/projects', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: '{broken',
+    });
+    assert.equal(response.status, 401);
+  } finally { await h.close(); }
+});
+
 test('LAN-токен принимается из cookie, которую ставит страница', async () => {
   const h = await harness('cookie-token-123456');
   try {
