@@ -42,6 +42,14 @@ test('объединение трасс в прямом и обратном на
   assert.equal(merged2.segments[1].b.id, 'c');
 });
 
+test('трассы разных типов и сечений не объединяются', () => {
+  const first = route('r1', [segment('a1', vertex('a', 0), vertex('b', 50))]);
+  const second = route('r2', [segment('b1', vertex('b', 50), vertex('c', 100))], { type: 'Гофра' });
+  assert.equal(mergeRoutes(first, second), null);
+  const wider = route('r3', [segment('b2', vertex('b', 50), vertex('c', 100))], { trayWidthMm: 200 });
+  assert.equal(mergeRoutes(first, wider), null);
+});
+
 test('трассы с несовпадающим стыком не объединяются', () => {
   const first = route('r1', [segment('a1', vertex('a', 0), vertex('b', 50))]);
   const far = route('r2', [segment('b1', vertex('x', 300), vertex('y', 350))]);

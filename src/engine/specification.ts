@@ -13,6 +13,8 @@ import { invalidGivenDimension, isGiven, trayFill } from './tray-fill';
 
 export interface KnSLine {
   name: string;
+  /** Конкретный тип трассы: «Лоток лестничный» и «Лоток перфорированный» — разные строки. */
+  type?: string;
   section: string;
   subsystem: string;
   unit: string;
@@ -53,7 +55,8 @@ export function specificationKnS(project: Project): KnSSpecification {
     const primary = sections.reduce((best, item, index) => ((item.length ?? -1) > (sections[best].length ?? -1) ? index : best), 0);
     sections.forEach((item, index) => {
       const angles = row.group === 'Кабель-канал' && index === primary ? row.angles.total : 0;
-      const existing = lines.find(line => line.name === row.group && line.section === item.section && line.subsystem === subsystem);
+      const typeName = route.type.trim() || row.group;
+      const existing = lines.find(line => line.name === typeName && line.section === item.section && line.subsystem === subsystem);
       if (existing) {
         existing.quantity = existing.quantity === null || item.length === null ? null : existing.quantity + item.length;
         existing.angles += angles;
@@ -65,7 +68,8 @@ export function specificationKnS(project: Project): KnSSpecification {
       const match = catalog.find(entry => entry.kind === 'tray' && entry.name.trim().toLowerCase() === route.type.trim().toLowerCase())
         ?? catalog.find(entry => entry.kind === 'tray' && entry.name.trim().toLowerCase() === row.group.trim().toLowerCase());
       lines.push({
-        name: row.group,
+        name: typeName,
+        type: route.type,
         section: item.section,
         subsystem,
         unit: 'м',

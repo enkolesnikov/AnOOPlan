@@ -393,7 +393,7 @@ export function usePlanEditing(s: WorkspaceState) {
     const second = source.routes.find(item => item.id === otherId);
     if (!first || !second || first.id === second.id) return;
     const merged = mergeRouteData(first, second);
-    if (!merged) { setMessage('Трассы не соединяются концами (или концы имеют разные высоты).'); return; }
+    if (!merged) { setMessage('Трассы не соединяются концами или различаются типом/сечением КНС.'); return; }
     const removed = second.number;
     mutate(project => {
       const index = project.routes.findIndex(item => item.id === routeId);

@@ -24,11 +24,13 @@ export function splitSegment(segment: Segment, point: Point): { vertex: Vertex; 
   const split = segmentSplitPoint(segment, point);
   if (!split) return null;
   const { vertex } = split;
-  const base = { mode: segment.mode, reservePercent: segment.reservePercent, reserveFixed: segment.reserveFixed, trayWidthMm: segment.trayWidthMm, trayHeightMm: segment.trayHeightMm, trayAreaMm2: segment.trayAreaMm2 };
+  const base = { mode: segment.mode, reservePercent: segment.reservePercent, trayWidthMm: segment.trayWidthMm, trayHeightMm: segment.trayHeightMm, trayAreaMm2: segment.trayAreaMm2 };
   return {
     vertex,
-    first: { ...base, id: uid(), a: segment.a, b: vertex },
-    second: { ...base, id: uid(), a: vertex, b: segment.b },
+    // Фиксированный запас задан на участок, а не на метр: после деления он должен
+    // остаться один, иначе итог кабеля молча вырастет.
+    first: { ...base, id: uid(), a: segment.a, b: vertex, reserveFixed: segment.reserveFixed },
+    second: { ...base, id: uid(), a: vertex, b: segment.b, reserveFixed: 0 },
   };
 }
 
@@ -91,10 +93,24 @@ export function reverseRoute(route: Route): Route {
   };
 }
 
-/** Цепочка кабеля при реверсе трассы идёт в обратном порядке. */
+/**
+ * Цепочка кабеля при реверсе трассы: разворачиваем только непрерывный участок
+ * этой трассы. Раньше переворачивался весь кабель, и на стыке двух трасс
+ * порядок сегментов рвался (демо Л4 давал total=null).
+ */
 export function reverseCableRoute(cable: Cable, routeSegmentIds: string[]): Cable {
-  if (!cable.segmentIds.some(id => routeSegmentIds.includes(id))) return cable;
-  return { ...cable, segmentIds: [...cable.segmentIds].reverse() };
+  const routeIds = new Set(routeSegmentIds);
+  if (!cable.segmentIds.some(id => routeIds.has(id))) return cable;
+  const ids = [...cable.segmentIds];
+  for (let index = 0; index < ids.length; index += 1) {
+    if (!routeIds.has(ids[index])) continue;
+    let end = index;
+    while (end + 1 < ids.length && routeIds.has(ids[end + 1])) end += 1;
+    const run = ids.slice(index, end + 1).reverse();
+    ids.splice(index, run.length, ...run);
+    index = end;
+  }
+  return { ...cable, segmentIds: ids };
 }
 
 
@@ -124,8 +140,14 @@ export function splitRouteAtVertex(route: Route, vertexId: string, secondId = ui
 const sameVertexPoint = (a: Vertex, b: Vertex): boolean =>
   a.floorId === b.floorId && Math.abs(a.x - b.x) < 1e-6 && Math.abs(a.y - b.y) < 1e-6 && a.height === b.height;
 
-/** Объединяет две трассы, если конец одной совпадает с началом/концом другой. */
+/**
+ * Объединяет две трассы, если конец одной совпадает с началом/концом другой.
+ * Разные типы КНС или сечения не объединяем: вторая трасса потеряла бы свои
+ * размеры и начала бы считаться по чужому сечению.
+ */
 export function mergeRoutes(first: Route, second: Route): Route | null {
+  const section = (route: Route): string => JSON.stringify([route.type, route.trayWidthMm, route.trayHeightMm, route.trayAreaMm2]);
+  if (section(first) !== section(second)) return null;
   const firstLast = first.segments[first.segments.length - 1]?.b;
   const secondFirst = second.segments[0]?.a;
   const secondLast = second.segments[second.segments.length - 1]?.b;

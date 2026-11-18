@@ -359,8 +359,11 @@ export function dimensionGeometry(project: Project, dimension: Dimension): Dimen
     if (!finite(fromFloor.elevation) || !finite(toFloor.elevation)) {
       return { units: null, meters: null, floorId: fromFloor.id, problem: 'Задайте отметки обоих этажей', interFloor: true };
     }
+    if (!finite(from.height) || !finite(to.height)) {
+      return { units: null, meters: null, floorId: fromFloor.id, problem: 'Задайте высоты оборудования для межэтажного размера', interFloor: true };
+    }
     const horizontal = Math.hypot(to.x * toScale - from.x * fromScale, to.y * toScale - from.y * fromScale);
-    const vertical = Math.abs((toFloor.elevation + (to.height ?? 0)) - (fromFloor.elevation + (from.height ?? 0)));
+    const vertical = Math.abs((toFloor.elevation + to.height) - (fromFloor.elevation + from.height));
     const meters = Math.hypot(horizontal, vertical);
     return { units: null, meters, floorId: fromFloor.id, problem: null, interFloor: true };
   }

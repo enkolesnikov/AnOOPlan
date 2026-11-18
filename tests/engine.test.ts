@@ -285,6 +285,34 @@ test('спецификация КНС: подсистемы, углы и арт�
   assert.equal(spec.totalCost, 420 + 2700);
 });
 
+test('спецификация: разные типы одного вида не сливаются в одну цену', () => {
+  const p = fixture();
+  p.routes = [
+    { id: 'r1', number: 'Т1', type: 'Лоток лестничный', note: '', segments: [segment('s1', vertex('a1', 0), vertex('a2', 100))] },
+    { id: 'r2', number: 'Т2', type: 'Лоток перфорированный', note: '', segments: [segment('s2', vertex('b1', 0), vertex('b2', 100))] },
+  ];
+  p.catalog = [
+    { id: 'p1', kind: 'tray', name: 'Лоток лестничный', unit: 'м', price: 100, note: '', article: 'L-100' },
+    { id: 'p2', kind: 'tray', name: 'Лоток перфорированный', unit: 'м', price: 200, note: '', article: 'P-200' },
+  ];
+  const spec = specificationKnS(p);
+  assert.equal(spec.lines.length, 2);
+  assert.deepEqual(spec.lines.map(line => [line.name, line.quantity, line.article]), [
+    ['Лоток лестничный', 10, 'L-100'],
+    ['Лоток перфорированный', 10, 'P-200'],
+  ]);
+  assert.equal(spec.totalCost, 3000);
+});
+
+test('межэтажный размер: неизвестная высота не считается нулём', () => {
+  const p = fixture();
+  p.equipment[0].height = null;
+  p.equipment.push({ ...p.equipment[1], id: 'far', floorId: 'f2', height: null });
+  const geometry = dimensionGeometry(p, { id: 'd', fromId: p.equipment[0].id, toId: 'far' });
+  assert.equal(geometry.meters, null);
+  assert.match(geometry.problem ?? '', /высот/i);
+});
+
 test('подбор минимального сечения КНС по кабелям', () => {
   const p = fixture();
   p.routes[0].type = 'Гофра';

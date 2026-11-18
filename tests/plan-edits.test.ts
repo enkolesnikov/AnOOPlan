@@ -25,6 +25,14 @@ test('вставка вершины: концы не ближе 10 % и разм
   assert.equal(near.second.a.id, near.vertex.id);
 });
 
+test('вставка вершины: фиксированный запас не удваивается', () => {
+  const withReserve: Segment = { ...segment, reserveFixed: 0.5 };
+  const split = splitSegment(withReserve, { x: 50, y: 0 });
+  assert.ok(split);
+  assert.equal(split.first.reserveFixed, 0.5);
+  assert.equal(split.second.reserveFixed, 0);
+});
+
 test('вставка вершины: межэтажный сегмент не делится', () => {
   const riser: Segment = { ...segment, b: { ...b, floorId: 'f2' } };
   assert.equal(segmentSplitPoint(riser, { x: 50, y: 0 }), null);

@@ -41,6 +41,14 @@ test('реверс трассы меняет порядок и концы, ка�
   assert.deepEqual(reversed.segments.map(segment => segment.id), ['s3', 's2', 's1']);
   assert.equal(reversed.segments[0].a.id, 'c');
   assert.equal(reversed.segments[0].b.id, 'b');
-  const reversedCable = reverseCableRoute({ segmentIds: ['s1', 's2', 'x'] } as never, ['s1', 's2']);
+  const reversedCable = reverseCableRoute({ segmentIds: ['x', 's1', 's2'] } as never, ['s1', 's2']);
   assert.deepEqual(reversedCable.segmentIds, ['x', 's2', 's1']);
+});
+
+test('реверс одной трассы не переворачивает сегменты соседней', () => {
+  const cable = { segmentIds: ['a1', 'a2', 'b1', 'b2'] } as never;
+  const reversed = reverseCableRoute(cable, ['b1', 'b2']);
+  assert.deepEqual(reversed.segmentIds, ['a1', 'a2', 'b2', 'b1']);
+  const broken = reverseCableRoute({ segmentIds: ['b1', 'a1', 'b2'] } as never, ['b1', 'b2']);
+  assert.deepEqual(broken.segmentIds, ['b1', 'a1', 'b2'], 'непрерывность важнее реверса');
 });
