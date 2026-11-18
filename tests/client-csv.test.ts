@@ -12,6 +12,12 @@ test('CSV начинается с BOM и содержит журнал и вед
   assert.ok(csv.split('\r\n').length > 10);
 });
 
+test('CSV: числа с десятичной запятой и без длинного float', () => {
+  const csv = clientCsv(createDemoProject());
+  assert.ok(csv.includes('"28,274"') || csv.includes('"28,274"'), 'диаметр должен быть с запятой');
+  assert.ok(!/"\d+\.\d{6,}"/.test(csv), 'в CSV не должно быть 28.274333882308138');
+});
+
 test('CSV экранирует кавычки и формулы', () => {
   const project = createDemoProject();
   project.cables[0].name = '=SUM(A1:A2)';

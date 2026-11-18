@@ -71,7 +71,12 @@ export function clientCsv(project: Project): string {
   for (const item of project.catalog ?? []) rows.push([PRICE_KIND_LABELS[item.kind] ?? item.kind, item.name, item.unit, item.price, item.note]);
 
   const cell = (value: string | number | null) => {
-    let text = value === null ? '' : String(value);
+    // Русский Excel ждёт десятичную запятую; без неё число остаётся текстом.
+    // Округляем до трёх знаков, как в интерфейсе, а не выгружаем 28,274333882308138.
+    let text = value === null ? ''
+      : typeof value === 'number' && Number.isFinite(value)
+        ? String(Number(value.toFixed(3))).replace('.', ',')
+        : String(value);
     if (typeof value === 'string' && /^[=+\-@\t\r]/.test(text)) text = `'${text}`;
     return `"${text.split('"').join('""')}"`;
   };

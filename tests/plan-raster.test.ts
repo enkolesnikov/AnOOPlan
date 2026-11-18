@@ -23,3 +23,11 @@ test('растр плана: два canvas не превышают общий б
 test('растр плана: маленький лист не становится меньше 1600 px', () => {
   assert.equal(planRasterWidth(200, 200), 1600);
 });
+
+test('растр плана: вытянутый лист не пробивает бюджет памяти', () => {
+  for (const [w, h] of [[500, 20000], [200, 100000]]) {
+    const width = planRasterWidth(w, h);
+    const pixels = width * (width * h / w) * 2;
+    assert.ok(pixels <= PLAN_MAX_PIXELS + 2, `${w}×${h}: ${pixels} > ${PLAN_MAX_PIXELS}`);
+  }
+});
