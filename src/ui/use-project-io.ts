@@ -3,7 +3,7 @@ import { ANOOPLAN_EXTENSION, parseAnoPlanFile } from '../project-file';
 import { createUuid as uid, cloneValue as clone } from '../compat';
 import { logDiagnostic } from '../diagnostics';
 import { idbDelete, idbPut, idbStoreDelete, idbStoreKeys } from '../idb';
-import { deleteLocalProject, readLocalProjects, saveLocalProject } from '../local-projects';
+import { deleteLocalProject, saveLocalProject } from '../local-projects';
 import { migrateProject } from '../migrations';
 import { collectStorageGarbage } from '../garbage-collector';
 import { verifyAttachmentManifest, type AttachmentManifest } from '../attachment-manifest';
