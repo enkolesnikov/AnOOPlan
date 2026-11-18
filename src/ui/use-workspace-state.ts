@@ -52,7 +52,8 @@ export function useWorkspaceState() {
   const [message, setMessage] = useState('Готово. Загрузите PDF или откройте учебный проект.');
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
-  const [saved, setSaved] = useState('');
+  // Свежий проект ещё не меняли: иначе первый же Back/beforeunload просит сохранить пустышку.
+  const [saved, setSaved] = useState(() => JSON.stringify(project));
   const [persisted, setPersisted] = useState(false);
   const [projects, setProjects] = useState<{ id: string; name: string; updatedAt: string }[] | null>(null);
   const [templatesOpen, setTemplatesOpen] = useState(false);
@@ -141,7 +142,7 @@ export function useWorkspaceState() {
     floor, enabled: view === 'plan', viewRef, zoom, pan, canvas, stage, mutate,
   });
   const { historyOpen, setHistoryOpen, snapshots, setSnapshots, takeSnapshot, openHistory, restoreSnapshot, deleteSnapshot } = useSnapshots({
-    projectRef, load, onGarbageCollect: () => void collectStorageGarbage([projectRef.current, ...undo, ...redo]), setError, setMessage,
+    projectRef, load, onGarbageCollect: () => void collectStorageGarbage([projectRef.current, ...undo, ...redo]), setError, setMessage, setSaved,
   });
   const photoUrls = usePhotoUrls(photoOwner?.photos, photoOwner?.id);
 

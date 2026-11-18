@@ -20,10 +20,11 @@ interface Options {
   onGarbageCollect: () => void;
   setError: (message: string) => void;
   setMessage: (message: string) => void;
+  setSaved: (value: string) => void;
 }
 
 /** История версий проекта в IndexedDB: снимки, восстановление и очистка. */
-export function useSnapshots({ projectRef, load, onGarbageCollect, setError, setMessage }: Options) {
+export function useSnapshots({ projectRef, load, onGarbageCollect, setError, setMessage, setSaved }: Options) {
   const [historyOpen, setHistoryOpen] = useState(false);
   const [snapshots, setSnapshots] = useState<SnapshotEntry[] | null>(null);
 
@@ -62,6 +63,9 @@ export function useSnapshots({ projectRef, load, onGarbageCollect, setError, set
       return;
     }
     load(clone(entry.project), true);
+    // Восстановленный снимок ещё не записан в сохранённую копию: помечаем проект
+    // грязным, иначе автосохранение не сработает и после перезапуска вернётся новая версия.
+    setSaved('');
     setHistoryOpen(false);
     setSnapshots(null);
     setMessage('Проект восстановлен из снимка.');

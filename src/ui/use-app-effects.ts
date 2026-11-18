@@ -64,6 +64,18 @@ export function useAppEffects(
     (window as NativeHostWindow).__anooplanSaveAndExit = async () => {
       try {
         await saveProjectRef.current(true);
+        // Пока шло сохранение, пользователь мог продолжить правку: закрываться
+        // в этот момент нельзя — последние изменения потеряются.
+        if (dirtyRef.current) {
+          setError('Проект изменился во время сохранения. Сохраните ещё раз, чтобы не потерять последние правки.');
+          return;
+        }
+        nativeBridge()?.exitNow?.();
+        // в этот момент нельзя — последние изменения потеряются.
+        if (dirtyRef.current) {
+          setError('Проект изменился во время сохранения. Сохраните ещё раз, чтобы не потерять последние правки.');
+          return;
+        }
         nativeBridge()?.exitNow?.();
       } catch (error) {
         // Ошибка сохранения не должна закрывать приложение: пользователь теряет данные.
