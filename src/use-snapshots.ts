@@ -14,6 +14,17 @@ export interface SnapshotEntry {
 
 const SNAPSHOT_LIMIT = 20;
 
+/**
+ * Ключ снимка — `<id>:<время>`. Два снимка в одну миллисекунду дали бы один ключ
+ * и второй затёр бы первый (и тест «свежий снимок первый» становился флаки).
+ * Держим время строго возрастающим в пределах сессии.
+ */
+let lastSnapshotTimestamp = 0;
+const nextSnapshotTimestamp = (): number => {
+  lastSnapshotTimestamp = Math.max(Date.now(), lastSnapshotTimestamp + 1);
+  return lastSnapshotTimestamp;
+};
+
 interface Options {
   projectRef: MutableRefObject<Project>;
   load: (project: unknown, exists: boolean) => void;
@@ -30,7 +41,7 @@ export function useSnapshots({ projectRef, load, onGarbageCollect, setError, set
 
   async function takeSnapshot(reason: string): Promise<void> {
     const snapshot = clone(projectRef.current);
-    const key = `${snapshotKeyPrefix(snapshot.id)}${Date.now()}`;
+    const key = `${snapshotKeyPrefix(snapshot.id)}${nextSnapshotTimestamp()}`;
     await idbStorePut('snapshots', key, { key, createdAt: new Date().toISOString(), reason, project: snapshot });
     const keys = projectSnapshotKeys(await idbStoreKeys('snapshots'), snapshot.id);
     for (const stale of keys.slice(SNAPSHOT_LIMIT)) await idbStoreDelete('snapshots', stale);
