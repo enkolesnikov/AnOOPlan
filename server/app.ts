@@ -42,12 +42,13 @@ function sha256(bytes: Buffer): string {
 const RATE_LIMIT_MESSAGE = 'Слишком много запросов';
 
 /** Лимитер с JSON-ответом 429; MemoryStore создаётся на каждый вызов (на экземпляр приложения). */
-function limitRequests(limit: number, windowMs: number): RequestHandler {
+function limitRequests(limit: number, windowMs: number, skip?: (req: express.Request) => boolean): RequestHandler {
   return rateLimit({
     windowMs,
     limit,
     standardHeaders: 'draft-7',
     legacyHeaders: false,
+    ...(skip ? { skip } : {}),
     handler: (_req, res) => { res.status(429).json({ error: RATE_LIMIT_MESSAGE }); },
   });
 }
@@ -88,6 +89,8 @@ function authMiddleware(token: string): RequestHandler {
 export interface CreateAppOptions {
   dataDir?: string;
   authToken?: string;
+  /** Каталог собранного SPA; по умолчанию `dist` в cwd. Переопределяется в тестах. */
+  distDir?: string;
   /** Переопределения лимитов для тестов; windowMs по умолчанию 60000. */
   rateLimits?: { api?: number; restore?: number; spa?: number; windowMs?: number };
 }
@@ -108,17 +111,25 @@ export function createApp(options?: CreateAppOptions) {
   // Лимиты создаются внутри createApp: у каждого приложения свой MemoryStore,
   // поэтому тесты не делят счётчики между собой.
   const windowMs = options?.rateLimits?.windowMs ?? 60_000;
-  const apiLimiter = limitRequests(options?.rateLimits?.api ?? 120, windowMs);
+  const apiLimiter = limitRequests(options?.rateLimits?.api ?? 120, windowMs,
+    // /health не лимитируем: клиент по его ответу выбирает серверный режим, и 429
+    // молча переключил бы приложение в локальный режим (см. use-app-effects).
+    req => req.path === '/health');
   const restoreLimiter = limitRequests(options?.rateLimits?.restore ?? 10, windowMs);
   const spaLimiter = limitRequests(options?.rateLimits?.spa ?? 300, windowMs);
   // Лимит /api стоит до авторизации и разбора тела: отсекаем поток запросов,
   // не тратя память на 80 МБ JSON и не проверяя токен под нагрузкой.
   app.use('/api', apiLimiter);
+  // Лимит restore — тоже до парсера: иначе 80 МБ JSON разбирались бы до
+  // проверки лимита (route-level middleware выполняется после express.json).
+  app.use('/api/restore', restoreLimiter);
   // Авторизация до разбора тела: иначе LAN-клиент без токена может прислать
   // 80 МБ JSON и занять память ещё до проверки.
   if (options?.authToken) app.use('/api', authMiddleware(options.authToken));
   // 80 МБ: запас под backup с PDF/фото, но не 150 МБ на memoryStorage.
-  app.use(express.json({ limit: '80mb' }));
+  // Парсер — только на /api: SPA отдаётся GET-ом, а глобальный парсер позволял бы
+  // любому в LAN без токена буферизовать 80 МБ на несуществующем пути.
+  app.use('/api', express.json({ limit: '80mb' }));
   const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 30 * 1024 * 1024, files: 1, fields: 0 } });
   const getProject = (id: string) => { const p = store.project(id); if (!p) throw new ApiError(404, 'Проект не найден'); return p; };
   const warnings = (res: express.Response, project: Parameters<typeof validateProject>[0]) => {
@@ -166,7 +177,7 @@ export function createApp(options?: CreateAppOptions) {
   });
   app.get('/api/projects/:id/backup', (req, res) => {
     const project = getProject(req.params.id);
-    const ids = [...new Set(project.floors.flatMap(f => f.pdfId ? [f.pdfId] : []))];
+    const ids = [...new Set(project.floors.flatMap(f => f.pdfId && !f.pdfId.startsWith('data:') && !f.pdfId.startsWith('idb:') ? [f.pdfId] : []))];
     const records = ids.map(id => { const record = store.pdf(id); if (!record) throw new ApiError(409, `Отсутствует PDF: ${id}`); return record; });
     const pdfs = records.map(record => ({ id: record.id, name: record.name, dataBase64: record.bytes.toString('base64') }));
     // schemaVersion 2 требует манифест при восстановлении: без него серверная
@@ -176,7 +187,7 @@ export function createApp(options?: CreateAppOptions) {
     res.setHeader('X-Backup-Warnings', 'server-backup-excludes-photos');
     res.json({ schemaVersion: 2, project, pdfs, manifest, warnings: ['Серверная копия не содержит фотографии; для полной копии используйте .anooplan.'] });
   });
-  app.post('/api/restore', restoreLimiter, (req, res) => {
+  app.post('/api/restore', (req, res) => {
     const backup = req.body;
     if (!backup || typeof backup !== 'object' || (backup.schemaVersion !== undefined && backup.schemaVersion !== 1 && backup.schemaVersion !== 2) || !Array.isArray(backup.pdfs) || backup.pdfs.length > 1000) throw new ApiError(422, 'Некорректный backup');
     // Сервер хранит только PDF: фото сюда не помещаются. Лучше честная ошибка,
@@ -194,7 +205,7 @@ export function createApp(options?: CreateAppOptions) {
     // отсутствие schemaVersion) разрешены осознанно: старые копии не содержат
     // манифеста; если он всё же передан — проверяем и их.
     if (backup.schemaVersion === 2) {
-      if (backup.manifest === undefined) throw new ApiError(422, 'Для schemaVersion 2 обязателен manifest вложений: без него нельзя проверить целостность PDF');
+      if (backup.manifest === undefined) throw new ApiError(422, 'Для schemaVersion 2 обязателен manifest вложений: без него нельзя проверить целостность PDF. Откройте старую копию в приложении и экспортируйте заново — новый экспорт содержит манифест.');
       verifyRestoreManifest(backup.manifest, records);
     } else if (backup.manifest !== undefined) {
       verifyRestoreManifest(backup.manifest, records);
@@ -235,7 +246,7 @@ export function createApp(options?: CreateAppOptions) {
     warnings(res, project); res.status(201).json(project);
   });
   app.use('/api', (_req, _res, next) => { next(new ApiError(404, 'API endpoint не найден')); });
-  const dist = resolve(process.cwd(), 'dist');
+  const dist = options?.distDir ? resolve(options.distDir) : resolve(process.cwd(), 'dist');
   if (existsSync(resolve(dist, 'index.html'))) {
     // Хешированные ассеты Vite (assets/*) кэшируем надолго и immutable, index.html —
     // no-cache, чтобы обновление подхватывалось без ручной очистки кэша.

@@ -1,9 +1,9 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtemp, rm } from 'node:fs/promises';
-import { existsSync } from 'node:fs';
+import { writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join, resolve } from 'node:path';
+import { join } from 'node:path';
 import type { AddressInfo } from 'node:net';
 import { createHash } from 'node:crypto';
 import { createApp, type CreateAppOptions } from '../server/app.js';
@@ -57,9 +57,9 @@ test('rate limit /api: превышение даёт 429 и точное тел�
   const h = await harness({ rateLimits: { api: 3 } });
   try {
     for (let index = 0; index < 3; index += 1) {
-      assert.equal((await h.request('/api/health')).status, 200);
+      assert.equal((await h.request('/api/projects')).status, 200);
     }
-    const limited = await h.request('/api/health');
+    const limited = await h.request('/api/projects');
     assert.equal(limited.status, 429);
     assert.deepEqual(await limited.json(), { error: 'Слишком много запросов' });
   } finally { await h.close(); }
@@ -77,21 +77,23 @@ test('rate limit /api/restore: превышение даёт 429', async () => {
   } finally { await h.close(); }
 });
 
-test('rate limit SPA-fallback: превышение даёт 429', async (t) => {
-  if (!existsSync(resolve(process.cwd(), 'dist/index.html'))) {
-    t.skip('нет dist/index.html');
-    return;
-  }
-  const h = await harness({ rateLimits: { spa: 2 } });
+test('rate limit SPA-fallback: превышение даёт 429', async () => {
+  // Свой dist: тест не зависит от того, собран ли бандл, и не флейкует при
+  // параллельной сборке. Достаточно index.html — статику отдаёт express.static.
+  const distDir = await mkdtemp(join(tmpdir(), 'anooplan-dist-'));
+  writeFileSync(join(distDir, 'index.html'), '<!doctype html><title>spa</title>');
+  const h = await harness({ rateLimits: { spa: 2 }, distDir });
   try {
-    // Не «/»: index.html отдаёт express.static, а лимит стоит только на fallback.
     const page = { Accept: 'text/html' };
     assert.equal((await h.request('/spa-fallback-route', 'GET', undefined, page)).status, 200);
     assert.equal((await h.request('/spa-fallback-route', 'GET', undefined, page)).status, 200);
     const limited = await h.request('/spa-fallback-route', 'GET', undefined, page);
     assert.equal(limited.status, 429);
     assert.deepEqual(await limited.json(), { error: 'Слишком много запросов' });
-  } finally { await h.close(); }
+  } finally {
+    await h.close();
+    await rm(distDir, { recursive: true, force: true });
+  }
 });
 
 test('restore: schemaVersion 2 без manifest отклоняется с 422', async () => {
@@ -121,6 +123,61 @@ test('restore: legacy schemaVersion 1 без manifest принимается', a
     const backup = { schemaVersion: 1, project: fixture(), pdfs: [] };
     assert.equal((await h.request('/api/restore', 'POST', backup)).status, 201);
     assert.equal((await h.request('/api/projects/project-1')).status, 200);
+  } finally { await h.close(); }
+});
+
+test('restore: некорректная форма манифеста отклоняется с 422', async () => {
+  const h = await harness();
+  try {
+    const backup = { schemaVersion: 2, project: fixture(), pdfs: [], photos: [], manifest: { version: 1, files: 'nope' } };
+    const response = await h.request('/api/restore', 'POST', backup);
+    assert.equal(response.status, 422);
+    assert.match(((await response.json()) as { error: string }).error, /манифест/i);
+  } finally { await h.close(); }
+});
+
+test('дефолтный лимит /api — 120 запросов в минуту', async () => {
+  const h = await harness();
+  try {
+    const response = await h.request('/api/projects');
+    assert.equal(response.status, 200);
+    // Заголовки draft-7: политика содержит объявленный лимит.
+    assert.match(response.headers.get('ratelimit-policy') ?? '', /120/);
+    assert.match(response.headers.get('ratelimit') ?? '', /limit=120/);
+  } finally { await h.close(); }
+});
+
+test('/api/health не расходует общий лимит', async () => {
+  const h = await harness({ rateLimits: { api: 2 } });
+  try {
+    for (let index = 0; index < 5; index += 1) {
+      assert.equal((await h.request('/api/health')).status, 200);
+    }
+  } finally { await h.close(); }
+});
+
+test('JSON-парсер не разбирает тела вне /api: POST на неизвестный путь — 404, не 400', async () => {
+  const h = await harness();
+  try {
+    const response = await fetch(h.base + '/not-api', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: '{broken',
+    });
+    assert.equal(response.status, 404);
+  } finally { await h.close(); }
+});
+
+test('backup проекта с data:-подложкой не падает с 409', async () => {
+  const h = await harness();
+  try {
+    const project = fixtureWithPdf('data:application/pdf;base64,AAAA');
+    assert.equal((await h.request('/api/projects', 'POST', project)).status, 201);
+    const backup = await h.request('/api/projects/project-1/backup');
+    assert.equal(backup.status, 200);
+    const body = await backup.json() as { pdfs: unknown[]; manifest: { files: unknown[] } };
+    assert.deepEqual(body.pdfs, []);
+    assert.deepEqual(body.manifest.files, []);
   } finally { await h.close(); }
 });
 
