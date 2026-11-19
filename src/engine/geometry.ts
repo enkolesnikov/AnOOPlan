@@ -57,14 +57,43 @@ export function segmentLength(project: Project, segment: Segment): number | null
   return finite(result) ? result : null;
 }
 
-export function segmentIndex(project: Project) {
+interface SegmentIndexResult {
+  segments: Map<string, Segment>;
+  duplicates: Set<string>;
+}
+
+/**
+ * Кэш индекса сегментов на структуру проекта. `calculateCable` вызывается для
+ * каждого кабеля и раньше каждый раз обходил все 2000 сегментов; на проекте из
+ * 200 кабелей это 400 тыс. итераций на одну правку.
+ *
+ * Ключ — массив трасс, а валидность проверяется по идентичности/длине массивов
+ * сегментов: замена/вставка сегментов пересоздаёт индекс, а перетаскивание вершин
+ * меняет только координаты внутри тех же объектов — индекс остаётся верным.
+ */
+const segmentIndexCache = new WeakMap<Route[], { arrays: Segment[][]; lengths: number[]; result: SegmentIndexResult }>();
+
+export function segmentIndex(project: Project): SegmentIndexResult {
+  const cached = segmentIndexCache.get(project.routes);
+  if (cached
+    && cached.arrays.length === project.routes.length
+    && cached.arrays.every((array, index) => array === project.routes[index].segments)
+    && cached.lengths.every((length, index) => length === project.routes[index].segments.length)) {
+    return cached.result;
+  }
   const segments = new Map<string, Segment>();
   const duplicates = new Set<string>();
   for (const route of project.routes) for (const segment of route.segments) {
     if (segments.has(segment.id)) duplicates.add(segment.id);
     else segments.set(segment.id, segment);
   }
-  return { segments, duplicates };
+  const result = { segments, duplicates };
+  segmentIndexCache.set(project.routes, {
+    arrays: project.routes.map(route => route.segments),
+    lengths: project.routes.map(route => route.segments.length),
+    result,
+  });
+  return result;
 }
 
 export function chainEnds(project: Project, segmentIds: string[]): { start: Vertex; end: Vertex } | null {
