@@ -163,7 +163,9 @@ export function createApp(options?: { dataDir?: string; authToken?: string }) {
     const remap = new Map<string, string>();
     const storedRecords = records.map(record => {
       if (!record.id.startsWith('idb:')) return record;
-      const id = randomUUID();
+      // Содержимое-адресный id: повторное восстановление того же файла
+      // переиспользует PDF, а не плодит сирот с новым randomUUID.
+      const id = sha256(record.bytes);
       remap.set(record.id, id);
       return { ...record, id };
     });

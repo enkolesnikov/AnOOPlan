@@ -86,7 +86,10 @@ function assertFloor(floor: Row, context: ValidationContext): void {
   number(floor.height, 'floor.height', false, 0);
   if (floor.pdfId === undefined) return;
   text(floor.pdfId, 'floor.pdfId', true);
-  const external = !floor.pdfId.startsWith('data:') && !floor.pdfId.startsWith('idb:');
+  // data:-подложка встроена в проект; всё остальное, включая idb:, сервер должен
+  // уметь отдать. Иначе восстановленный .anooplan сохранит висячий idb:-id,
+  // который клиент будет искать в браузерном IndexedDB.
+  const external = !floor.pdfId.startsWith('data:');
   if (external && !context.pdfExists(floor.pdfId)) fail(`PDF не найден: ${floor.pdfId}`);
 }
 

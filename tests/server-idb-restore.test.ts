@@ -89,6 +89,30 @@ test('restore: манифест проверяется по исходным idb
   } finally { await h.close(); }
 });
 
+test('restore: повторное восстановление того же файла переиспользует PDF', async () => {
+  const h = await harness();
+  try {
+    const original = 'idb:33333333-3333-3333-3333-333333333333';
+    const first = await h.request('/api/restore', 'POST', backupWith(original));
+    assert.equal(first.status, 201);
+    const firstId = ((await first.json()) as Project).floors[0].pdfId!;
+    const second = await h.request('/api/restore', 'POST', backupWith(original));
+    assert.equal(second.status, 201);
+    const secondId = ((await second.json()) as Project).floors[0].pdfId!;
+    assert.equal(secondId, firstId, 'повторный restore создал новый PDF вместо переиспользования');
+    assert.equal((await h.request('/api/pdfs/' + encodeURIComponent(secondId))).status, 200);
+  } finally { await h.close(); }
+});
+
+test('restore: висячий idb:-id без PDF отклоняется', async () => {
+  const h = await harness();
+  try {
+    const backup = { schemaVersion: 2, project: fixture('idb:missing'), pdfs: [], photos: [] };
+    assert.equal((await h.request('/api/restore', 'POST', backup)).status, 422);
+    assert.equal((await h.request('/api/projects/project-1')).status, 404);
+  } finally { await h.close(); }
+});
+
 test('restore: обычные серверные id PDF не переименовываются', async () => {
   const h = await harness();
   try {
