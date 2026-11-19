@@ -33,7 +33,7 @@
 - Подпись: SHA-256 сертификата `6431374cf6a7d385c4c47f0f2bf54fcb5ee5b2c7120f057b18c4062af92fe097`.
 - Текущий релиз: [v2.9.0 «Аудит и надёжность»](https://github.com/enkolesnikov/AnOOPlan/releases/tag/v2.9.0) —
   подписанный APK `AnOOPlan-2.9.0.apk` (versionCode 45, 1 608 392 Б,
-  SHA-256 `f1f9af63…24b0cb16`), описание из аннотации тега.
+  SHA-256 `1940fe55…dec0b941`), описание и проверенные метрики — в GitHub Release.
 - Предыдущий релиз: [v2.8.5 «Трассы и размеры»](https://github.com/enkolesnikov/AnOOPlan/releases/tag/v2.8.5) —
   APK `AnOOPlan-2.8.5.apk` (versionCode 44), 1 скриншот в assets.
 
