@@ -68,6 +68,8 @@
 - `verifyRestoreManifest` требует строковый `id`, числовой `size` и `sha256` — некорректная форма манифеста даёт 422.
 - gitleaks: PEM-правило ловит `ENCRYPTED PRIVATE KEY`, allowlist заякорен (`tests/fixtures.ts` не выпадает),
   добавлен weekly `schedule` для скана всей истории; PR-комментарии отключены (у форков токен read-only).
+- Dependabot-алерт #1 (`minimatch` GHSA-g3hv-75wg-m249) закрыт обновлением `minimatch` до 11.0.9 в составе
+  `eslint` 10.15 — после push GitHub пометил его `fixed`.
 
 ### Осознанное изменение поведения
 
@@ -78,7 +80,7 @@
 
 | Метрика | До | После |
 |---|---|---|
-| Открытые алерты CodeQL | 10 (7 high, 3 medium) | см. раздел «Скан после push» |
+| Открытые алерты CodeQL | 10 (7 high, 3 medium) | **5 (2 high, 3 medium)** — все разобраны ниже |
 | `npm audit` (все зависимости) | 9 moderate | **0** |
 | `npm audit --omit=dev` | 0 | **0** |
 | Тесты (`npm test`) | 412 pass | **421 pass** |
@@ -87,6 +89,23 @@
 | E2E Playwright | — | **11 passed** |
 | Визуальные эталоны | — | **4 passed** |
 | Бюджет бандла | JS ≤ 600 КБ, CSS ≤ 60 КБ | **493.2 КБ / 40.9 КБ** |
+
+## Скан после push
+
+После push (`04e1bed`/`e9a122e`) CodeQL отработал успешно. Открытых алертов стало **5 из 10**:
+закрыты `js/missing-rate-limiting` (2), `js/polynomial-redos` (1), `js/file-system-race` (1),
+`js/regex/missing-regexp-anchor` (1), `js/incomplete-sanitization` (1); новый алерт
+`js/incomplete-url-substring-sanitization`, появившийся после первой правки теста, тоже закрыт.
+
+Остались 5 — все с обоснованием в коде и в этом отчёте:
+
+| Алерт | Правило | Почему открыт | Что нужно |
+|---|---|---|---|
+| #21, #22, #7 | `js/file-access-to-http` | Осознанная отправка релизного ассета в GitHub Releases API; код ужесточён (workspace через `realpath`, `O_NOFOLLOW`, проверка `upload_url`, `redirect: 'error'`). Inline-подавления `// codeql[js/file-access-to-http]` стоят на строках алертов, но сканер их не применил (пробовали и минимальную форму). | Закрыть через API с причиной `won't fix` — нужен токен с `security-events: write` (у токена этого прогона только read). |
+| #17, #18 | `js/user-controlled-bypass` | Ветка различает версии формата копии: для v2 манифест обязателен (422), legacy v1 без манифеста разрешён осознанно (манифеста в нём нет по формату). Это не обход проверки: манифест и байты приходят в одном запросе. | То же: закрыть с причиной `won't fix` токеном с `security-events: write`. |
+
+Попытка подавления через API выполнена и вернула `Resource not accessible by personal access token` —
+у выданного токена нет прав на изменение алертов. Это единственный незакрытый шаг; он не требует правки кода.
 
 ## Проверки (фактические прогоны)
 
@@ -102,6 +121,9 @@
 | `npm run coverage` | 93.8 / 87.1 / 94.1 — все пороги пройдены |
 | `npx playwright test` | 11 passed |
 | `npm run test:visual` | 4 passed |
+| CI (GitHub Actions) на `04e1bed`/`e9a122e` | success: lint, knip, tsc, coverage, build+size, smoke, E2E |
+| Gitleaks (CI) | success |
+| CodeQL (CI) | success; открытых алертов 10 → 5 |
 | `gitleaks dir . --config .gitleaks.toml` (локально, 8.30.1) | 0 находок, 67.2 МБ |
 | `gitleaks git .` (167 коммитов) | 0 находок |
 
@@ -118,11 +140,11 @@
 
 ## Что осталось и почему
 
-1. **Подтверждение скана CodeQL.** Inline-подавления `// codeql[...]` и закрытие остальных алертов
-   проверяются только следующим сканом после push. Если `js/user-controlled-bypass` останется
-   (legacy v1 — осознанная ветка формата, а не обход проверки: манифест и байты приходят в одном запросе),
-   алерт будет закрыт через API с причиной `won't fix` и ссылкой на этот отчёт; если inline-подавление
-   не сработает — подавление через API с причиной `won't fix` и тем же обоснованием.
+1. **Подтверждение скана CodeQL.** Скан после push выполнен: 10 → 5 открытых алертов, причины в разделе
+   «Скан после push». Оставшиеся 5 — осознанные (3 × file-access-to-http, 2 × user-controlled-bypass);
+   inline-подавления сканер не применил, а API-подавление недоступно токену прогона (нет
+   `security-events: write`). Закрыть их может владелец репозитория одним запросом на алерт с причиной
+   `won't fix` и ссылкой на этот отчёт.
 2. **`js/file-access-to-http`** остаётся особенностью инструмента: плагин по определению читает
    локальный ассет и отправляет его в GitHub Releases. Ограничение workspace и обоснование — в коде.
 3. **Peer-предупреждение ESLint.** `eslint-plugin-jsx-a11y@6.10.2` объявляет peer `eslint ^3…^9`,
