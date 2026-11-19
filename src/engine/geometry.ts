@@ -276,54 +276,140 @@ export function routeLength(project: Project, route: Route): number | null {
 
 export interface RouteAngleStats { total: number; angles90: number; angles45: number; other: number }
 
+/** Планарный ключ вершины: этаж намеренно не входит — межэтажный стояк не должен рвать цепочку. */
+export const planNodeKey = (x: number, y: number): string => `${Math.round(x * 1000)}:${Math.round(y * 1000)}`;
+
+/** Угол между направлениями в градусах; null, если хотя бы одно направление нулевое. */
+export function planarAngle(ax: number, ay: number, bx: number, by: number): number | null {
+  const lengthA = Math.hypot(ax, ay);
+  const lengthB = Math.hypot(bx, by);
+  if (lengthA <= EPS || lengthB <= EPS) return null;
+  const cosine = Math.max(-1, Math.min(1, (ax * bx + ay * by) / (lengthA * lengthB)));
+  return Math.acos(cosine) * 180 / Math.PI;
+}
+
+/** Учитывает поворот в статистике: меньше 1° — не поворот; 90° и 45°/135° — отдельно. */
+export function addRouteAngle(stats: RouteAngleStats, angle: number): void {
+  if (!(angle >= 1)) return;
+  stats.total += 1;
+  if (Math.abs(angle - 90) <= 10) stats.angles90 += 1;
+  else if (Math.abs(angle - 45) <= 10 || Math.abs(angle - 135) <= 10) stats.angles45 += 1;
+  else stats.other += 1;
+}
+
+export interface RouteChainStep {
+  segment: Segment;
+  /** Сегмент пройден от b к a, то есть против хранимого направления. */
+  reversed: boolean;
+}
+export interface RouteChainEnd {
+  /** Узел на конце цепочки (этаж — из исходной вершины). */
+  vertex: Vertex;
+  /** Единичное планарное направление от узла вглубь трассы; null — планарной проекции нет. */
+  dir: { x: number; y: number } | null;
+}
+export interface RouteChain {
+  steps: RouteChainStep[];
+  start: RouteChainEnd;
+  end: RouteChainEnd;
+}
+
+const unitDirection = (dx: number, dy: number): { x: number; y: number } | null => {
+  const length = Math.hypot(dx, dy);
+  return length > EPS ? { x: dx / length, y: dy / length } : null;
+};
+
+/**
+ * Упорядоченная цепочка сегментов трассы: обход начинается с любого конца, направление
+ * хранения сегментов не важно, вершины сопоставляются по планарным координатам
+ * (межэтажный стояк не рвёт цепочку). Один проход по Map смежности — O(n).
+ */
+export function routeChain(route: Route): RouteChain | null {
+  const segments = route.segments;
+  if (!segments.length) return null;
+  interface ChainNode { edges: { index: number; other: string }[] }
+  const nodes = new Map<string, ChainNode>();
+  const keys: { a: string; b: string }[] = [];
+  const ensureNode = (key: string): ChainNode => {
+    let node = nodes.get(key);
+    if (!node) { node = { edges: [] }; nodes.set(key, node); }
+    return node;
+  };
+  segments.forEach((segment, index) => {
+    const a = planNodeKey(segment.a.x, segment.a.y);
+    const b = planNodeKey(segment.b.x, segment.b.y);
+    ensureNode(a).edges.push({ index, other: b });
+    ensureNode(b).edges.push({ index, other: a });
+    keys.push({ a, b });
+  });
+  // Стартуем с конца цепочки (нечётная степень), иначе — с произвольного узла.
+  let startKey: string | null = null;
+  for (const [key, node] of nodes) if (node.edges.length % 2 === 1) { startKey = key; break; }
+  if (startKey === null) startKey = nodes.keys().next().value ?? null;
+  if (startKey === null) return null;
+
+  const used = new Set<number>();
+  const steps: RouteChainStep[] = [];
+  let current = startKey;
+  while (true) {
+    const node = nodes.get(current);
+    if (!node) break;
+    const edge = node.edges.find(item => !used.has(item.index));
+    if (!edge) break;
+    used.add(edge.index);
+    const segment = segments[edge.index];
+    const reversed = keys[edge.index].a !== current;
+    steps.push({ segment, reversed });
+    current = edge.other;
+  }
+  if (!steps.length) return null;
+
+  const directionOf = (step: RouteChainStep) => step.reversed
+    ? { x: step.segment.a.x - step.segment.b.x, y: step.segment.a.y - step.segment.b.y }
+    : { x: step.segment.b.x - step.segment.a.x, y: step.segment.b.y - step.segment.a.y };
+  let startDir: { x: number; y: number } | null = null;
+  for (const step of steps) {
+    const raw = directionOf(step);
+    const dir = unitDirection(raw.x, raw.y);
+    if (dir) { startDir = dir; break; }
+  }
+  let endDir: { x: number; y: number } | null = null;
+  for (let index = steps.length - 1; index >= 0; index -= 1) {
+    const raw = directionOf(steps[index]);
+    const dir = unitDirection(raw.x, raw.y);
+    if (dir) { endDir = { x: -dir.x, y: -dir.y }; break; }
+  }
+  const first = steps[0];
+  const last = steps[steps.length - 1];
+  return {
+    steps,
+    start: { vertex: first.reversed ? first.segment.b : first.segment.a, dir: startDir },
+    end: { vertex: last.reversed ? last.segment.a : last.segment.b, dir: endDir },
+  };
+}
+
 /**
  * Углы поворота трассы: количество изменений направления и разбивка на 90°/45°.
- * Считаются только стыки соседних сегментов; для коробов это количество углов
+ * Цепочка строится от любого конца; стояки с нулевой планарной проекцией путь
+ * не рвут и ложного угла не дают. Для коробов это количество углов
  * (без фитингов и креплений).
  */
 export function routeAngleStats(route: Route): RouteAngleStats {
   const stats: RouteAngleStats = { total: 0, angles90: 0, angles45: 0, other: 0 };
-  const remaining = [...route.segments];
-  if (remaining.length < 2) return stats;
-  const same = (a: Vertex, b: Vertex) => a.floorId === b.floorId && near(a.x, b.x) && near(a.y, b.y);
-  const first = remaining.shift()!;
-  const path: { x: number; y: number }[] = [{ x: first.a.x, y: first.a.y }, { x: first.b.x, y: first.b.y }];
-  let extended = true;
-  while (remaining.length && extended) {
-    extended = false;
-    for (let index = 0; index < remaining.length; index += 1) {
-      const segment = remaining[index];
-      const end = path[path.length - 1];
-      const endVertex: Vertex = { id: '', floorId: first.a.floorId, x: end.x, y: end.y, height: null };
-      if (same(segment.a, endVertex)) {
-        path.push({ x: segment.b.x, y: segment.b.y });
-        remaining.splice(index, 1);
-        extended = true;
-        break;
-      }
-      if (same(segment.b, endVertex)) {
-        path.push({ x: segment.a.x, y: segment.a.y });
-        remaining.splice(index, 1);
-        extended = true;
-        break;
-      }
+  const chain = routeChain(route);
+  if (!chain) return stats;
+  let previous: { x: number; y: number } | null = null;
+  for (const step of chain.steps) {
+    const segment = step.segment;
+    const dx = step.reversed ? segment.a.x - segment.b.x : segment.b.x - segment.a.x;
+    const dy = step.reversed ? segment.a.y - segment.b.y : segment.b.y - segment.a.y;
+    const dir = unitDirection(dx, dy);
+    if (!dir) continue;
+    if (previous) {
+      const angle = planarAngle(previous.x, previous.y, dir.x, dir.y);
+      if (angle !== null) addRouteAngle(stats, angle);
     }
-  }
-  for (let index = 1; index < path.length - 1; index += 1) {
-    const ax = path[index].x - path[index - 1].x;
-    const ay = path[index].y - path[index - 1].y;
-    const bx = path[index + 1].x - path[index].x;
-    const by = path[index + 1].y - path[index].y;
-    const lengthA = Math.hypot(ax, ay);
-    const lengthB = Math.hypot(bx, by);
-    if (lengthA < EPS || lengthB < EPS) continue;
-    const cosine = Math.max(-1, Math.min(1, (ax * bx + ay * by) / (lengthA * lengthB)));
-    const angle = Math.acos(cosine) * 180 / Math.PI;
-    if (angle < 1) continue;
-    stats.total += 1;
-    if (Math.abs(angle - 90) <= 10) stats.angles90 += 1;
-    else if (Math.abs(angle - 45) <= 10 || Math.abs(angle - 135) <= 10) stats.angles45 += 1;
-    else stats.other += 1;
+    previous = dir;
   }
   return stats;
 }
