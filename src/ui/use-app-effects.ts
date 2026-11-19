@@ -31,6 +31,9 @@ export function useAppEffects(
   const loadRef = useRef(load); loadRef.current = load;
   const openSharedProjectRef = useRef(openSharedProject); openSharedProjectRef.current = openSharedProject;
   const setMessageRef = useRef(setMessage); setMessageRef.current = setMessage;
+  // Ошибка автосохранения должна быть видна, а не только в диагностике: иначе
+  // повреждённое количество в серверном режиме молча не сохраняется.
+  const autosaveError = useRef<string | null>(null);
   useEffect(() => { const handler = (e: BeforeUnloadEvent) => { if (dirty) { e.preventDefault(); e.returnValue = ''; } }; window.addEventListener('beforeunload', handler); return () => window.removeEventListener('beforeunload', handler); }, [dirty]);
   useEffect(() => { setDraft([]); setCalibration([]); setMeasure([]); }, [floor?.id, floor?.pdfId, setDraft, setCalibration, setMeasure]);
   useEffect(() => { fetch('/api/health').then(r => { if (!r.ok) setStaticMode(true); }).catch(() => setStaticMode(true)); }, [setStaticMode]);
@@ -42,7 +45,18 @@ export function useAppEffects(
   // Проект, который уже лежит в списке, дописывается сам — «Сохранить» лишь для нового.
   useEffect(() => {
     if (!dirty || !persisted) return;
-    const timer = setTimeout(() => { void saveProjectRef.current(true).catch(error => { logDiagnostic('error', error, 'autosave'); /* повторим при следующем изменении */ }); }, 1500);
+    const timer = setTimeout(() => {
+      void saveProjectRef.current(true)
+        .then(() => {
+          if (autosaveError.current !== null) { autosaveError.current = null; setError(''); }
+        })
+        .catch(error => {
+          logDiagnostic('error', error, 'autosave');
+          const message = `Автосохранение не удалось: ${error instanceof Error ? error.message : String(error)}. Проект остаётся открытым — исправьте данные или сохраните вручную.`;
+          autosaveError.current = message;
+          setError(message);
+        });
+    }, 1500);
     return () => clearTimeout(timer);
   }, [dirty, project, persisted]);
   // Снимок версии: раз в пять минут при несохранённых изменениях и перед восстановлением.
