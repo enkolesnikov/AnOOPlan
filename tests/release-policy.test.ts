@@ -65,6 +65,8 @@ test('офлайн-контракт манифеста и версия из pack
   const pkg = JSON.parse(read('package.json')) as { version: string; androidVersionCode: number };
   assert.match(pkg.version, /^\d+\.\d+\.\d+$/);
   assert.ok(Number.isInteger(pkg.androidVersionCode) && pkg.androidVersionCode > 0);
-  assert.match(manifest, new RegExp(`android:versionName="${pkg.version.replace(/\./g, '\\.')}"`));
-  assert.match(manifest, new RegExp(`android:versionCode="${pkg.androidVersionCode}"`));
+  // Сравнение подстрок вместо регэкспа: версия из package.json не требует экранирования,
+  // а сборка шаблона из данных — ровно то, на что указывал CodeQL (js/incomplete-sanitization).
+  assert.ok(manifest.includes(`android:versionName="${pkg.version}"`), 'versionName совпадает с package.json');
+  assert.ok(manifest.includes(`android:versionCode="${pkg.androidVersionCode}"`), 'versionCode совпадает с package.json');
 });
