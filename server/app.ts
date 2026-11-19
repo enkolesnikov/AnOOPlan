@@ -1,4 +1,5 @@
 import express, { type ErrorRequestHandler, type RequestHandler } from 'express';
+import { rateLimit } from 'express-rate-limit';
 import multer from 'multer';
 import { createHash, randomUUID, timingSafeEqual } from 'node:crypto';
 import { resolve, sep } from 'node:path';
@@ -38,6 +39,19 @@ function sha256(bytes: Buffer): string {
   return createHash('sha256').update(bytes).digest('hex');
 }
 
+const RATE_LIMIT_MESSAGE = 'Слишком много запросов';
+
+/** Лимитер с JSON-ответом 429; MemoryStore создаётся на каждый вызов (на экземпляр приложения). */
+function limitRequests(limit: number, windowMs: number): RequestHandler {
+  return rateLimit({
+    windowMs,
+    limit,
+    standardHeaders: 'draft-7',
+    legacyHeaders: false,
+    handler: (_req, res) => { res.status(429).json({ error: RATE_LIMIT_MESSAGE }); },
+  });
+}
+
 /** Манифест вложений: набор, размеры и SHA-256 должны совпасть до записи. */
 function verifyRestoreManifest(manifest: unknown, records: PdfRecord[]): void {
   if (!manifest || typeof manifest !== 'object' || !Array.isArray((manifest as { files?: unknown }).files)) {
@@ -71,7 +85,14 @@ function authMiddleware(token: string): RequestHandler {
   };
 }
 
-export function createApp(options?: { dataDir?: string; authToken?: string }) {
+export interface CreateAppOptions {
+  dataDir?: string;
+  authToken?: string;
+  /** Переопределения лимитов для тестов; windowMs по умолчанию 60000. */
+  rateLimits?: { api?: number; restore?: number; spa?: number; windowMs?: number };
+}
+
+export function createApp(options?: CreateAppOptions) {
   const app = express();
   const store = new Store(options?.dataDir ?? resolve(process.cwd(), 'data'));
   app.locals.store = store;
@@ -84,6 +105,15 @@ export function createApp(options?: { dataDir?: string; authToken?: string }) {
     res.setHeader('Referrer-Policy', 'no-referrer');
     next();
   });
+  // Лимиты создаются внутри createApp: у каждого приложения свой MemoryStore,
+  // поэтому тесты не делят счётчики между собой.
+  const windowMs = options?.rateLimits?.windowMs ?? 60_000;
+  const apiLimiter = limitRequests(options?.rateLimits?.api ?? 120, windowMs);
+  const restoreLimiter = limitRequests(options?.rateLimits?.restore ?? 10, windowMs);
+  const spaLimiter = limitRequests(options?.rateLimits?.spa ?? 300, windowMs);
+  // Лимит /api стоит до авторизации и разбора тела: отсекаем поток запросов,
+  // не тратя память на 80 МБ JSON и не проверяя токен под нагрузкой.
+  app.use('/api', apiLimiter);
   // Авторизация до разбора тела: иначе LAN-клиент без токена может прислать
   // 80 МБ JSON и занять память ещё до проверки.
   if (options?.authToken) app.use('/api', authMiddleware(options.authToken));
@@ -137,12 +167,16 @@ export function createApp(options?: { dataDir?: string; authToken?: string }) {
   app.get('/api/projects/:id/backup', (req, res) => {
     const project = getProject(req.params.id);
     const ids = [...new Set(project.floors.flatMap(f => f.pdfId ? [f.pdfId] : []))];
-    const pdfs = ids.map(id => { const record = store.pdf(id); if (!record) throw new ApiError(409, `Отсутствует PDF: ${id}`); return { id, name: record.name, dataBase64: record.bytes.toString('base64') }; });
+    const records = ids.map(id => { const record = store.pdf(id); if (!record) throw new ApiError(409, `Отсутствует PDF: ${id}`); return record; });
+    const pdfs = records.map(record => ({ id: record.id, name: record.name, dataBase64: record.bytes.toString('base64') }));
+    // schemaVersion 2 требует манифест при восстановлении: без него серверная
+    // копия стала бы невосстановимой. Формат — src/attachment-manifest.ts.
+    const manifest = { version: 1 as const, files: records.map(record => ({ kind: 'pdf' as const, id: record.id, size: record.bytes.length, sha256: sha256(record.bytes) })) };
     res.setHeader('Content-Disposition', 'attachment; filename="project-backup.json"');
     res.setHeader('X-Backup-Warnings', 'server-backup-excludes-photos');
-    res.json({ schemaVersion: 2, project, pdfs, warnings: ['Серверная копия не содержит фотографии; для полной копии используйте .anooplan.'] });
+    res.json({ schemaVersion: 2, project, pdfs, manifest, warnings: ['Серверная копия не содержит фотографии; для полной копии используйте .anooplan.'] });
   });
-  app.post('/api/restore', (req, res) => {
+  app.post('/api/restore', restoreLimiter, (req, res) => {
     const backup = req.body;
     if (!backup || typeof backup !== 'object' || (backup.schemaVersion !== undefined && backup.schemaVersion !== 1 && backup.schemaVersion !== 2) || !Array.isArray(backup.pdfs) || backup.pdfs.length > 1000) throw new ApiError(422, 'Некорректный backup');
     // Сервер хранит только PDF: фото сюда не помещаются. Лучше честная ошибка,
@@ -155,7 +189,16 @@ export function createApp(options?: { dataDir?: string; authToken?: string }) {
       if (!raw || typeof raw.id !== 'string' || !raw.id.trim() || raw.id.length > 10000 || ids.has(raw.id) || typeof raw.name !== 'string' || raw.name.length > 10000) throw new ApiError(422, 'Некорректный или повторяющийся PDF ID');
       ids.add(raw.id); return { id: raw.id, name: raw.name, bytes: decodePdf(raw.dataBase64) };
     });
-    if (backup.manifest !== undefined) verifyRestoreManifest(backup.manifest, records);
+    // v2 обязан нести манифест: без него нельзя проверить целостность PDF, а
+    // клиент мог бы «успешно» восстановить повреждённую копию. Legacy v1 (и
+    // отсутствие schemaVersion) разрешены осознанно: старые копии не содержат
+    // манифеста; если он всё же передан — проверяем и их.
+    if (backup.schemaVersion === 2) {
+      if (backup.manifest === undefined) throw new ApiError(422, 'Для schemaVersion 2 обязателен manifest вложений: без него нельзя проверить целостность PDF');
+      verifyRestoreManifest(backup.manifest, records);
+    } else if (backup.manifest !== undefined) {
+      verifyRestoreManifest(backup.manifest, records);
+    }
     // A portable backup must supply every referenced original, even if one exists locally.
     assertProject(backup.project, id => ids.has(id));
     // PDF из IndexedDB (idb:) клиент ищет в браузере, поэтому сервер сохраняет их под
@@ -202,10 +245,13 @@ export function createApp(options?: { dataDir?: string; authToken?: string }) {
         else if (filePath.split(sep).includes('assets')) res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
       },
     }));
+    // Лимит только на fallback index.html: статика выше им не ограничивается.
     app.use((req, res, next) => {
       if (req.method === 'GET' && req.accepts('html')) {
-        res.setHeader('Cache-Control', 'no-cache');
-        res.sendFile(resolve(dist, 'index.html'));
+        spaLimiter(req, res, () => {
+          res.setHeader('Cache-Control', 'no-cache');
+          res.sendFile(resolve(dist, 'index.html'));
+        });
       } else next();
     });
   }

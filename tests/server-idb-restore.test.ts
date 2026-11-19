@@ -107,7 +107,8 @@ test('restore: повторное восстановление того же ф�
 test('restore: висячий idb:-id без PDF отклоняется', async () => {
   const h = await harness();
   try {
-    const backup = { schemaVersion: 2, project: fixture('idb:missing'), pdfs: [], photos: [] };
+    // Манифест пуст осознанно: проверяем висячий idb:-id, а не отсутствие манифеста.
+    const backup = { schemaVersion: 2, project: fixture('idb:missing'), pdfs: [], photos: [], manifest: { version: 1, files: [] } };
     assert.equal((await h.request('/api/restore', 'POST', backup)).status, 422);
     assert.equal((await h.request('/api/projects/project-1')).status, 404);
   } finally { await h.close(); }
