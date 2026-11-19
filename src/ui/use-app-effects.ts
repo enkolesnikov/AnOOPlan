@@ -58,7 +58,7 @@ export function useAppEffects(
         });
     }, 1500);
     return () => clearTimeout(timer);
-  }, [dirty, project, persisted]);
+  }, [dirty, project, persisted, setError]);
   // Снимок версии: раз в пять минут при несохранённых изменениях и перед восстановлением.
   useEffect(() => {
     const timer = setInterval(() => { if (dirty) void takeSnapshotRef.current('автоснимок').catch(() => { /* хранилище недоступно */ }); }, 5 * 60 * 1000);
