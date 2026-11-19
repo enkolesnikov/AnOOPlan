@@ -1,7 +1,7 @@
 // Состав таблиц выгрузки — общий модуль для сервера и офлайн-экспорта в приложении,
 // чтобы XLSX/PDF/CSV содержали одни и те же данные и колонки.
 import type { Cable, PriceKind, Project } from './model';
-import { cableSection, calculateCable, routeSectionsText, specificationKnS, specifications, validateProject } from './engine';
+import { cableSection, calculateCable, domainWarnings, routeSectionsText, specificationKnS, specifications, validateProject } from './engine';
 
 /** Число в русской локали; null — прочерк (для текстовых ячеек выгрузки). */
 const localizedNumber = (value: number | null): string =>
@@ -88,7 +88,8 @@ export function exportSheets(project: Project): ExportSheet[] {
     { name: 'Коммерческое предложение', rows: commercial },
     { name: 'Справочник цен', rows: catalog },
     { name: 'Замечания', rows: [['Номер', 'Этаж', 'X', 'Y', 'Замечание', 'Статус', 'Фото'], ...(project.pins ?? []).map(pin => [pin.number, project.floors.find(floor => floor.id === pin.floorId)?.name || '—', pin.x, pin.y, pin.comment, pin.status === 'closed' ? 'закрыто' : 'открыто', (pin.photos || []).length])] },
-    // Оценка добавляет свои предупреждения (нет цен, нет процента работ); дубликаты убираем.
-    { name: 'Предупреждения', rows: [['Предупреждение'], ...[...new Set([...validateProject(project), ...specs.errors, ...estimateResult.warnings])].map(e => [e])] },
+    // Доменные предупреждения (витая пара >100 м, нет цены кабеля, пустая трасса) и
+    // предупреждения сметы дополняют проверку проекта; дубликаты убираем.
+    { name: 'Предупреждения', rows: [['Предупреждение'], ...[...new Set([...validateProject(project), ...specs.errors, ...estimateResult.warnings, ...domainWarnings(project)])].map(e => [e])] },
   ];
 }

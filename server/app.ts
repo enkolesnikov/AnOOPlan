@@ -1,7 +1,7 @@
 import express, { type ErrorRequestHandler, type RequestHandler } from 'express';
 import multer from 'multer';
 import { createHash, randomUUID, timingSafeEqual } from 'node:crypto';
-import { resolve } from 'node:path';
+import { resolve, sep } from 'node:path';
 import { existsSync } from 'node:fs';
 import { Store, type PdfRecord } from './store.js';
 import { ApiError, assertProject, decodePdf, isPdf } from './validation.js';
@@ -158,9 +158,20 @@ export function createApp(options?: { dataDir?: string; authToken?: string }) {
     if (backup.manifest !== undefined) verifyRestoreManifest(backup.manifest, records);
     // A portable backup must supply every referenced original, even if one exists locally.
     assertProject(backup.project, id => ids.has(id));
-    const project = backup.project;
+    // PDF из IndexedDB (idb:) клиент ищет в браузере, поэтому сервер сохраняет их под
+    // своим id и переписывает ссылки этажей. Обычные серверные id не меняются.
+    const remap = new Map<string, string>();
+    const storedRecords = records.map(record => {
+      if (!record.id.startsWith('idb:')) return record;
+      const id = randomUUID();
+      remap.set(record.id, id);
+      return { ...record, id };
+    });
+    const project = remap.size
+      ? { ...backup.project, floors: backup.project.floors.map((floor: { pdfId?: string }) => floor.pdfId && remap.has(floor.pdfId) ? { ...floor, pdfId: remap.get(floor.pdfId) } : floor) }
+      : backup.project;
     store.transaction(() => {
-      for (const record of records) {
+      for (const record of storedRecords) {
         const existing = store.pdf(record.id);
         if (existing && (!existing.bytes.equals(record.bytes) || existing.name !== record.name)) throw new ApiError(409, `Конфликт PDF ID: ${record.id}`);
         if (!existing) store.savePdf(record);
@@ -172,8 +183,20 @@ export function createApp(options?: { dataDir?: string; authToken?: string }) {
   app.use('/api', (_req, _res, next) => { next(new ApiError(404, 'API endpoint не найден')); });
   const dist = resolve(process.cwd(), 'dist');
   if (existsSync(resolve(dist, 'index.html'))) {
-    app.use(express.static(dist));
-    app.use((req, res, next) => { if (req.method === 'GET' && req.accepts('html')) res.sendFile(resolve(dist, 'index.html')); else next(); });
+    // Хешированные ассеты Vite (assets/*) кэшируем надолго и immutable, index.html —
+    // no-cache, чтобы обновление подхватывалось без ручной очистки кэша.
+    app.use(express.static(dist, {
+      setHeaders: (res, filePath) => {
+        if (filePath.endsWith('.html')) res.setHeader('Cache-Control', 'no-cache');
+        else if (filePath.split(sep).includes('assets')) res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+      },
+    }));
+    app.use((req, res, next) => {
+      if (req.method === 'GET' && req.accepts('html')) {
+        res.setHeader('Cache-Control', 'no-cache');
+        res.sendFile(resolve(dist, 'index.html'));
+      } else next();
+    });
   }
   const errorHandler: ErrorRequestHandler = (error, _req, res, _next) => {
     if (res.headersSent) return;

@@ -6,7 +6,7 @@ import { diagnosticsText } from '../diagnostics';
 import { buildAttachmentManifest } from '../attachment-manifest';
 import { idbGet } from '../idb';
 import { exportSheets } from '../sheets';
-import { ANOOPLAN_EXTENSION, ANOOPLAN_MIME, buildAnoPlanFile, serializeAnoPlanFile } from '../project-file';
+import { ANOOPLAN_EXTENSION, ANOOPLAN_MIME, buildAnoPlanFile, safeFileBaseName, serializeAnoPlanFile } from '../project-file';
 import { JOURNAL_SECTIONS } from './constants';
 import { storageHealth } from '../storage-health';
 import { blobToBase64, bytesToBase64, nativeBridge, saveBlobOnDevice } from './native';
@@ -83,6 +83,7 @@ export function useExport(s: WorkspaceState, io: ProjectIo) {
   /** Единая сборка экспортного файла: используется и «Сохранить», и «Поделиться». */
   async function buildExportBlob(kind: 'csv' | 'xlsx' | 'pdf' | 'backup'): Promise<{ blob: Blob; fileName: string; warning: string }> {
     const current = projectRef.current;
+    const base = safeFileBaseName(current.name);
     const health = await storageHealth();
     if (health && health.ratio >= 0.9) throw new Error(`Мало свободного места (занято ${Math.round(health.ratio * 100)}%). Освободите хранилище или выгрузите проект перед экспортом.`);
     // Один клиентский экспорт для браузера и серверного режима: серверного /export больше нет.
@@ -90,21 +91,21 @@ export function useExport(s: WorkspaceState, io: ProjectIo) {
     if (kind === 'xlsx') {
       const { buildWorkbook } = await import('../export-xlsx');
       const blob = new Blob([buildWorkbook(exportSheets(current)) as unknown as BlobPart], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
-      return { blob, fileName: `${current.name}.xlsx`, warning: '' };
+      return { blob, fileName: `${base}.xlsx`, warning: '' };
     }
     if (kind === 'pdf') {
       const [{ buildJournalPdf }, { loadJournalFonts }] = await Promise.all([import('../export-pdf'), import('../export-fonts')]);
       const plans = await collectPlans(current, (done, total) => { if (total > 1) setMessage(`Планы: ${done} из ${total}…`); });
       const bytes = await buildJournalPdf(current, await loadJournalFonts(), { photos: await collectPhotos(current), pinPhotos: await collectPinPhotos(current), plans: plans.plans });
-      return { blob: new Blob([bytes as unknown as BlobPart], { type: 'application/pdf' }), fileName: `${current.name}.pdf`, warning: plans.warnings.join(' ') };
+      return { blob: new Blob([bytes as unknown as BlobPart], { type: 'application/pdf' }), fileName: `${base}.pdf`, warning: plans.warnings.join(' ') };
     }
     if (kind === 'backup') {
       const { pdfs, photos, warnings } = await collectProjectArchive(current);
       if (warnings.length) throw new Error(`Резервная копия неполная: ${warnings.join('; ')}. Освободите место и повторите.`);
       const manifest = await buildAttachmentManifest(pdfs, photos);
-      return { blob: new Blob([JSON.stringify({ schemaVersion: 2, project: current, pdfs, photos, manifest })], { type: 'application/json' }), fileName: `${current.name}.json`, warning: '' };
+      return { blob: new Blob([JSON.stringify({ schemaVersion: 2, project: current, pdfs, photos, manifest })], { type: 'application/json' }), fileName: `${base}.json`, warning: '' };
     }
-    return { blob: new Blob([clientCsv(current)], { type: 'text/csv;charset=utf-8' }), fileName: `${current.name}.csv`, warning: '' };
+    return { blob: new Blob([clientCsv(current)], { type: 'text/csv;charset=utf-8' }), fileName: `${base}.csv`, warning: '' };
   }
   async function download(kind: 'csv' | 'xlsx' | 'pdf' | 'backup') {
     const { blob, fileName, warning } = await buildExportBlob(kind);
@@ -144,7 +145,7 @@ export function useExport(s: WorkspaceState, io: ProjectIo) {
     if (warnings.length) throw new Error(`Файл .anooplan неполный: ${warnings.join('; ')}. Освободите место и повторите.`);
     const manifest = await buildAttachmentManifest(pdfs, photos);
     const json = serializeAnoPlanFile(buildAnoPlanFile(current, pdfs, photos, manifest));
-    return { blob: new Blob([json], { type: ANOOPLAN_MIME }), fileName: `${current.name}${ANOOPLAN_EXTENSION}` };
+    return { blob: new Blob([json], { type: ANOOPLAN_MIME }), fileName: `${safeFileBaseName(current.name)}${ANOOPLAN_EXTENSION}` };
   }
   async function saveAnoPlan(): Promise<void> {
     const { blob, fileName } = await buildAnoPlanBlob();

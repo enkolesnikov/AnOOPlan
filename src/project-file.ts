@@ -40,6 +40,20 @@ const isRecord = (value: unknown): value is Record<string, unknown> =>
 
 const trimmed = (value: unknown): string => (typeof value === 'string' ? value.trim() : '');
 
+/**
+ * Безопасное базовое имя файла экспорта: пробелы по краям срезаются,
+ * запрещённые в именах символы заменяются на «-», длинное имя обрезается,
+ * пустое имя становится «Проект». Расширение добавляет вызывающий код.
+ */
+export function safeFileBaseName(name: string): string {
+  const base = (typeof name === 'string' ? name : '')
+    .trim()
+    .replace(/[\\/:*?"<>|]/g, '-')
+    .slice(0, 120)
+    .trim();
+  return base || 'Проект';
+}
+
 /** Имя файла проекта: расширение `.anooplan` без учёта регистра. */
 export function isAnoPlanFileName(name: string): boolean {
   return typeof name === 'string' && name.trim().toLowerCase().endsWith(ANOOPLAN_EXTENSION);
