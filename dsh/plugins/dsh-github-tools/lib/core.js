@@ -8,13 +8,22 @@
  *
  * @module dsh-github-tools/core
  */
-import { existsSync, readFileSync, statSync } from 'node:fs';
+import { closeSync, fstatSync, openSync, readFileSync, realpathSync } from 'node:fs';
+import { constants } from 'node:fs';
 import { homedir } from 'node:os';
 import { basename, isAbsolute, join, relative, resolve, sep } from 'node:path';
 
 const DEFAULT_API_BASE = 'https://api.github.com';
+/** Хост загрузки ассетов публичного GitHub: upload_url приходит с него, а не с api.github.com. */
+const UPLOAD_HOST = 'uploads.github.com';
 /** Предел длины apiBase: защита от злоупотребления памятью и временем. */
 const MAX_API_BASE_LENGTH = 2048;
+
+export function trimTrailingSlashes(value) {
+  let end = value.length;
+  while (end > 0 && value.charCodeAt(end - 1) === 47 /* код '/' */) end -= 1;
+  return value.slice(0, end);
+}
 
 /**
  * Приводит базовый адрес GitHub API к виду без хвостовых слэшей.
@@ -37,13 +46,33 @@ export function normalizeBaseUrl(apiBase) {
   if (apiBase.length > MAX_API_BASE_LENGTH) {
     throw new RangeError(`apiBase длиннее ${MAX_API_BASE_LENGTH} символов — вероятно, это ошибка конфигурации`);
   }
-  let end = apiBase.length;
-  while (end > 0 && apiBase.charCodeAt(end - 1) === 47 /* код '/' */) end -= 1;
-  return apiBase.slice(0, end);
+  return trimTrailingSlashes(apiBase);
 }
 
 function baseUrl(config) {
   return normalizeBaseUrl(config.apiBase);
+}
+
+/**
+ * Проверяет, что upload_url ведёт на тот же хост, что и API (или на
+ * uploads.github.com для публичного GitHub). Без этого токен ушёл бы на любой
+ * хост из ответа API, а fetch стал бы SSRF-каналом.
+ * @returns {string} пустая строка — адрес допустим, иначе текст проблемы
+ */
+function uploadUrlProblem(uploadUrl, apiBase) {
+  let url;
+  let base;
+  try {
+    url = new URL(uploadUrl);
+    base = new URL(normalizeBaseUrl(apiBase));
+  } catch {
+    return 'upload_url: некорректный адрес';
+  }
+  const allowed = new Set([base.host]);
+  if (base.host === 'api.github.com') allowed.add(UPLOAD_HOST);
+  if (url.protocol !== base.protocol) return `upload_url: ожидается ${base.protocol}, получен ${url.protocol}`;
+  if (!allowed.has(url.host)) return `upload_url ведёт на чужой хост: ${url.host}`;
+  return '';
 }
 
 function credentialStoreToken() {
@@ -52,14 +81,20 @@ function credentialStoreToken() {
   // никогда не печатаем его; env имеет приоритет.
   const home = process.env.DSH_HOME || join(homedir(), '.dsh');
   const file = join(home, '.credentials.yaml');
-  if (!existsSync(file)) return '';
+  let text;
   try {
-    const text = readFileSync(file, 'utf8');
-    const match = /^\s*(?:GITHUB_TOKEN|GH_TOKEN):\s*(.+?)\s*$/m.exec(text);
-    return match ? match[1].trim().replace(/^['"]|['"]$/g, '') : '';
+    text = readFileSync(file, 'utf8');
   } catch {
+    // Файла нет или он недоступен — токена в хранилище нет.
     return '';
   }
+  // Построчный разбор: регэксп с /m и ленивым (.+?) на файле из переводов строк
+  // даёт квадратичный бэктрекинг (js/polynomial-redos). Размер ограничен.
+  for (const line of text.slice(0, 64 * 1024).split('\n')) {
+    const match = /^\s*(?:GITHUB_TOKEN|GH_TOKEN):\s*(.*)$/.exec(line);
+    if (match) return match[1].trim().replace(/^['"]|['"]$/g, '');
+  }
+  return '';
 }
 
 function authToken() {
@@ -122,53 +157,87 @@ export async function githubRelease(config, { tag = 'latest' } = {}) {
  * Почему содержимое локального файла уходит в сеть: это и есть цель функции —
  * прочитать релизный ассет (APK/PNG) и отправить его в GitHub Releases API.
  * Ограничения, которые делают это безопасным:
- *  - читается только файл внутри workspace (config.root или process.cwd()):
- *    путь нормализуется через resolve, побег за корень отклоняется до чтения;
- *  - назначение — только upload_url из ответа GitHub API по этому релизу,
- *    а не произвольный адрес из аргументов;
+ *  - файл обязан лежать внутри workspace (config.root или process.cwd()):
+ *    realpath раскрывает симлинки, побег за корень отклоняется до чтения;
+ *    дескриптор открывается с O_NOFOLLOW, размер и чтение идут из него же —
+ *    между проверкой и чтением нет окна (js/file-system-race);
+ *  - назначение — upload_url из ответа API, причём только на хост самого API
+ *    или uploads.github.com: токен не уйдёт на чужой хост (SSRF);
  *  - токен не логируется и не попадает ни в результат, ни в текст ошибок.
- * Алерт js/file-access-to-http подавлен точечно на вызовах ниже.
+ * Алерт js/file-access-to-http подавлен точечно на вызове загрузки.
  */
 export async function githubReleaseUpload(config, { tag, file, name, dryRun = false } = {}) {
   if (!tag) return { ok: false, problems: ['нужен tag релиза'] };
   if (!file) return { ok: false, problems: ['нужен file — путь к ассету'] };
   if (!authToken()) return { ok: false, problems: ['нет GH_TOKEN/GITHUB_TOKEN в окружении'] };
 
-  // workspace-корень и целевой файл нормализуются одним resolve. relative()
-  // после нормализации даёт '..'-путь или абсолютный путь при выходе за корень,
-  // поэтому startsWith-проверок по сырым строкам здесь нет.
-  const root = resolve(config.root || process.cwd());
-  const target = resolve(root, file);
+  let root;
+  try {
+    root = realpathSync(resolve(config.root || process.cwd()));
+  } catch (error) {
+    return { ok: false, problems: [`workspace недоступен: ${error.message}`] };
+  }
+  let target;
+  // Лексическая проверка до realpath: для несуществующего '../outside.apk'
+  // сообщение должно говорить о выходе из workspace, а не о ENOENT.
+  const lexical = resolve(root, file);
+  const lexicalRel = relative(root, lexical);
+  if (lexicalRel === '..' || lexicalRel.startsWith(`..${sep}`) || isAbsolute(lexicalRel)) {
+    return { ok: false, problems: [`файл вне workspace: ${file}`] };
+  }
+  try {
+    target = realpathSync(lexical);
+  } catch (error) {
+    if (error.code === 'ENOENT') return { ok: false, problems: [`файл не найден: ${file}`] };
+    return { ok: false, problems: [`файл недоступен: ${file}: ${error.message}`] };
+  }
   const rel = relative(root, target);
   if (rel === '..' || rel.startsWith(`..${sep}`) || isAbsolute(rel)) {
     return { ok: false, problems: [`файл вне workspace: ${file}`] };
   }
-  if (!existsSync(target)) return { ok: false, problems: [`файл не найден: ${file}`] };
 
-  const release = await request(config, releasePath(config, tag));
-  if (!release.ok) return { ok: false, problems: [`релиз ${tag}: GitHub API ${release.status}`] };
-  const uploadUrl = String(release.data.upload_url ?? '').split('{')[0];
-  if (!uploadUrl) return { ok: false, problems: ['у релиза нет upload_url'] };
-
-  const assetName = name || basename(target);
-  if (dryRun) {
-    return { ok: true, dryRun: true, tag, assetName, sizeBytes: statSync(target).size, uploadUrl: Boolean(uploadUrl), problems: [] };
-  }
-  const contentType = /\.png$/i.test(assetName) ? 'image/png'
-    : /\.apk$/i.test(assetName) ? 'application/vnd.android.package-archive'
-      : 'application/octet-stream';
-  const body = readFileSync(target);
+  let fd;
   try {
+    // O_NOFOLLOW: последний компонент не может быть симлинком (realpath его уже
+    // раскрыл, но подмена между realpath и open иначе была бы возможна).
+    fd = openSync(target, constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0));
+  } catch (error) {
+    return { ok: false, problems: [`файл недоступен: ${file}: ${error.message}`] };
+  }
+
+  try {
+    const stat = fstatSync(fd);
+    if (!stat.isFile()) return { ok: false, problems: [`не обычный файл: ${file}`] };
+    const sizeBytes = stat.size;
+
+    const release = await request(config, releasePath(config, tag));
+    if (!release.ok) return { ok: false, problems: [`релиз ${tag}: GitHub API ${release.status}`] };
+    const uploadUrl = String(release.data.upload_url ?? '').split('{')[0];
+    if (!uploadUrl) return { ok: false, problems: ['у релиза нет upload_url'] };
+    const urlProblem = uploadUrlProblem(uploadUrl, config.apiBase);
+    if (urlProblem) return { ok: false, problems: [urlProblem] };
+
+    const assetName = name || basename(target);
+    if (dryRun) {
+      return { ok: true, dryRun: true, tag, assetName, sizeBytes, uploadUrl: Boolean(uploadUrl), problems: [] };
+    }
+    const contentType = /\.png$/i.test(assetName) ? 'image/png'
+      : /\.apk$/i.test(assetName) ? 'application/vnd.android.package-archive'
+        : 'application/octet-stream';
+    // Читаем из уже проверенного дескриптора: путь между проверкой и чтением
+    // повторно не используется.
+    const body = readFileSync(fd);
     // codeql[js/file-access-to-http] — осознанная загрузка ассета в GitHub Releases (см. пояснение выше)
     const response = await fetch(`${uploadUrl}?name=${encodeURIComponent(assetName)}`, {
       method: 'POST',
-      headers: { // codeql[js/file-access-to-http] — осознанная загрузка ассета в GitHub Releases (см. пояснение выше)
+      headers: { // codeql[js/file-access-to-http] — уходит токен из credential store, назначение проверено выше
         Accept: 'application/vnd.github+json',
         Authorization: `Bearer ${authToken()}`,
         'Content-Type': contentType,
         'User-Agent': 'dsh-github-tools',
       },
-      body, // codeql[js/file-access-to-http] — осознанная загрузка ассета в GitHub Releases (см. пояснение выше)
+      body, // codeql[js/file-access-to-http] — тело — проверенный ассет из workspace
+      redirect: 'error',
       signal: AbortSignal.timeout(120_000),
     });
     if (!response.ok) {
@@ -179,10 +248,12 @@ export async function githubReleaseUpload(config, { tag, file, name, dryRun = fa
       ok: true,
       tag,
       asset: { name: asset.name, size: asset.size, state: asset.state, url: asset.browser_download_url },
-      localSize: statSync(target).size,
+      localSize: sizeBytes,
       problems: [],
     };
   } catch (error) {
     return { ok: false, problems: [`upload: ${error.message}`] };
+  } finally {
+    closeSync(fd);
   }
 }

@@ -41,7 +41,7 @@ export interface GithubReleaseUploadResult {
   assetName?: string;
   sizeBytes?: number;
   uploadUrl?: boolean;
-  asset?: GithubReleaseAsset & { url: string };
+  asset?: GithubReleaseAsset & { url?: string };
   localSize?: number;
   problems: string[];
 }
@@ -53,6 +53,9 @@ export interface GithubReleaseUploadResult {
  * @throws RangeError если строка длиннее 2048 символов
  */
 export function normalizeBaseUrl(apiBase?: unknown): string;
+
+/** Срезает хвостовые `/` линейным разбором (без регэкспа). */
+export function trimTrailingSlashes(value: string): string;
 
 /** Информация о релизе: активы, статус, ссылка. */
 export function githubRelease(

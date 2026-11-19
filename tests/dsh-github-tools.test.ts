@@ -5,11 +5,16 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
+import { mkdtemp, rm } from 'node:fs/promises';
+import { symlinkSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import type { AddressInfo } from 'node:net';
 import {
   githubRelease,
   githubReleaseUpload,
   normalizeBaseUrl,
+  trimTrailingSlashes,
 } from '../dsh/plugins/dsh-github-tools/lib/core.js';
 
 test('core.js экспортирует релизные инструменты', () => {
@@ -112,11 +117,110 @@ test('normalizeBaseUrl: миллион слэшей обрабатывается
   assert.throws(() => normalizeBaseUrl(huge), RangeError);
   const elapsed = performance.now() - started;
   assert.ok(elapsed < 50, `отклонение 1e6 слэшей заняло ${elapsed.toFixed(2)} мс`);
+});
 
-  // Линейность самого цикла среза на максимально допустимом входе.
-  const longTail = `${'a'.repeat(2044)}////`;
-  const trimStarted = performance.now();
-  assert.equal(normalizeBaseUrl(longTail).length, 2044);
-  const trimElapsed = performance.now() - trimStarted;
-  assert.ok(trimElapsed < 50, `срез 4 хвостовых слэшей занял ${trimElapsed.toFixed(2)} мс`);
+test('trimTrailingSlashes: линейный разбор миллиона слэшей', () => {
+  // Именно этот цикл заменяет регэксп: проверяем его на входе без лимита длины,
+  // иначе тест доказывал бы только работу лимита.
+  const huge = '/'.repeat(1_000_000);
+  const started = performance.now();
+  assert.equal(trimTrailingSlashes(huge), '');
+  const elapsed = performance.now() - started;
+  assert.ok(elapsed < 50, `срез 1e6 слэшей занял ${elapsed.toFixed(2)} мс`);
+  assert.equal(trimTrailingSlashes('https://api.github.com///'), 'https://api.github.com');
+  assert.equal(trimTrailingSlashes('https://ghe.example.com//api//v3'), 'https://ghe.example.com//api//v3');
+});
+
+test('githubReleaseUpload: симлинк из workspace наружу отклоняется', async (t) => {
+  const dir = await mkdtemp(join(tmpdir(), 'dsh-ws-'));
+  try {
+    const link = join(dir, 'leak.apk');
+    try {
+      symlinkSync('/etc/hostname', link);
+    } catch {
+      t.skip('нет прав на создание симлинка');
+      return;
+    }
+    const result = await githubReleaseUpload(
+      { repoSlug: 'example/repo', root: dir, apiBase: 'http://127.0.0.1:1' },
+      { tag: 'v1', file: 'leak.apk' },
+    );
+    assert.equal(result.ok, false);
+    assert.match(result.problems[0], /вне workspace/);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('githubReleaseUpload: чужой upload_url отклоняется до отправки токена', async () => {
+  const server = createServer((_req, res) => {
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    // upload_url ведёт на другой порт — это не хост API.
+    res.end(JSON.stringify({ tag_name: 'v1', upload_url: 'http://127.0.0.1:1/upload{?name}', assets: [] }));
+  });
+  await new Promise<void>((resolve) => { server.listen(0, '127.0.0.1', resolve); });
+  const previous = process.env.GH_TOKEN;
+  process.env.GH_TOKEN = 'test-token-not-used';
+  try {
+    const { port } = server.address() as AddressInfo;
+    const result = await githubReleaseUpload(
+      { repoSlug: 'example/repo', apiBase: `http://127.0.0.1:${port}`, root: process.cwd() },
+      { tag: 'v1', file: 'tests/dsh-github-tools.test.ts' },
+    );
+    assert.equal(result.ok, false);
+    assert.match(result.problems[0], /чужой хост/);
+  } finally {
+    if (previous === undefined) delete process.env.GH_TOKEN;
+    else process.env.GH_TOKEN = previous;
+    await new Promise<void>((resolve, reject) => {
+      server.close(error => (error ? reject(error) : resolve()));
+    });
+  }
+});
+
+test('githubReleaseUpload: загружает ассет с типом apk и Bearer-токеном', async () => {
+  const captured: { url: string; auth: string; contentType: string; bytes: Buffer }[] = [];
+  const server = createServer((req, res) => {
+    const { port } = server.address() as AddressInfo;
+    if (req.method !== 'POST') {
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ tag_name: 'v1', upload_url: `http://127.0.0.1:${port}/upload{?name,label}`, assets: [] }));
+      return;
+    }
+    const chunks: Buffer[] = [];
+    req.on('data', chunk => chunks.push(chunk as Buffer));
+    req.on('end', () => {
+      const bytes = Buffer.concat(chunks);
+      captured.push({ url: req.url ?? '', auth: String(req.headers.authorization), contentType: String(req.headers['content-type']), bytes });
+      res.writeHead(201, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ name: 'asset.apk', size: bytes.length, state: 'uploaded', browser_download_url: 'https://example.test/asset.apk' }));
+    });
+  });
+  await new Promise<void>((resolve) => { server.listen(0, '127.0.0.1', resolve); });
+  const dir = await mkdtemp(join(tmpdir(), 'dsh-upload-'));
+  const previous = process.env.GH_TOKEN;
+  process.env.GH_TOKEN = 'test-token-not-used';
+  try {
+    const payload = Buffer.from('fake-apk-bytes');
+    writeFileSync(join(dir, 'asset.apk'), payload);
+    const { port } = server.address() as AddressInfo;
+    const result = await githubReleaseUpload(
+      { repoSlug: 'example/repo', apiBase: `http://127.0.0.1:${port}`, root: dir },
+      { tag: 'v1', file: 'asset.apk' },
+    );
+    assert.equal(result.ok, true, JSON.stringify(result.problems));
+    assert.equal(captured.length, 1);
+    assert.match(captured[0].url, /^\/upload\?name=asset\.apk/);
+    assert.equal(captured[0].contentType, 'application/vnd.android.package-archive');
+    assert.equal(captured[0].auth, 'Bearer test-token-not-used');
+    assert.deepEqual(captured[0].bytes, payload);
+    assert.equal(result.localSize, payload.length);
+  } finally {
+    if (previous === undefined) delete process.env.GH_TOKEN;
+    else process.env.GH_TOKEN = previous;
+    await rm(dir, { recursive: true, force: true });
+    await new Promise<void>((resolve, reject) => {
+      server.close(error => (error ? reject(error) : resolve()));
+    });
+  }
 });
