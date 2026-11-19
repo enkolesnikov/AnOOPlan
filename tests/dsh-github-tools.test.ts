@@ -133,6 +133,8 @@ test('trimTrailingSlashes: линейный разбор миллиона слэ
 
 test('githubReleaseUpload: симлинк из workspace наружу отклоняется', async (t) => {
   const dir = await mkdtemp(join(tmpdir(), 'dsh-ws-'));
+  const previous = process.env.GH_TOKEN;
+  process.env.GH_TOKEN = 'test-token-not-used';
   try {
     const link = join(dir, 'leak.apk');
     try {
@@ -148,6 +150,8 @@ test('githubReleaseUpload: симлинк из workspace наружу откло
     assert.equal(result.ok, false);
     assert.match(result.problems[0], /вне workspace/);
   } finally {
+    if (previous === undefined) delete process.env.GH_TOKEN;
+    else process.env.GH_TOKEN = previous;
     await rm(dir, { recursive: true, force: true });
   }
 });
