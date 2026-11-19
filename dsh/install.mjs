@@ -8,15 +8,21 @@
  *   3) включает плагин в dsh.profile.bundles профиля (с резервной копией);
  *   4) проверяет, что dsh --dump-config видит все плагины, иначе откатывает bundle.
  *
+ * Профиль и его резервная копия пишутся атомарно: содержимое уходит во временный
+ * файл в том же каталоге (openSync с флагом 'wx' — O_EXCL), затем renameSync
+ * поверх цели. Проверок «существует ли файл» перед записью нет, поэтому файл
+ * не может подмениться между проверкой и использованием (js/file-system-race).
+ *
  * Использование: node dsh/install.mjs [--profile web] [--dry-run]
  */
 import { execFileSync } from 'node:child_process';
+import { randomUUID } from 'node:crypto';
 import {
-  copyFileSync, existsSync, lstatSync, mkdirSync, readFileSync, readdirSync,
-  readlinkSync, symlinkSync, writeFileSync,
+  chmodSync, closeSync, fsyncSync, lstatSync, mkdirSync, openSync, readFileSync,
+  readdirSync, readlinkSync, renameSync, statSync, symlinkSync, unlinkSync, writeSync,
 } from 'node:fs';
 import { homedir } from 'node:os';
-import { dirname, join, resolve } from 'node:path';
+import { basename, dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
@@ -37,18 +43,74 @@ function fail(message) {
   process.exit(1);
 }
 
-if (!existsSync(join(repoRoot, 'package.json'))) {
-  fail(`${repoRoot} не похож на корень репозитория AnOOPlan`);
+/**
+ * Атомарная замена файла: временный файл создаётся эксклюзивно в том же
+ * каталоге (openSync 'wx' = O_CREAT|O_EXCL, без проверки существования),
+ * данные сбрасываются на диск, затем renameSync заменяет цель одним шагом.
+ * Права выставляются после rename: umask мог урезать mode при создании.
+ * При любой ошибке временный файл удаляется, цель остаётся нетронутой.
+ */
+function atomicWrite(targetPath, content, mode = 0o644) {
+  const tmpPath = join(dirname(targetPath), `.${basename(targetPath)}.${randomUUID()}.tmp`);
+  let fd = null;
+  let replaced = false;
+  try {
+    fd = openSync(tmpPath, 'wx', mode);
+    writeSync(fd, content);
+    fsyncSync(fd);
+    closeSync(fd);
+    fd = null;
+    renameSync(tmpPath, targetPath);
+    replaced = true;
+    chmodSync(targetPath, mode);
+  } finally {
+    if (fd !== null) {
+      try {
+        closeSync(fd);
+      } catch {
+        // дескриптор уже закрыт — освобождать нечего
+      }
+    }
+    if (!replaced) {
+      try {
+        unlinkSync(tmpPath);
+      } catch {
+        // временного файла нет: openSync его не создал
+      }
+    }
+  }
 }
-if (!existsSync(pluginRoot)) fail(`нет каталога плагинов: ${pluginRoot}`);
 
-const plugins = readdirSync(pluginRoot, { withFileTypes: true })
-  .filter(entry => entry.isDirectory() && existsSync(join(pluginRoot, entry.name, 'package.json')))
-  .map(entry => {
-    const dir = join(pluginRoot, entry.name);
-    const pkg = JSON.parse(readFileSync(join(dir, 'package.json'), 'utf8'));
-    return { dir, name: pkg.name, description: pkg.description ?? '' };
-  });
+try {
+  readFileSync(join(repoRoot, 'package.json'));
+} catch (error) {
+  if (error.code === 'ENOENT') fail(`${repoRoot} не похож на корень репозитория AnOOPlan`);
+  throw error;
+}
+
+let pluginEntries;
+try {
+  pluginEntries = readdirSync(pluginRoot, { withFileTypes: true });
+} catch (error) {
+  if (error.code === 'ENOENT') fail(`нет каталога плагинов: ${pluginRoot}`);
+  throw error;
+}
+
+const plugins = [];
+for (const entry of pluginEntries) {
+  if (!entry.isDirectory()) continue;
+  const dir = join(pluginRoot, entry.name);
+  let source;
+  try {
+    source = readFileSync(join(dir, 'package.json'), 'utf8');
+  } catch (error) {
+    // Каталог без package.json — просто не плагин.
+    if (error.code === 'ENOENT') continue;
+    throw error;
+  }
+  const pkg = JSON.parse(source);
+  plugins.push({ dir, name: pkg.name, description: pkg.description ?? '' });
+}
 if (plugins.length === 0) fail('в dsh/plugins нет плагинов с package.json');
 
 const localPlugins = join(home, '.dsh', 'local-plugins');
@@ -64,21 +126,18 @@ if (dryRun) {
 
 mkdirSync(localPlugins, { recursive: true });
 for (const plugin of links) {
-  let isSymlink = false;
   try {
-    isSymlink = lstatSync(plugin.link).isSymbolicLink();
-  } catch {
-    // ссылки ещё нет — создадим ниже
-  }
-  if (isSymlink) {
+    symlinkSync(plugin.dir, plugin.link, 'dir');
+    log(`симлинк создан: ${plugin.name}`);
+  } catch (error) {
+    // Ссылка уже есть: разбираемся по факту, без проверки «до».
+    if (error.code !== 'EEXIST') throw error;
+    if (!lstatSync(plugin.link).isSymbolicLink()) {
+      fail(`${plugin.link} существует и это не симлинк — не трогаю`);
+    }
     const target = resolve(localPlugins, readlinkSync(plugin.link));
     if (target !== plugin.dir) fail(`${plugin.link} уже ведёт в ${target}; уберите его вручную`);
     log(`симлинк уже на месте: ${plugin.name}`);
-  } else if (existsSync(plugin.link)) {
-    fail(`${plugin.link} существует и это не симлинк — не трогаю`);
-  } else {
-    symlinkSync(plugin.dir, plugin.link, 'dir');
-    log(`симлинк создан: ${plugin.name}`);
   }
 }
 
@@ -89,8 +148,15 @@ execFileSync(dshBin, ['plugin', '--profile', profile, 'add', ...links.map(plugin
 
 const profileDir = join(home, '.dsh', 'profiles', profile);
 const profilePkgPath = join(profileDir, 'package.json');
-if (!existsSync(profilePkgPath)) fail(`нет профиля ${profile}: ${profilePkgPath}`);
-const profilePkg = JSON.parse(readFileSync(profilePkgPath, 'utf8'));
+let profileSource;
+try {
+  profileSource = readFileSync(profilePkgPath, 'utf8');
+} catch (error) {
+  if (error.code === 'ENOENT') fail(`нет профиля ${profile}: ${profilePkgPath}`);
+  throw error;
+}
+const profileMode = statSync(profilePkgPath).mode & 0o777;
+const profilePkg = JSON.parse(profileSource);
 profilePkg.dsh ??= {};
 profilePkg.dsh.profile ??= {};
 profilePkg.dsh.profile.bundles ??= [];
@@ -99,9 +165,11 @@ const missing = links.map(plugin => plugin.name).filter(name => !bundles.include
 let backup = null;
 if (missing.length > 0) {
   backup = `${profilePkgPath}.before-dsh-tools`;
-  copyFileSync(profilePkgPath, backup);
+  // Резервная копия — точные исходные байты профиля, снятые до правки;
+  // существующий бэкап заменяется атомарно, как и сам профиль.
+  atomicWrite(backup, profileSource, profileMode);
   bundles.push(...missing);
-  writeFileSync(profilePkgPath, `${JSON.stringify(profilePkg, null, 2)}\n`);
+  atomicWrite(profilePkgPath, `${JSON.stringify(profilePkg, null, 2)}\n`, profileMode);
   log(`bundle добавлены: ${missing.join(', ')} (резервная копия ${backup})`);
 } else {
   log('все плагины уже включены в bundles');
@@ -117,7 +185,7 @@ try {
   log('профиль видит все плагины.');
 } catch (error) {
   if (backup !== null) {
-    copyFileSync(backup, profilePkgPath);
+    atomicWrite(profilePkgPath, readFileSync(backup, 'utf8'), profileMode);
     log(`проверка не прошла, bundle откатаны: ${error.message}`);
   }
   fail('установка не завершена.');
