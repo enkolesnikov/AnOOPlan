@@ -85,6 +85,16 @@ test('позиция без size — универсальная для любо�
   assert.deepEqual(trays.warnings, []);
 });
 
+test('смета, как и спецификация, допускает цену группы для своего типа', () => {
+  const result = estimate(project([route('Т1', [segment('s1', vertex('a', 0, 0), vertex('b', 100, 0))], { type: 'Гофра ПВХ', trayWidthMm: 20 })], [
+    priceItem('g1', { kind: 'tray', name: 'Гофра', unit: 'м', price: 50, size: 'Ø20' }),
+  ]));
+  const line = result.sections.find(section => section.kind === 'tray')!.lines[0];
+  assert.equal(line.price, 50, 'цена группы «Гофра» должна найтись для типа «Гофра ПВХ»');
+  assert.equal(line.quantity, 10);
+  assert.equal(line.total, 500);
+});
+
 test('пустая трасса не добавляет строку 0 м и не обнуляет раздел', () => {
   const result = estimate(project([route('Т1', [])], []));
   const traySection = result.sections.find(section => section.kind === 'tray')!;

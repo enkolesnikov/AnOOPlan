@@ -230,7 +230,7 @@ function trayLines(project: Project): { lines: EstimateLine[]; warnings: string[
   const warnings: string[] = [];
   // Метраж агрегируется по типу и эффективному сечению: у одной трассы и даже
   // одной подсистемы могут быть разные лотки, и каждый оценивается своей ценой.
-  const rows: { type: string; section: string; quantity: number | null }[] = [];
+  const rows: { type: string; group: string; section: string; quantity: number | null }[] = [];
   for (const route of routeSummary(project).routes) {
     // Пустая трасса не несёт материала: иначе она добавляет строку 0 м и,
     // если её типа нет в прайсе, обнуляет весь раздел «Лотки».
@@ -240,13 +240,15 @@ function trayLines(project: Project): { lines: EstimateLine[]; warnings: string[
       : [{ section: '—', length: route.length, segments: 0, overridden: false }];
     for (const part of sections) {
       let row = rows.find(item => item.type === route.type && item.section === part.section);
-      if (!row) { row = { type: route.type, section: part.section, quantity: 0 }; rows.push(row); }
+      if (!row) { row = { type: route.type, group: route.group, section: part.section, quantity: 0 }; rows.push(row); }
       row.quantity = row.quantity === null || part.length === null ? null : row.quantity + part.length;
     }
   }
   for (const row of rows) {
     const quantity = finite(row.quantity) ? row.quantity : null;
-    const priceMatch = resolveTrayPrice(catalog, row.type, row.section);
+    // Как и спецификация КНС, допускаем позицию группы («Гофра» для «Гофра ПВХ»).
+    let priceMatch = resolveTrayPrice(catalog, row.type, row.section);
+    if (!priceMatch.item && !priceMatch.sizeMissing) priceMatch = resolveTrayPrice(catalog, row.group, row.section);
     const price = catalogItemPrice(priceMatch.item);
     const total = quantity === null || price === null ? null : quantity * price;
     if (quantity === null) warnings.push(`Смета: по трассе «${row.type}» неполный расчёт — длина неизвестна`);
