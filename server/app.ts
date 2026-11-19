@@ -161,7 +161,11 @@ export function createApp(options?: { dataDir?: string; authToken?: string }) {
     // PDF из IndexedDB (idb:) клиент ищет в браузере, поэтому сервер сохраняет их под
     // своим id и переписывает ссылки этажей. Обычные серверные id не меняются.
     const remap = new Map<string, string>();
-    const storedRecords = records.map(record => {
+    // Сохраняем только PDF, на которые ссылается хотя бы один этаж: вложения
+    // без ссылок остались бы сиротами, а GC серверных проектов появится в 3.0.
+    const referenced = new Set<string>(backup.project.floors.flatMap((floor: { pdfId?: string }) =>
+      floor.pdfId && !floor.pdfId.startsWith('data:') ? [floor.pdfId] : []));
+    const storedRecords = records.filter(record => referenced.has(record.id)).map(record => {
       if (!record.id.startsWith('idb:')) return record;
       // Содержимое-адресный id: повторное восстановление того же файла
       // переиспользует PDF, а не плодит сирот с новым randomUUID.
@@ -175,7 +179,12 @@ export function createApp(options?: { dataDir?: string; authToken?: string }) {
     store.transaction(() => {
       for (const record of storedRecords) {
         const existing = store.pdf(record.id);
-        if (existing && (!existing.bytes.equals(record.bytes) || existing.name !== record.name)) throw new ApiError(409, `Конфликт PDF ID: ${record.id}`);
+        // Для content-addressed id (sha256) имя — метаданные: байты уже те же.
+        // Обычный серверный id с другим именем — конфликт, как раньше.
+        const contentAddressed = /^[0-9a-f]{64}$/.test(record.id);
+        if (existing && (!existing.bytes.equals(record.bytes) || (!contentAddressed && existing.name !== record.name))) {
+          throw new ApiError(409, `Конфликт PDF ID: ${record.id}`);
+        }
         if (!existing) store.savePdf(record);
       }
       store.save(project);

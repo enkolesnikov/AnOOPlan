@@ -113,6 +113,23 @@ test('restore: висячий idb:-id без PDF отклоняется', async 
   } finally { await h.close(); }
 });
 
+test('restore: PDF без ссылки из этажей не сохраняется сиротой', async () => {
+  const h = await harness();
+  try {
+    const orphan = 'idb:44444444-4444-4444-4444-444444444444';
+    const backup = {
+      schemaVersion: 2,
+      project: fixture(),
+      pdfs: [{ id: orphan, name: 'plan.pdf', dataBase64: pdf.toString('base64') }],
+      photos: [],
+      manifest: manifestFor(orphan),
+    };
+    assert.equal((await h.request('/api/restore', 'POST', backup)).status, 201);
+    const hash = createHash('sha256').update(pdf).digest('hex');
+    assert.equal((await h.request('/api/pdfs/' + hash)).status, 404, 'непривязанный PDF сохранён');
+  } finally { await h.close(); }
+});
+
 test('restore: обычные серверные id PDF не переименовываются', async () => {
   const h = await harness();
   try {
