@@ -36,6 +36,10 @@ test('release-гейт закрепляет инструменты Android по 
   assert.match(verify, /sha256sum/);
   assert.match(read('.github/workflows/android-release.yml'), /bash scripts\/verify-tools\.sh/);
   assert.match(read('.github/workflows/android-apk.yml'), /bash scripts\/verify-tools\.sh/);
+  // Переопределение версии/URL не должно молча обходить проверку.
+  const fetch = read('scripts/fetch-tools.sh');
+  assert.match(fetch, /VERIFY_TOOLS_ALLOW_CUSTOM/);
+  assert.match(fetch, /Нестандартные инструменты без VERIFY_TOOLS_ALLOW_CUSTOM=1 запрещены/);
 });
 
 test('пароль keystore не передаётся аргументом командной строки', () => {
