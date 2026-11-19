@@ -4,8 +4,12 @@ import { TRAY_FILL_RECOMMENDED_PERCENT, cableSection, trayFill } from './tray-fi
 
 /**
  * Подбор минимального стандартного сечения КНС по кабелям трассы и по
- * отдельным сегментам с переопределением. Вынесено из `src/engine.ts` без
- * изменения поведения.
+ * отдельным сегментам с переопределением.
+ *
+ * Подбор опирается только на анализируемые сегменты (все без своего сечения —
+ * для трассы, ровно один — для сегмента). Если по ним есть неполные данные
+ * (неизвестное сечение или количество кабеля), рекомендация не выдаётся:
+ * расчёт по части кабелей занизил бы сечение.
  */
 
 export interface RouteSectionSuggestion {
@@ -17,12 +21,8 @@ export interface RouteSectionSuggestion {
   label: string;
 }
 
-/** Эквивалентный диаметр кабеля по площади сечения (для проверки проходимости). */
-const cableEquivalentDiameter = (cable: Cable): number | null => {
-  const section = cableSection(cable);
-  if (section.areaMm2 === null) return null;
-  return Math.sqrt(4 * section.areaMm2 / Math.PI);
-};
+/** Количество кабеля задано корректно (как в tray-fill: целое положительное). */
+const validQuantity = (cable: Cable): boolean => Number.isInteger(cable.quantity) && cable.quantity > 0;
 
 /** Минимальное стандартное сечение под заданную занятую площадь и самый толстый кабель. */
 function pickStandardSection(used: number, route: Route, maxCableDiameter: number): RouteSectionSuggestion | null {
@@ -46,39 +46,70 @@ function pickStandardSection(used: number, route: Route, maxCableDiameter: numbe
   return null;
 }
 
-/** Максимальная занятая площадь по сегментам с заданным фильтром; null — кабелей без сечения нет. */
-function usedAreaOf(project: Project, route: Route, predicate: (segment: Segment) => boolean): number {
-  const fill = trayFill(project);
-  const relevant = new Set(route.segments.filter(predicate).map(segment => segment.id));
-  const used = fill.segments
-    .filter(row => row.routeId === route.id && relevant.has(row.segmentId) && row.usedAreaMm2 !== null)
-    .map(row => row.usedAreaMm2 as number);
-  return used.length ? Math.max(...used) : 0;
+interface SegmentAnalysis {
+  usedAreaMm2: number;
+  /** Эквивалентный диаметр самого толстого кабеля на анализируемых сегментах. */
+  thickestCableDiameterMm: number;
 }
 
-/** Самый толстый кабель по эквивалентному диаметру среди кабелей трассы. */
-function thickestCableDiameter(project: Project, route: Route): number {
-  const segmentIds = new Set(route.segments.map(segment => segment.id));
-  const routeCables = project.cables.filter(cable => cable.segmentIds.some(id => segmentIds.has(id)));
-  return Math.max(0, ...routeCables.map(cableEquivalentDiameter).filter((value): value is number => value !== null));
+/**
+ * Занятая площадь и самый толстый кабель только по выбранным сегментам трассы.
+ * null — данных недостаточно: неполная fill-строка, неизвестное сечение или
+ * количество кабеля. Кабели соседних сегментов и других трасс не учитываются.
+ */
+function analyseSegments(project: Project, route: Route, predicate: (segment: Segment) => boolean): SegmentAnalysis | null {
+  const segments = route.segments.filter(predicate);
+  if (!segments.length) return null;
+  const segmentIds = new Set(segments.map(segment => segment.id));
+  const fill = trayFill(project);
+  const rows = new Map(
+    fill.segments
+      .filter(row => row.routeId === route.id && segmentIds.has(row.segmentId))
+      .map(row => [row.segmentId, row]),
+  );
+  let usedAreaMm2 = 0;
+  for (const segment of segments) {
+    const row = rows.get(segment.id);
+    // Нет строки — сегмент не рассчитан (например, трасса не входит в проект).
+    if (!row) return null;
+    // Неполнота данных о кабелях. Статус 'incomplete' сам по себе не отказ: он бывает
+    // и когда не задано текущее сечение КНС, а занятая площадь при этом известна —
+    // именно для такого случая подбор и нужен.
+    if (row.usedAreaMm2 === null || row.unknownCables > 0) return null;
+    usedAreaMm2 = Math.max(usedAreaMm2, row.usedAreaMm2);
+  }
+  const cables = project.cables.filter(cable => cable.segmentIds.some(id => segmentIds.has(id)));
+  let thickestCableDiameterMm = 0;
+  for (const cable of cables) {
+    const section = cableSection(cable);
+    if (section.areaMm2 === null || !validQuantity(cable)) return null;
+    const diameter = Math.sqrt(4 * section.areaMm2 / Math.PI);
+    thickestCableDiameterMm = Math.max(thickestCableDiameterMm, diameter);
+  }
+  return { usedAreaMm2, thickestCableDiameterMm };
 }
 
 /**
  * Подбор минимального стандартного сечения КНС по кабелям трассы:
  * заполнение не выше рекомендуемых 40 %, для круглых КНС диаметр не меньше
- * эквивалентного диаметра самого толстого кабеля.
+ * эквивалентного диаметра самого толстого кабеля на тех же сегментах.
  * Учитываются только сегменты без собственного сечения: сегменты с переопределением
  * подбираются отдельно (`suggestSegmentSection`), иначе предложение их не изменит.
+ * Неполные данные по этим сегментам — null, а не рекомендация по части кабелей.
  */
 export function suggestRouteSection(project: Project, route: Route): RouteSectionSuggestion | null {
-  const used = usedAreaOf(project, route, segment => !hasSectionOverride(segment));
-  if (!(used > 0)) return null;
-  return pickStandardSection(used, route, thickestCableDiameter(project, route));
+  const analysis = analyseSegments(project, route, segment => !hasSectionOverride(segment));
+  if (!analysis || !(analysis.usedAreaMm2 > 0)) return null;
+  return pickStandardSection(analysis.usedAreaMm2, route, analysis.thickestCableDiameterMm);
 }
 
-/** Подбор стандартного сечения для одного сегмента с переопределением. */
+/**
+ * Подбор стандартного сечения для одного сегмента с переопределением:
+ * по кабелям, проходящим через этот сегмент, и с ограничением по их диаметру.
+ * Неполные данные по сегменту — null.
+ */
 export function suggestSegmentSection(project: Project, route: Route, segment: Segment): RouteSectionSuggestion | null {
-  const used = usedAreaOf(project, route, item => item.id === segment.id);
-  if (!(used > 0)) return null;
-  return pickStandardSection(used, route, thickestCableDiameter(project, route));
+  const analysis = analyseSegments(project, route, item => item.id === segment.id);
+  if (!analysis || !(analysis.usedAreaMm2 > 0)) return null;
+  return pickStandardSection(analysis.usedAreaMm2, route, analysis.thickestCableDiameterMm);
 }
