@@ -22,8 +22,10 @@ export function normalizePriceSize(value: unknown): string {
     .replace(/диаметр/g, 'd')
     .replace(/[ø⌀]/g, 'd')
     .replace(/[xх×]/g, '×')
-    .replace(/\s+/g, '')
     .replace(/²/g, '2')
+    .replace(/мм2|мм/g, '')
+    .replace(/[\s=]/g, '')
+    .replace(/^s/, '')
     .replace(/^d(?=\d)/, '');
 }
 
@@ -41,8 +43,8 @@ export interface TrayPriceResolution {
  */
 export function resolveTrayPrice(catalog: PriceItem[] | undefined, name: string, section: string): TrayPriceResolution {
   const target = (typeof name === 'string' ? name : '').trim().toLowerCase();
-  if (!target) return { item: null, sizeMissing: false };
-  const entries = (catalog ?? []).filter(item =>
+  if (!target || !Array.isArray(catalog)) return { item: null, sizeMissing: false };
+  const entries = catalog.filter(item =>
     item && item.kind === 'tray' && typeof item.name === 'string' && item.name.trim().toLowerCase() === target);
   if (!entries.length) return { item: null, sizeMissing: false };
   const wanted = normalizePriceSize(section);
@@ -87,7 +89,7 @@ export function specificationKnS(project: Project): KnSSpecification {
   const catalog = project.catalog ?? [];
   for (const route of project.routes) {
     const row = summary.routes.find(item => item.id === route.id);
-    if (!row) continue;
+    if (!row || !route.segments.length) continue;
     const subsystem = routeSubsystemLabel(route);
     // Сечения могут различаться по сегментам: в спецификацию входит метраж каждого сечения.
     const sections = row.sections.length
@@ -97,6 +99,8 @@ export function specificationKnS(project: Project): KnSSpecification {
     // (наибольший метраж), чтобы не задваивать количество углов в разных строках.
     const primary = sections.reduce((best, item, index) => ((item.length ?? -1) > (sections[best].length ?? -1) ? index : best), 0);
     sections.forEach((item, index) => {
+      // Нулевой участок не несёт материала и не должен делать строку с ценой неизвестной.
+      if (item.length === 0) return;
       const angles = row.group === 'Кабель-канал' && index === primary ? row.angles.total : 0;
       const typeName = route.type.trim() || row.group;
       const existing = lines.find(line => line.name === typeName && line.section === item.section && line.subsystem === subsystem);
@@ -110,9 +114,10 @@ export function specificationKnS(project: Project): KnSSpecification {
       // Сначала ищем позицию по конкретному типу трассы и сечению, затем по группе (например, «Гофра»).
       // Позиция с чужим size не подменяется первой ценой: такая строка остаётся без цены.
       let priceMatch = resolveTrayPrice(catalog, route.type, item.section);
-      if (!priceMatch.item && !priceMatch.sizeMissing) {
+      if (!priceMatch.item) {
+        // Группа может дать точное сечение, даже если у своего типа был только чужой size.
         const byGroup = resolveTrayPrice(catalog, row.group, item.section);
-        if (byGroup.item || byGroup.sizeMissing) priceMatch = byGroup;
+        if (byGroup.item || !priceMatch.sizeMissing) priceMatch = byGroup;
       }
       const match = priceMatch.item;
       if (priceMatch.sizeMissing) {
@@ -141,7 +146,8 @@ export function specificationKnS(project: Project): KnSSpecification {
     group.length = group.length === null || line.quantity === null ? null : group.length + line.quantity;
     group.angles += line.angles;
   }
-  const complete = lines.length > 0 && lines.every(line => line.cost !== null);
+  // Нет строк — нет материалов: стоимость 0, а не «неизвестно».
+  const complete = lines.every(line => line.cost !== null);
   const totalCost = complete ? lines.reduce((sum, line) => sum + (line.cost as number), 0) : null;
   if (lines.some(line => line.price === null)) warnings.push('Для части КНС нет цены в справочнике — стоимость не рассчитана.');
   return { lines, totals, totalCost, warnings };

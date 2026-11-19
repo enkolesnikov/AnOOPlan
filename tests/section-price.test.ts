@@ -95,6 +95,37 @@ test('смета, как и спецификация, допускает цен�
   assert.equal(line.total, 500);
 });
 
+test('пустая трасса: смета и спецификация одинаково дают 0, а не null', () => {
+  const p = project([route('Т1', [])], [trayPrice('p1', '100×50', 480)]);
+  const result = estimate(p);
+  const spec = specificationKnS(p);
+  assert.deepEqual(spec.lines, []);
+  assert.equal(spec.totalCost, 0);
+  assert.equal(result.sections.find(section => section.kind === 'tray')!.total, 0);
+});
+
+test('сегмент нулевой длины не обнуляет смету', () => {
+  const zero = segment('s0', vertex('a', 0, 0), vertex('b', 0, 0));
+  const p = project([route('Т1', [zero])], [trayPrice('p1', '100×50', 480)]);
+  const result = estimate(p);
+  const spec = specificationKnS(p);
+  assert.deepEqual(result.sections.find(section => section.kind === 'tray')!.lines, []);
+  assert.deepEqual(spec.lines, []);
+  assert.equal(spec.totalCost, 0);
+});
+
+test('дубли ID сегментов не удваивают метраж и стоимость', () => {
+  const p = project([
+    route('Т1', [
+      segment('dup', vertex('a', 0, 0), vertex('b', 100, 0)),
+      segment('dup', vertex('b', 100, 0), vertex('c', 200, 0)),
+    ]),
+  ], [trayPrice('p1', undefined, 480)]);
+  const line = estimate(p).sections.find(section => section.kind === 'tray')!.lines[0];
+  assert.equal(line.quantity, null, 'невалидный проект не должен давать конечный метраж');
+  assert.equal(line.total, null);
+});
+
 test('пустая трасса не добавляет строку 0 м и не обнуляет раздел', () => {
   const result = estimate(project([route('Т1', [])], []));
   const traySection = result.sections.find(section => section.kind === 'tray')!;
@@ -110,6 +141,8 @@ test('normalizePriceSize: регистр, пробелы, x/х/× и диаме�
   assert.equal(normalizePriceSize('Ø 20'), normalizePriceSize('20'));
   assert.equal(normalizePriceSize('d20'), normalizePriceSize('Ø20'));
   assert.equal(normalizePriceSize('S=500 мм²'), normalizePriceSize('s=500 мм2'));
+  assert.equal(normalizePriceSize('S=500 мм²'), normalizePriceSize('500'));
+  assert.equal(normalizePriceSize('Ø20 мм'), normalizePriceSize('20'));
   assert.equal(normalizePriceSize('Диаметр 20'), normalizePriceSize('Ø20'));
 });
 

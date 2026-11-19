@@ -1,5 +1,6 @@
 import type { PriceItem, PriceKind, Project } from './model';
 import { calculateCable, routeSummary } from './engine';
+import { segmentIndex } from './engine/geometry';
 import { resolveTrayPrice } from './engine/specification';
 
 /**
@@ -231,24 +232,32 @@ function trayLines(project: Project): { lines: EstimateLine[]; warnings: string[
   // Метраж агрегируется по типу и эффективному сечению: у одной трассы и даже
   // одной подсистемы могут быть разные лотки, и каждый оценивается своей ценой.
   const rows: { type: string; group: string; section: string; quantity: number | null }[] = [];
+  // Дубли ID — уже невалидный проект; смета не должна молча удваивать метраж.
+  const { duplicates } = segmentIndex(project);
   for (const route of routeSummary(project).routes) {
     // Пустая трасса не несёт материала: иначе она добавляет строку 0 м и,
     // если её типа нет в прайсе, обнуляет весь раздел «Лотки».
     if (!route.segments) continue;
+    const source = project.routes.find(item => item.id === route.id);
+    const duplicate = source?.segments.some(segment => duplicates.has(segment.id)) ?? false;
     const sections = route.sections.length
       ? route.sections
       : [{ section: '—', length: route.length, segments: 0, overridden: false }];
     for (const part of sections) {
+      if (part.length === 0) continue;
       let row = rows.find(item => item.type === route.type && item.section === part.section);
       if (!row) { row = { type: route.type, group: route.group, section: part.section, quantity: 0 }; rows.push(row); }
-      row.quantity = row.quantity === null || part.length === null ? null : row.quantity + part.length;
+      row.quantity = row.quantity === null || part.length === null || duplicate ? null : row.quantity + part.length;
     }
   }
   for (const row of rows) {
     const quantity = finite(row.quantity) ? row.quantity : null;
     // Как и спецификация КНС, допускаем позицию группы («Гофра» для «Гофра ПВХ»).
     let priceMatch = resolveTrayPrice(catalog, row.type, row.section);
-    if (!priceMatch.item && !priceMatch.sizeMissing) priceMatch = resolveTrayPrice(catalog, row.group, row.section);
+    if (!priceMatch.item) {
+      const byGroup = resolveTrayPrice(catalog, row.group, row.section);
+      if (byGroup.item || !priceMatch.sizeMissing) priceMatch = byGroup;
+    }
     const price = catalogItemPrice(priceMatch.item);
     const total = quantity === null || price === null ? null : quantity * price;
     if (quantity === null) warnings.push(`Смета: по трассе «${row.type}» неполный расчёт — длина неизвестна`);
