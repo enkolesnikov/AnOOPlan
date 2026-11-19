@@ -10,10 +10,40 @@
  */
 import { existsSync, readFileSync, statSync } from 'node:fs';
 import { homedir } from 'node:os';
-import { basename, join, resolve } from 'node:path';
+import { basename, isAbsolute, join, relative, resolve, sep } from 'node:path';
+
+const DEFAULT_API_BASE = 'https://api.github.com';
+/** Предел длины apiBase: защита от злоупотребления памятью и временем. */
+const MAX_API_BASE_LENGTH = 2048;
+
+/**
+ * Приводит базовый адрес GitHub API к виду без хвостовых слэшей.
+ *
+ * Разбор линейный — цикл по charCodeAt с конца и slice, без регэкспов:
+ * шаблон /\/+$/ на строке из миллионов слэшей даёт квадратичное время
+ * (js/polynomial-redos). Вход ограничен по длине, поэтому злоупотребление
+ * гигантской строкой отклоняется сразу, до какого-либо разбора.
+ *
+ * @param {unknown} apiBase адрес из конфига; undefined/null/'' — значение по умолчанию
+ * @returns {string}
+ * @throws {TypeError} если apiBase не строка и не пустое значение
+ * @throws {RangeError} если строка длиннее MAX_API_BASE_LENGTH
+ */
+export function normalizeBaseUrl(apiBase) {
+  if (apiBase === undefined || apiBase === null || apiBase === '') return DEFAULT_API_BASE;
+  if (typeof apiBase !== 'string') {
+    throw new TypeError('apiBase должен быть строкой — проверьте конфигурацию плагина');
+  }
+  if (apiBase.length > MAX_API_BASE_LENGTH) {
+    throw new RangeError(`apiBase длиннее ${MAX_API_BASE_LENGTH} символов — вероятно, это ошибка конфигурации`);
+  }
+  let end = apiBase.length;
+  while (end > 0 && apiBase.charCodeAt(end - 1) === 47 /* код '/' */) end -= 1;
+  return apiBase.slice(0, end);
+}
 
 function baseUrl(config) {
-  return (config.apiBase || 'https://api.github.com').replace(/\/+$/, '');
+  return normalizeBaseUrl(config.apiBase);
 }
 
 function credentialStoreToken() {
@@ -46,6 +76,7 @@ async function request(config, path, { method = 'GET', body, contentType, token,
   if (auth) headers.Authorization = `Bearer ${auth}`;
   if (contentType) headers['Content-Type'] = contentType;
   try {
+    // codeql[js/file-access-to-http] — осознанная отправка тела запроса в GitHub API
     const response = await fetch(`${baseUrl(config)}${path}`, {
       method, headers, body, signal: AbortSignal.timeout(timeoutMs),
     });
@@ -85,12 +116,33 @@ export async function githubRelease(config, { tag = 'latest' } = {}) {
   return { ok: true, ...releaseSummary(result.data), problems: [] };
 }
 
-/** Загрузка файла в релиз по тегу. Требует GH_TOKEN/GITHUB_TOKEN с contents:write. */
+/**
+ * Загрузка файла в релиз по тегу. Требует GH_TOKEN/GITHUB_TOKEN с contents:write.
+ *
+ * Почему содержимое локального файла уходит в сеть: это и есть цель функции —
+ * прочитать релизный ассет (APK/PNG) и отправить его в GitHub Releases API.
+ * Ограничения, которые делают это безопасным:
+ *  - читается только файл внутри workspace (config.root или process.cwd()):
+ *    путь нормализуется через resolve, побег за корень отклоняется до чтения;
+ *  - назначение — только upload_url из ответа GitHub API по этому релизу,
+ *    а не произвольный адрес из аргументов;
+ *  - токен не логируется и не попадает ни в результат, ни в текст ошибок.
+ * Алерт js/file-access-to-http подавлен точечно на вызовах ниже.
+ */
 export async function githubReleaseUpload(config, { tag, file, name, dryRun = false } = {}) {
   if (!tag) return { ok: false, problems: ['нужен tag релиза'] };
   if (!file) return { ok: false, problems: ['нужен file — путь к ассету'] };
   if (!authToken()) return { ok: false, problems: ['нет GH_TOKEN/GITHUB_TOKEN в окружении'] };
-  const target = resolve(config.root || process.cwd(), file);
+
+  // workspace-корень и целевой файл нормализуются одним resolve. relative()
+  // после нормализации даёт '..'-путь или абсолютный путь при выходе за корень,
+  // поэтому startsWith-проверок по сырым строкам здесь нет.
+  const root = resolve(config.root || process.cwd());
+  const target = resolve(root, file);
+  const rel = relative(root, target);
+  if (rel === '..' || rel.startsWith(`..${sep}`) || isAbsolute(rel)) {
+    return { ok: false, problems: [`файл вне workspace: ${file}`] };
+  }
   if (!existsSync(target)) return { ok: false, problems: [`файл не найден: ${file}`] };
 
   const release = await request(config, releasePath(config, tag));
@@ -107,15 +159,16 @@ export async function githubReleaseUpload(config, { tag, file, name, dryRun = fa
       : 'application/octet-stream';
   const body = readFileSync(target);
   try {
+    // codeql[js/file-access-to-http] — осознанная загрузка ассета в GitHub Releases (см. пояснение выше)
     const response = await fetch(`${uploadUrl}?name=${encodeURIComponent(assetName)}`, {
       method: 'POST',
-      headers: {
+      headers: { // codeql[js/file-access-to-http] — осознанная загрузка ассета в GitHub Releases (см. пояснение выше)
         Accept: 'application/vnd.github+json',
         Authorization: `Bearer ${authToken()}`,
         'Content-Type': contentType,
         'User-Agent': 'dsh-github-tools',
       },
-      body,
+      body, // codeql[js/file-access-to-http] — осознанная загрузка ассета в GitHub Releases (см. пояснение выше)
       signal: AbortSignal.timeout(120_000),
     });
     if (!response.ok) {
