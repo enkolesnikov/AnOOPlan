@@ -80,7 +80,7 @@
 
 | Метрика | До | После |
 |---|---|---|
-| Открытые алерты CodeQL | 10 (7 high, 3 medium) | **5 (2 high, 3 medium)** — все разобраны ниже |
+| Открытые алерты CodeQL | 10 (7 high, 3 medium) | **5 (2 high, 3 medium)** — все разобраны ниже, закрыты 19.11 → **0** |
 | `npm audit` (все зависимости) | 9 moderate | **0** |
 | `npm audit --omit=dev` | 0 | **0** |
 | Тесты (`npm test`) | 412 pass | **421 pass** |
@@ -97,15 +97,34 @@
 `js/regex/missing-regexp-anchor` (1), `js/incomplete-sanitization` (1); новый алерт
 `js/incomplete-url-substring-sanitization`, появившийся после первой правки теста, тоже закрыт.
 
-Остались 5 — все с обоснованием в коде и в этом отчёте:
+На момент этого скана остались 5 — все с обоснованием в коде и в этом отчёте (закрыты позже, см.
+раздел «Синхронизация 19.11: 0 открытых»):
 
-| Алерт | Правило | Почему открыт | Что нужно |
+| Алерт | Правило | Почему был открыт | Чем закончилось |
 |---|---|---|---|
-| #21, #22, #7 | `js/file-access-to-http` | Осознанная отправка релизного ассета в GitHub Releases API; код ужесточён (workspace через `realpath`, `O_NOFOLLOW`, проверка `upload_url`, `redirect: 'error'`). Inline-подавления `// codeql[js/file-access-to-http]` стоят на строках алертов, но сканер их не применил (пробовали и минимальную форму). | Закрыть через API с причиной `won't fix` — нужен токен с `security-events: write` (у токена этого прогона только read). |
-| #17, #18 | `js/user-controlled-bypass` | Ветка различает версии формата копии: для v2 манифест обязателен (422), legacy v1 без манифеста разрешён осознанно (манифеста в нём нет по формату). Это не обход проверки: манифест и байты приходят в одном запросе. | То же: закрыть с причиной `won't fix` токеном с `security-events: write`. |
+| #21, #22, #7 | `js/file-access-to-http` | Осознанная отправка релизного ассета в GitHub Releases API; код ужесточён (workspace через `realpath`, `O_NOFOLLOW`, проверка `upload_url`, `redirect: 'error'`). Inline-подавления `// codeql[js/file-access-to-http]` стоят на строках алертов, но сканер их не применил (пробовали и минимальную форму). | Закрыт 19.11 через API, причина `won't fix`, комментарий с сутью и файлом. |
+| #17, #18 | `js/user-controlled-bypass` | Ветка различает версии формата копии: для v2 манифест обязателен (422), legacy v1 без манифеста разрешён осознанно (манифеста в нём нет по формату). Это не обход проверки: манифест и байты приходят в одном запросе. | Закрыт 19.11 через API, причина `won't fix`, комментарий с сутью и файлом. |
 
-Попытка подавления через API выполнена и вернула `Resource not accessible by personal access token` —
-у выданного токена нет прав на изменение алертов. Это единственный незакрытый шаг; он не требует правки кода.
+Первая попытка подавления через API вернула `Resource not accessible by personal access token` —
+у токена того прогона не было `security-events: write`. Повторная попытка токеном с этим правом прошла
+(см. ниже); правок кода не потребовалось.
+
+## Синхронизация 19.11: 0 открытых
+
+Проверено через API 2026-11-19, 15:31 +05 (Asia/Yekaterinburg). `state=open` вернул пустой список —
+**0 открытых алертов**. Все 5 оставшихся переведены в `dismissed` с причиной `won't fix` и комментарием,
+в котором суть и затронутый файл:
+
+| Алерт | Правило | Файл | Причина закрытия |
+|---|---|---|---|
+| #22, #21, #7 | `js/file-access-to-http` | `dsh/plugins/dsh-github-tools/lib/core.js` | `won't fix`: осознанная передача файла в GitHub Releases API (`githubReleaseUpload`). Код ужесточён — `realpath` в пределах workspace, `O_NOFOLLOW`, проверка `upload_url` по хосту/схеме, `redirect: 'error'`. Правило глобально не отключалось. |
+| #18, #17 | `js/user-controlled-bypass` | `server/app.ts` | `won't fix`: legacy `schemaVersion: 1` без манифеста оставлен осознанно; для `schemaVersion: 2` манифест обязателен (`422`), ветка покрыта тестом. |
+
+Кто и когда: `enkolesnikov`, 2026-11-19T10:31Z (15:31 +05). Закрытие сделано через API уже **после**
+предыдущего прогона, поэтому в разделе «Скан после push» те же алерты ещё числятся открытыми — это
+историческая запись, а не текущее состояние.
+
+Итог: **10 → 5 (правками кода) → 0 (закрытие с обоснованием)**. Открытых алертов CodeQL нет.
 
 ## Проверки (фактические прогоны)
 
@@ -140,13 +159,53 @@
 
 ## Что осталось и почему
 
-1. **Подтверждение скана CodeQL.** Скан после push выполнен: 10 → 5 открытых алертов, причины в разделе
-   «Скан после push». Оставшиеся 5 — осознанные (3 × file-access-to-http, 2 × user-controlled-bypass);
-   inline-подавления сканер не применил, а API-подавление недоступно токену прогона (нет
-   `security-events: write`). Закрыть их может владелец репозитория одним запросом на алерт с причиной
-   `won't fix` и ссылкой на этот отчёт.
+1. **Открытых алертов CodeQL — 0.** Скан после push дал 10 → 5 (исправления кода), остальные 5 закрыты
+   19.11 через API с причиной `won't fix` и комментарием; подробности — в разделе
+   «Синхронизация 19.11: 0 открытых». Inline-подавления сканер так и не применил, поэтому закрытие
+   сделано на уровне алертов, а не кода.
 2. **`js/file-access-to-http`** остаётся особенностью инструмента: плагин по определению читает
-   локальный ассет и отправляет его в GitHub Releases. Ограничение workspace и обоснование — в коде.
-3. **Peer-предупреждение ESLint.** `eslint-plugin-jsx-a11y@6.10.2` объявляет peer `eslint ^3…^9`,
+   локальный ассет и отправляет его в GitHub Releases. Ограничение workspace и обоснование — в коде;
+   алерты закрыты как `won't fix`, правило глобально не отключено.
+3. **`js/user-controlled-bypass`** — осознанная совместимость с `schemaVersion: 1`; для v2 манифест
+   обязателен и это покрыто тестом. Если legacy-ветку когда-нибудь уберут, алерты не вернутся.
+4. **Peer-предупреждение ESLint.** `eslint-plugin-jsx-a11y@6.10.2` объявляет peer `eslint ^3…^9`,
    а стоит 10.15. `npm ci`, `npm run lint` и CI проходят; обновление плагина — за Dependabot.
-4. **gitleaks** установлен только локально в `/tmp` для проверки; бинарь в репозиторий не коммитился.
+5. **gitleaks** установлен только локально в `/tmp` для проверки; бинарь в репозиторий не коммитился.
+
+## Как проверять
+
+Все команды — из корня репозитория; токен берётся из `/home/office/.cred-anooplan` и не печатается.
+
+```bash
+TOKEN=$(sed 's#https://[^:]*:##; s#@github.com##' /home/office/.cred-anooplan)
+
+# 1. Открытые алерты CodeQL — ожидается [] (пустой массив)
+curl -s -H "Authorization: Bearer $TOKEN" \
+  "https://api.github.com/repos/enkolesnikov/AnOOPlan/code-scanning/alerts?state=open&per_page=100"
+
+# 2. Закрытые алерты — ожидается 5, у всех dismissed_reason = "won't fix" и непустой dismissed_comment
+curl -s -H "Authorization: Bearer $TOKEN" \
+  "https://api.github.com/repos/enkolesnikov/AnOOPlan/code-scanning/alerts?state=dismissed&per_page=100"
+
+# 3. Прогоны после push — ожидается три success на одном head_sha: CI, CodeQL, Gitleaks
+curl -s -H "Authorization: Bearer $TOKEN" \
+  "https://api.github.com/repos/enkolesnikov/AnOOPlan/actions/runs?per_page=5"
+
+# 4. Защита ветки — ожидается ruleset main-guard, enforcement = active
+curl -s -H "Authorization: Bearer $TOKEN" \
+  "https://api.github.com/repos/enkolesnikov/AnOOPlan/rulesets"
+```
+
+Норма состояния:
+
+| Проверка | Норма |
+|---|---|
+| `code-scanning/alerts?state=open` | `[]` — 0 открытых |
+| `code-scanning/alerts?state=dismissed` | каждое закрытие с причиной и комментарием (не молча) |
+| `actions/runs` на последнем `main` | `CI` = success, `CodeQL` = success, `Gitleaks` = success |
+| `rulesets` | `main-guard` активен (force-push и удаление ветки запрещены) |
+| локально | `npm test`, `npm run lint`, `npx tsc --noEmit` — зелёные |
+
+Если появился новый алерт — сначала исправить код; закрывать только с обоснованием
+(`false positive` / `won't fix` / `used in tests`) и комментарием, где суть и файл. «Подавить, потому что
+мешает» — недопустимо. Любая работа по безопасности заканчивается записью в этот отчёт и зелёным CI.
