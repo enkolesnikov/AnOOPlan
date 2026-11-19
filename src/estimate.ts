@@ -1,5 +1,6 @@
 import type { PriceItem, PriceKind, Project } from './model';
-import { calculateCable, specifications } from './engine';
+import { calculateCable, routeSummary } from './engine';
+import { resolveTrayPrice } from './engine/specification';
 
 /**
  * Смета проекта 1.17.0.
@@ -227,16 +228,36 @@ function trayLines(project: Project): { lines: EstimateLine[]; warnings: string[
   const catalog = project.catalog;
   const lines: EstimateLine[] = [];
   const warnings: string[] = [];
-  for (const row of specifications(project).infrastructure) {
-    const quantity = finite(row.length) ? row.length : null;
-    const price = catalogItemPrice(catalogPrice(catalog, 'tray', row.type));
+  // Метраж агрегируется по типу и эффективному сечению: у одной трассы и даже
+  // одной подсистемы могут быть разные лотки, и каждый оценивается своей ценой.
+  const rows: { type: string; section: string; quantity: number | null }[] = [];
+  for (const route of routeSummary(project).routes) {
+    const sections = route.sections.length
+      ? route.sections
+      : [{ section: '—', length: route.length, segments: 0, overridden: false }];
+    for (const part of sections) {
+      let row = rows.find(item => item.type === route.type && item.section === part.section);
+      if (!row) { row = { type: route.type, section: part.section, quantity: 0 }; rows.push(row); }
+      row.quantity = row.quantity === null || part.length === null ? null : row.quantity + part.length;
+    }
+  }
+  for (const row of rows) {
+    const quantity = finite(row.quantity) ? row.quantity : null;
+    const priceMatch = resolveTrayPrice(catalog, row.type, row.section);
+    const price = catalogItemPrice(priceMatch.item);
     const total = quantity === null || price === null ? null : quantity * price;
     if (quantity === null) warnings.push(`Смета: по трассе «${row.type}» неполный расчёт — длина неизвестна`);
-    if (price === null) warnings.push(NO_PRICE(row.type));
+    if (price === null) {
+      warnings.push(priceMatch.sizeMissing
+        ? `Смета: для «${row.type}» нет цены сечения ${row.section} в справочнике`
+        : NO_PRICE(row.type));
+    }
+    // «—» — сечение неизвестно, поэтому в имени остаётся только тип.
+    const name = row.section === '—' ? row.type : `${row.type} · ${row.section}`;
     lines.push({
-      id: `tray:${row.type}`,
+      id: `tray:${row.type}:${row.section}`,
       kind: 'tray',
-      name: row.type,
+      name,
       unit: 'м',
       quantity,
       price,

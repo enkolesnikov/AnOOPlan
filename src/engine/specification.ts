@@ -1,4 +1,4 @@
-import type { Project } from '../model';
+import type { PriceItem, Project } from '../model';
 import { SECTION_DIM_KEYS, segmentSectionLabel } from '../route-kinds';
 import { calculateCable, finite, reserveErrors, segmentErrors, segmentIndex, segmentLength } from './geometry';
 import { routeSubsystemLabel, routeSummary } from './routes';
@@ -10,6 +10,49 @@ import { invalidGivenDimension, isGiven, trayFill } from './tray-fill';
  * заполнение лотков, доменные предупреждения и валидация проекта. Вынесено
  * из `src/engine.ts` без изменения поведения.
  */
+
+/**
+ * Нормализация обозначения сечения для сравнения строки КНС с `PriceItem.size`:
+ * без пробелов и регистра, `x`/`х`/`×` → `×`, `Ø`/`d`/`диаметр` → `d`. Ведущий `d`
+ * у диаметра снимается, чтобы «Ø 20» и «20» совпадали с сечением «Ø20».
+ */
+export function normalizePriceSize(value: unknown): string {
+  return (typeof value === 'string' ? value : '')
+    .toLowerCase()
+    .replace(/диаметр/g, 'd')
+    .replace(/[ø⌀]/g, 'd')
+    .replace(/[xх×]/g, '×')
+    .replace(/\s+/g, '')
+    .replace(/²/g, '2')
+    .replace(/^d(?=\d)/, '');
+}
+
+export interface TrayPriceResolution {
+  /** Подходящая позиция справочника; null — цены нет. */
+  item: PriceItem | null;
+  /** У имени есть позиции с size, но ни одна не совпала с сечением строки. */
+  sizeMissing: boolean;
+}
+
+/**
+ * Подбор цены КНС по имени и сечению: точное совпадение `size` приоритетнее
+ * позиции без size (она универсальна). Если у имени есть только позиции с size
+ * и ни одна не подошла, возвращается `item: null` — первая цена не подставляется.
+ */
+export function resolveTrayPrice(catalog: PriceItem[] | undefined, name: string, section: string): TrayPriceResolution {
+  const target = (typeof name === 'string' ? name : '').trim().toLowerCase();
+  if (!target) return { item: null, sizeMissing: false };
+  const entries = (catalog ?? []).filter(item =>
+    item && item.kind === 'tray' && typeof item.name === 'string' && item.name.trim().toLowerCase() === target);
+  if (!entries.length) return { item: null, sizeMissing: false };
+  const wanted = normalizePriceSize(section);
+  const sized = entries.filter(item => typeof item.size === 'string' && item.size.trim() !== '');
+  const exact = sized.find(item => normalizePriceSize(item.size) === wanted);
+  if (exact) return { item: exact, sizeMissing: false };
+  const universal = entries.find(item => !(typeof item.size === 'string' && item.size.trim() !== ''));
+  if (universal) return { item: universal, sizeMissing: false };
+  return { item: null, sizeMissing: true };
+}
 
 export interface KnSLine {
   name: string;
@@ -64,9 +107,17 @@ export function specificationKnS(project: Project): KnSSpecification {
         existing.cost = existing.quantity === null || existing.price === null ? null : existing.quantity * existing.price;
         return;
       }
-      // Сначала ищем позицию по конкретному типу трассы, затем по группе (например, «Гофра»).
-      const match = catalog.find(entry => entry.kind === 'tray' && entry.name.trim().toLowerCase() === route.type.trim().toLowerCase())
-        ?? catalog.find(entry => entry.kind === 'tray' && entry.name.trim().toLowerCase() === row.group.trim().toLowerCase());
+      // Сначала ищем позицию по конкретному типу трассы и сечению, затем по группе (например, «Гофра»).
+      // Позиция с чужим size не подменяется первой ценой: такая строка остаётся без цены.
+      let priceMatch = resolveTrayPrice(catalog, route.type, item.section);
+      if (!priceMatch.item && !priceMatch.sizeMissing) {
+        const byGroup = resolveTrayPrice(catalog, row.group, item.section);
+        if (byGroup.item || byGroup.sizeMissing) priceMatch = byGroup;
+      }
+      const match = priceMatch.item;
+      if (priceMatch.sizeMissing) {
+        warnings.push(`КНС: для «${typeName}» нет цены сечения ${item.section} в справочнике`);
+      }
       lines.push({
         name: typeName,
         type: route.type,

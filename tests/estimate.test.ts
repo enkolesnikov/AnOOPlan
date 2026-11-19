@@ -63,7 +63,7 @@ test('смета считает оборудование, кабели, лотк
   assert.equal(cables.complete, true);
 
   assert.deepEqual(trays.lines, [{
-    id: 'tray:Лоток', kind: 'tray', name: 'Лоток', unit: 'м',
+    id: 'tray:Лоток:—', kind: 'tray', name: 'Лоток', unit: 'м',
     quantity: 10, price: 480, total: 4800, priceSource: 'catalog', note: '',
   }]);
   assert.equal(trays.total, 4800);
@@ -375,8 +375,8 @@ test('демо-проект: смета полная, итог положите�
   assert.equal(cables.lines.length, 4);
   assert.ok(cables.lines.every(line => line.priceSource === 'manual' && line.price === 38));
   assert.deepEqual(trays.lines.map(line => [line.name, line.quantity, line.price]), [
-    ['Лоток', 55, 480],
-    ['Стояк', 4, 620],
+    ['Лоток · 100×50', 55, 480],
+    ['Стояк · 50×50', 4, 620],
   ]);
   assert.deepEqual(cables.lines.map(line => line.quantity), [15.3, 26.3, 91.1, 27.95]);
 });
