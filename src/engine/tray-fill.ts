@@ -135,12 +135,32 @@ const validQuantity = (cable: Cable): boolean => Number.isInteger(cable.quantity
 export function trayFill(project: Project): TrayFillResult {
   const warnings: string[] = [];
   const segments: SegmentFill[] = [];
+  // Индекс segmentId → кабели строится один раз на проект: иначе каждый сегмент
+  // перебирал все кабели (2000 × 200 при крупном проекте). Порядок кабелей
+  // сохраняется исходным, повтор id внутри кабеля не дублирует его в списке.
+  const segmentCables = new Map<string, Cable[]>();
+  for (const cable of project.cables) {
+    for (const segmentId of new Set(cable.segmentIds)) {
+      const list = segmentCables.get(segmentId);
+      if (list) list.push(cable);
+      else segmentCables.set(segmentId, [cable]);
+    }
+  }
+  // Сечение кабеля не зависит от сегмента: считаем один раз на кабель.
+  const sectionCache = new Map<Cable, CableSection>();
+  const sectionOf = (cable: Cable): CableSection => {
+    const cached = sectionCache.get(cable);
+    if (cached) return cached;
+    const section = cableSection(cable);
+    sectionCache.set(cable, section);
+    return section;
+  };
   for (const route of project.routes) {
     const routeSection = routeSectionDimensions(route);
     // Сегменты без своего сечения используют размер трассы: если он не задан,
     // предупреждение относится к трассе, а не повторяется на каждом сегменте.
     const inheritedCableSegments = route.segments.filter(segment => !hasSectionOverride(segment)
-      && project.cables.some(cable => cable.segmentIds.includes(segment.id)));
+      && segmentCables.has(segment.id));
     if (routeSection.problem && inheritedCableSegments.length) {
       warnings.push(`Трасса ${route.number}: ${SECTION_PROBLEM_TEXT[routeSection.problem]} — заполнение не рассчитано`);
     }
@@ -154,7 +174,7 @@ export function trayFill(project: Project): TrayFillResult {
       const trayWidthMm = givenNumber(dims.trayWidthMm);
       // Для круглых КНС высота не используется и в ведомость не попадает.
       const trayHeightMm = isDiameterRoute(route) ? null : givenNumber(dims.trayHeightMm);
-      const passing = project.cables.filter(cable => cable.segmentIds.includes(segment.id));
+      const passing = segmentCables.get(segment.id) ?? [];
       const segmentWarnings: string[] = [];
       // Ошибка в собственном сечении сегмента не должна теряться за предупреждением трассы.
       if (section.problem && (overridden || !inheritedCableSegments.length) && passing.length) {
@@ -168,7 +188,7 @@ export function trayFill(project: Project): TrayFillResult {
       const unknownSectionNumbers: string[] = [];
       const unknownQuantityNumbers: string[] = [];
       for (const cable of passing) {
-        const cableArea = cableSection(cable);
+        const cableArea = sectionOf(cable);
         const quantityOk = validQuantity(cable);
         if (quantityOk) lines += cable.quantity;
         if (cableArea.areaMm2 === null) {

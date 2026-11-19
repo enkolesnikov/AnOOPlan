@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import type { PointerEvent as ReactPointerEvent } from 'react';
 import type { Cable, Equipment, Pin, Point, Route, Vertex } from '../model';
 import { chainEnds } from '../engine';
@@ -18,7 +18,7 @@ export function usePlanEditing(s: WorkspaceState) {
     tool, setTool, draft, setDraft, calibration, setCalibration, measure, setMeasure, measureMode,
     setPointer, setSelection, setTab, setPropsOpen, setSheet, route, routeHeight,
     cableFrom, setCableFrom, cableTo, setCableTo, cableSegments, setCableSegments,
-    setMessage, setError, setProject, mutate, recordHistory,
+    setMessage, setError, setProject, mutate, recordHistory, setDragging,
     drag, pointers, tap, pinching, snapVibe, pressStart, longPressTimer,
   } = s;
   function fit() {
@@ -53,6 +53,48 @@ export function usePlanEditing(s: WorkspaceState) {
   const TAP_SLOP = 10;
   const TAP_DELAY = 700;
   const tapSlop = { x: 0, y: 0 };
+  // Перетаскивание: последняя позиция указателя хранится в ref и применяется
+  // не чаще одного раза на кадр. На pointerup накопленный кадр применяется сразу.
+  const dragFrame = useRef<number | null>(null);
+  const dragPoint = useRef<Point | null>(null);
+
+  function cancelDragFrame() {
+    if (dragFrame.current !== null) {
+      window.cancelAnimationFrame(dragFrame.current);
+      dragFrame.current = null;
+    }
+    dragPoint.current = null;
+  }
+  /** Применяет последнюю точку к проекту на месте (без полного клона). */
+  function applyDragFrame() {
+    dragFrame.current = null;
+    const point = dragPoint.current;
+    const active = drag.current;
+    if (!point || !active || (active.type !== 'equipment' && active.type !== 'vertex')) return;
+    if (active.type === 'equipment') {
+      const item = projectRef.current.equipment.find(eq => eq.id === active.id);
+      if (item) Object.assign(item, point);
+    } else {
+      // Дубли вершин с теми же координатами двигаются вместе, как и раньше.
+      const ids = new Set(active.vertexIds ?? (active.vertexId ? [active.vertexId] : []));
+      projectRef.current.routes.forEach(r => r.segments.forEach(segment => [segment.a, segment.b].forEach(vertex => {
+        if (ids.has(vertex.id)) Object.assign(vertex, point);
+      })));
+    }
+    // Новый объект нужен React, чтобы перерисовать план; данные вложены по ссылке.
+    setProject({ ...projectRef.current });
+    dragPoint.current = null;
+  }
+  /** Применяет отложенный кадр перед завершением жеста, чтобы не потерять последнюю точку. */
+  function flushDragFrame() {
+    if (dragFrame.current === null && dragPoint.current === null) return;
+    if (dragFrame.current !== null) {
+      window.cancelAnimationFrame(dragFrame.current);
+      dragFrame.current = null;
+    }
+    applyDragFrame();
+    dragPoint.current = null;
+  }
 
   function armTap(event: ReactPointerEvent, run: () => void) {
     // Действие выполняется только по одиночному тапу: жест масштабирования
@@ -72,7 +114,22 @@ export function usePlanEditing(s: WorkspaceState) {
     if (tool !== 'select' || pinching.current) return;
     e.stopPropagation();
     try { e.currentTarget.setPointerCapture(e.pointerId); } catch { /* не критично */ }
-    drag.current = { type, id, vertexId, start: position(e), pan, before: clone(projectRef.current) };
+    // Снимок before — источник правды для undo; дальнейшие кадры мутируют проект на месте.
+    let vertexIds: string[] | undefined;
+    if (type === 'vertex' && vertexId) {
+      const original = projectRef.current.routes.find(r => r.id === id)?.segments.flatMap(s => [s.a, s.b])
+        .find(v => v.id === vertexId);
+      if (original) {
+        const ids: string[] = [];
+        projectRef.current.routes.forEach(r => r.segments.forEach(segment => [segment.a, segment.b].forEach(v => {
+          const sameSpot = v.floorId === original.floorId && v.x === original.x && v.y === original.y && v.height === original.height;
+          if ((v.id === vertexId || sameSpot) && !ids.includes(v.id)) ids.push(v.id);
+        })));
+        vertexIds = ids;
+      }
+    }
+    drag.current = { type, id, vertexId, vertexIds, start: position(e), pan, before: clone(projectRef.current) };
+    setDragging(true);
   }
   function pointerDown(e: ReactPointerEvent<HTMLDivElement>) {
     if (!floor) return;
@@ -173,31 +230,33 @@ export function usePlanEditing(s: WorkspaceState) {
     setPointer(position(e, false));
     if (!active) return;
     if (active.type === 'pan') { setPan({ x: active.pan.x + e.clientX - active.start.x, y: active.pan.y + e.clientY - active.start.y }); return; }
-    const point = position(e); const next = clone(projectRef.current);
-    if (active.type === 'equipment') { const item = next.equipment.find(eq => eq.id === active.id); if (item) Object.assign(item, point); }
-    else {
-      const original = active.before.routes.find(r => r.id === active.id)?.segments.flatMap(s => [s.a, s.b]).find(v => v.id === active.vertexId);
-      if (original) next.routes.forEach(r => r.segments.forEach(s => [s.a, s.b].forEach(v => { if (v.id === active.vertexId || (v.floorId === original.floorId && v.x === original.x && v.y === original.y && v.height === original.height)) Object.assign(v, point); })));
-    }
-    projectRef.current = next; setProject(next);
+    if (active.type !== 'equipment' && active.type !== 'vertex') return;
+    // Запоминаем последнюю точку; применение — не чаще одного раза на кадр.
+    dragPoint.current = position(e);
+    if (dragFrame.current === null) dragFrame.current = window.requestAnimationFrame(applyDragFrame);
   }
   function pointerUp(e: ReactPointerEvent) {
     cancelLongPress();
     pointers.current.delete(e.pointerId);
     if (pointers.current.size < 2) pinching.current = false;
     const active = drag.current;
-    if (active?.type === 'pinch') { if (pointers.current.size < 2) drag.current = null; return; }
+    if (active?.type === 'pinch') { if (pointers.current.size < 2) drag.current = null; setDragging(false); return; }
+    // Последняя точка ещё могла ждать кадр: применяем её до сравнения с before.
+    if (active && (active.type === 'equipment' || active.type === 'vertex')) flushDragFrame();
     if (active && active.type !== 'pan' && JSON.stringify(active.before) !== JSON.stringify(projectRef.current)) recordHistory(active.before);
     drag.current = null;
+    setDragging(false);
     setSnapMark(null);
     if (!active) runTap(e);
   }
   function pointerCancel(e: ReactPointerEvent) {
     tap.current = null;
     cancelLongPress();
+    cancelDragFrame();
     pointers.current.delete(e.pointerId);
     if (pointers.current.size < 2) pinching.current = false;
     drag.current = null;
+    setDragging(false);
     setSnapMark(null);
   }
 
@@ -297,8 +356,10 @@ export function usePlanEditing(s: WorkspaceState) {
       pinching.current = true;
       const active = drag.current;
       if (active && (active.type === 'equipment' || active.type === 'vertex')) {
+        cancelDragFrame();
         setProject(active.before);
         projectRef.current = active.before;
+        setDragging(false);
       }
       const first = [...pointers.current.values()][0];
       const rect = stage.current!.getBoundingClientRect();

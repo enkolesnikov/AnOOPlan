@@ -15,13 +15,16 @@ export function pushLimited<T>(items: T[], item: T, limit = HISTORY_LIMIT): T[] 
   return [...items.slice(-(limit - 1)), item];
 }
 
-/** Можно ли не создавать новый шаг undo: та же подпись и прошло меньше окна. */
+/** Можно ли не создавать новый шаг undo: та же подпись и прошло меньше окна.
+ *  Безымянные действия склеиваются только с безымянными (подпись «Действие»
+ *  в истории), а именованные — только с той же подписью. */
 export function canCoalesce(
   previous: { label: string | undefined; at: number } | null,
   label: string | undefined,
   now: number,
   windowMs = GROUP_WINDOW_MS,
 ): boolean {
-  if (previous === null || label === undefined) return false;
-  return previous.label === label && now - previous.at < windowMs;
+  if (previous === null) return false;
+  if (now - previous.at >= windowMs) return false;
+  return previous.label === label;
 }

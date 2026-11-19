@@ -59,6 +59,12 @@ export function useWorkspaceState() {
   const [templatesOpen, setTemplatesOpen] = useState(false);
   const [onboardingOpen, setOnboardingOpen] = useState(false);
   const [pointer, setPointer] = useState<Point | null>(null);
+  // Перетаскивание не пересчитывает тяжёлые производные на каждый кадр:
+  // они читают последний «спокойный» проект, а после отпускания считаются один раз.
+  const [dragging, setDragging] = useState(false);
+  const heavyProjectRef = useRef(project);
+  if (!dragging) heavyProjectRef.current = project;
+  const heavyProject = dragging ? heavyProjectRef.current : project;
   const [staticMode, setStaticMode] = useState(false);
   const [exportOpen, setExportOpen] = useState(false);
   const [sheet, setSheet] = useState<SheetTarget>(null);
@@ -71,7 +77,7 @@ export function useWorkspaceState() {
   const photoInput = useRef<HTMLInputElement>(null);
   const cameraInput = useRef<HTMLInputElement>(null);
   const projectRef = useRef(project);
-  const drag = useRef<{ type: 'pan' | 'equipment' | 'vertex' | 'pinch'; id?: string; vertexId?: string; start: Point; pan: Point; before: Project; startDist?: number; startZoom?: number; startPan?: Point; startPdf?: Point } | null>(null);
+  const drag = useRef<{ type: 'pan' | 'equipment' | 'vertex' | 'pinch'; id?: string; vertexId?: string; vertexIds?: string[]; start: Point; pan: Point; before: Project; startDist?: number; startZoom?: number; startPan?: Point; startPdf?: Point } | null>(null);
   const pointers = useRef(new Map<number, Point>());
   const snapVibe = useRef(false);
   const viewRef = useRef({ zoom, pan });
@@ -93,7 +99,7 @@ export function useWorkspaceState() {
   }, [view]);
   // Сравнение всего проекта дорого на каждый рендер (зум/пан/указатель).
   // updatedAt меняется только в commit/record, поэтому stringify нужен один раз на мутацию.
-  const dirty = useMemo(() => JSON.stringify(project) !== saved, [project, saved]);
+  const dirty = useMemo(() => JSON.stringify(heavyProject) !== saved, [heavyProject, saved]);
   const dirtyRef = useRef(false);
   dirtyRef.current = dirty;
   const equipment = selection?.kind === 'equipment' ? project.equipment.find(e => e.id === selection.id) : undefined;
@@ -104,11 +110,11 @@ export function useWorkspaceState() {
   const photoOwner = equipment ?? pin;
   const cableSectionResult = cable ? cableSection(cable) : null;
   const calculation = cable ? calculateCable(project, cable) : null;
-  const issues = useMemo(() => [...validateProject(project), ...domainWarnings(project)], [project]);
-  const cableCalcs = useMemo(() => new Map(project.cables.map(c => [c.id, calculateCable(project, c)])), [project]);
+  const issues = useMemo(() => [...validateProject(heavyProject), ...domainWarnings(heavyProject)], [heavyProject]);
+  const cableCalcs = useMemo(() => new Map(heavyProject.cables.map(c => [c.id, calculateCable(heavyProject, c)])), [heavyProject]);
   // Заполнение лотков тяжелее остальных расчётов, поэтому считается один раз на проект:
   // строки сегментов затем переиспользуются в свойствах трассы и кабеля.
-  const fill = useMemo(() => trayFill(project), [project]);
+  const fill = useMemo(() => trayFill(heavyProject), [heavyProject]);
   const cableFill = useMemo(() => {
     if (!cable) return null;
     const ids = new Set(cable.segmentIds);
@@ -124,14 +130,16 @@ export function useWorkspaceState() {
     ? routeFillKnown.reduce((best, row) => ((row.fillPercent ?? 0) > (best.fillPercent ?? 0) ? row : best))
     : null;
   const totals = useMemo(() => {
-    let meters = 0, metersComplete = true, cost = 0, costComplete = project.cables.length > 0;
-    for (const cable of project.cables) {
-      const calculation = calculateCable(project, cable);
+    let meters = 0, metersComplete = true, cost = 0, costComplete = heavyProject.cables.length > 0;
+    for (const cable of heavyProject.cables) {
+      // Итоги берут готовый расчёт из cableCalcs: повторный calculateCable не нужен.
+      const calculation = cableCalcs.get(cable.id);
+      if (!calculation) continue;
       if (calculation.total === null) metersComplete = false; else meters += calculation.total * cable.quantity;
       if (calculation.cost === null) costComplete = false; else cost += calculation.cost;
     }
     return { meters, metersComplete, cost, costComplete };
-  }, [project]);
+  }, [heavyProject, cableCalcs]);
   const issueCount = Array.isArray(issues) ? issues.length : 0;
 
   const { undo, redo, undoLabel, redoLabel, commit, mutate, history, reset: resetHistory, record: recordHistory } = useProjectHistory(projectRef, setProject, setError, () => {
@@ -168,7 +176,7 @@ export function useWorkspaceState() {
     cableFrom, setCableFrom, cableTo, setCableTo, routeHeight, setRouteHeight,
     message, setMessage, error, setError, busy, setBusy, saved, setSaved, persisted, setPersisted,
     projects, setProjects, templatesOpen, setTemplatesOpen, onboardingOpen, setOnboardingOpen,
-    pointer, setPointer, staticMode, setStaticMode, exportOpen, setExportOpen,
+    pointer, setPointer, dragging, setDragging, staticMode, setStaticMode, exportOpen, setExportOpen,
     sheet, setSheet, printSections, setPrintSections,
     canvas, stage, upload, restoreInput, photoInput, cameraInput,
     drag, pointers, snapVibe, tap, pinching, pressStart, longPressTimer,
