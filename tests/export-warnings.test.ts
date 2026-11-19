@@ -46,6 +46,12 @@ test('лист «Предупреждения» включает доменны�
   assert.equal(new Set(warnings).size, warnings.length, 'предупреждения не должны дублироваться');
 });
 
+test('лист «Предупреждения» не выдумывает предупреждения на полном проекте', () => {
+  const warnings = warningRows(longTwistedPairProject());
+  assert.ok(!warnings.some(warning => warning.includes('не задана цена за метр')), `ложное предупреждение о цене: ${warnings.join(' | ')}`);
+  assert.ok(!warnings.some(warning => warning.includes('стоимость не рассчитана')), `ложное предупреждение о стоимости: ${warnings.join(' | ')}`);
+});
+
 test('лист «Предупреждения» сообщает об отсутствующей цене кабеля', () => {
   const project = longTwistedPairProject();
   delete project.cables[0].pricePerMeter;

@@ -11,21 +11,23 @@ import { readFileSync } from 'node:fs';
 
 const read = (path: string): string => readFileSync(new URL(`../${path}`, import.meta.url), 'utf8');
 const squash = (text: string): string => text.replace(/\s+/g, ' ');
+/** YAML без комментариев: закомментированный шаг не должен считаться гейтом. */
+const liveYaml = (text: string): string => text.split('\n').filter(line => !/^\s*#/.test(line)).join('\n');
 
 test('release workflow проверяет версию, разрешения, размер и непустой сертификат', () => {
-  const workflow = read('.github/workflows/android-release.yml');
-  assert.match(workflow, /npm run build\b/, 'свежий dist перед бюджетом размера');
-  assert.match(workflow, /npm run size\b/, 'бюджет JS/CSS в release-гейте');
+  const workflow = liveYaml(read('.github/workflows/android-release.yml'));
+  assert.match(workflow, /^\s*npm run build\s*$/m, 'свежий dist перед бюджетом размера');
+  assert.match(workflow, /^\s*npm run size\s*$/m, 'бюджет JS/CSS в release-гейте');
   assert.match(workflow, /dump badging/, 'versionName/versionCode из APK');
-  assert.match(workflow, /versionName/, 'сверка versionName с package.json');
-  assert.match(workflow, /versionCode/, 'сверка versionCode с package.json');
+  assert.match(workflow, /versionName='\$VERSION_NAME'/, 'сверка versionName с package.json');
+  assert.match(workflow, /versionCode='\$VERSION_CODE'/, 'сверка versionCode с package.json');
   assert.match(workflow, /dump permissions/, 'разрешения APK');
-  assert.match(workflow, /INTERNET/, 'отказ при INTERNET');
-  assert.match(workflow, /4194304/, 'бюджет APK ≤4 МБ');
-  assert.match(workflow, /sha256sum/, 'SHA-256 опубликованного APK');
+  assert.match(workflow, /grep -q 'android\.permission\.INTERNET'/, 'отказ при INTERNET');
+  assert.match(squash(workflow), /\[ "\$SIZE" -le 4194304 \]/, 'бюджет APK ≤4 МБ (строго ≤)');
+  assert.match(workflow, /sha256sum "\$APK"/, 'SHA-256 опубликованного APK');
   assert.match(workflow, /ANDROID_CERT_SHA256/, 'сертификат из секрета');
   // Пустой секрет — ошибка, а не тихий пропуск проверки.
-  assert.match(squash(workflow), /\[ -n "\$EXPECTED_CERT" \] \|\|/);
+  assert.match(squash(workflow), /\[ -n "\$EXPECTED_CERT" \] \|\| \{/);
 });
 
 test('release-гейт закрепляет инструменты Android по SHA', () => {
