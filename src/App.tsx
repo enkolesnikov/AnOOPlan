@@ -14,7 +14,7 @@ export default function App() {
   return <div className="app-shell">
     <Topbar ui={ui} />
     <CommandBar ui={ui} />
-    {ui.error && <div className="banner error" role="alert"><strong>Не удалось выполнить действие.</strong> {ui.error}<button onClick={() => ui.setError('')}>×</button></div>}
+    {ui.error && <div className="banner error" role="alert"><strong>Не удалось выполнить действие.</strong> {ui.error}<button type="button" aria-label="Закрыть сообщение об ошибке" title="Закрыть" onClick={() => ui.setError('')}>×</button></div>}
     <Workspace ui={ui} />
     <Footer ui={ui} />
     {ui.aboutOpen && <AboutSheet

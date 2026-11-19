@@ -2,6 +2,7 @@ package com.anooplan.app;
 
 import android.content.Context;
 import android.content.Intent;
+import android.graphics.Bitmap;
 import android.net.Uri;
 import android.webkit.WebResourceRequest;
 import android.webkit.WebResourceResponse;
@@ -32,7 +33,12 @@ public class AssetServer extends WebViewClient {
     @Override
     public WebResourceResponse shouldInterceptRequest(WebView view, WebResourceRequest request) {
         Uri uri = request.getUrl();
-        if (uri == null || !HOST.equals(uri.getHost())) return null;
+        if (uri == null) return notFound();
+        // Любой http(s)-запрос вне origin приложения блокируем: приложение офлайн,
+        // а неперехваченный запрос ушёл бы в сеть (даже без разрешения INTERNET).
+        String scheme = uri.getScheme();
+        if (!"http".equals(scheme) && !"https".equals(scheme)) return null;
+        if (!HOST.equals(uri.getHost())) return notFound();
 
         String path = uri.getPath();
         if (path == null || path.isEmpty()) path = "/";
@@ -51,8 +57,26 @@ public class AssetServer extends WebViewClient {
             InputStream index = openAsset("www/index.html");
             if (index != null) return response("text/html", index);
         }
+        return notFound();
+    }
+
+    private static WebResourceResponse notFound() {
         return new WebResourceResponse("text/plain", "utf-8", 404, "Not Found",
                 headers(), new ByteArrayInputStream("Not found".getBytes()));
+    }
+
+    /**
+     * Защита от редиректа на чужой origin: страница приложения не должна
+     * покидать https://appassets.local/, иначе JS-мост оказался бы на чужом документе.
+     */
+    @Override
+    public void onPageStarted(WebView view, String url, Bitmap favicon) {
+        super.onPageStarted(view, url, favicon);
+        Uri uri = url == null ? null : Uri.parse(url);
+        if (uri == null || !"https".equals(uri.getScheme()) || !HOST.equals(uri.getHost())) {
+            view.stopLoading();
+            view.loadUrl(START_URL);
+        }
     }
 
     private InputStream openAsset(String path) {
@@ -107,17 +131,18 @@ public class AssetServer extends WebViewClient {
     @Override
     public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
         Uri uri = request.getUrl();
-        if (uri == null) return false;
-        if (HOST.equals(uri.getHost())) return false;
+        if (uri == null) return true;
+        if (HOST.equals(uri.getHost()) && "https".equals(uri.getScheme())) return false;
         String scheme = uri.getScheme();
+        // javascript:/file:/content:/intent: не должны исполняться или открывать
+        // произвольные компоненты: приложение офлайн и не доверяет внешним схемам.
         if ("http".equals(scheme) || "https".equals(scheme) || "mailto".equals(scheme) || "tel".equals(scheme)) {
             try {
                 view.getContext().startActivity(new Intent(Intent.ACTION_VIEW, uri));
             } catch (Exception ignored) {
                 // внешнее приложение недоступно — остаёмся в приложении
             }
-            return true;
         }
-        return false;
+        return true;
     }
 }

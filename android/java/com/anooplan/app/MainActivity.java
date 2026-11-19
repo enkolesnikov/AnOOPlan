@@ -150,7 +150,11 @@ public class MainActivity extends Activity implements NativeBridge.Host {
         settings.setDomStorageEnabled(true);
         settings.setDatabaseEnabled(true);
         settings.setAllowFileAccess(false);
-        settings.setAllowContentAccess(true);
+        settings.setAllowContentAccess(false);
+        // Приложение отдаёт свои ассеты через AssetServer; file:// и content://
+        // не должны открывать локальные файлы даже при подмене URL.
+        settings.setAllowFileAccessFromFileURLs(false);
+        settings.setAllowUniversalAccessFromFileURLs(false);
         settings.setJavaScriptCanOpenWindowsAutomatically(true);
         settings.setSupportMultipleWindows(false);
         settings.setUseWideViewPort(true);
@@ -179,7 +183,7 @@ public class MainActivity extends Activity implements NativeBridge.Host {
             }
         });
         webView.setWebChromeClient(new FileChooserClient());
-        webView.addJavascriptInterface(new NativeBridge(this, this), "AnOOPlanNative");
+        webView.addJavascriptInterface(new NativeBridge(this, this, webView), "AnOOPlanNative");
         webView.setDownloadListener(new DownloadListener() {
             @Override
             public void onDownloadStart(String url, String userAgent, String contentDisposition, String mimetype, long contentLength) {
@@ -188,8 +192,13 @@ public class MainActivity extends Activity implements NativeBridge.Host {
                     Toast.makeText(MainActivity.this, "Экспорт выполняется через «Сохранить в Загрузки»", Toast.LENGTH_LONG).show();
                     return;
                 }
+                // Скачивание разрешаем только для http(s): javascript:/intent:/
+                // content: не должны уходить во внешние приложения.
+                Uri downloadUri = Uri.parse(url);
+                String scheme = downloadUri.getScheme();
+                if (!"http".equals(scheme) && !"https".equals(scheme)) return;
                 try {
-                    startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse(url)));
+                    startActivity(new Intent(Intent.ACTION_VIEW, downloadUri));
                 } catch (ActivityNotFoundException e) {
                     Toast.makeText(MainActivity.this, "Нет приложения для открытия ссылки", Toast.LENGTH_LONG).show();
                 }

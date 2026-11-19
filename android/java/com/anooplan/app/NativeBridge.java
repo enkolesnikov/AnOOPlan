@@ -12,6 +12,7 @@ import android.os.VibratorManager;
 import android.provider.MediaStore;
 import android.util.Base64;
 import android.webkit.JavascriptInterface;
+import android.webkit.WebView;
 import android.widget.Toast;
 
 import java.io.File;
@@ -38,15 +39,30 @@ public class NativeBridge {
 
     private final Context context;
     private final Host host;
+    private final WebView webView;
 
-    NativeBridge(Context context, Host host) {
+    NativeBridge(Context context, Host host, WebView webView) {
         this.context = context.getApplicationContext();
         this.host = host;
+        this.webView = webView;
+    }
+
+    /**
+     * JS-мост доступен только странице приложения по https://appassets.local/.
+     * Без проверки любой загруженный в WebView документ (редирект, подмена origin)
+     * мог бы писать файлы и запрашивать печать/выход от имени пользователя.
+     */
+    private boolean isTrustedOrigin() {
+        if (webView == null) return false;
+        String url = webView.getUrl();
+        if (url == null) return false;
+        Uri uri = Uri.parse(url);
+        return "https".equals(uri.getScheme()) && AssetServer.HOST.equals(uri.getHost());
     }
 
     @JavascriptInterface
     public String platform() {
-        return "android";
+        return isTrustedOrigin() ? "android" : "unknown";
     }
 
     /**
@@ -54,6 +70,7 @@ public class NativeBridge {
      */
     @JavascriptInterface
     public String saveFile(String name, String base64, String mime) {
+        if (!isTrustedOrigin()) return "err: недопустимый origin";
         try {
             byte[] data = Base64.decode(base64, Base64.DEFAULT);
             String fileName = name == null || name.trim().isEmpty() ? "anooplan.dat" : name.trim();
@@ -115,18 +132,21 @@ public class NativeBridge {
     /** Приложение сообщает, есть ли несохранённые изменения — от этого зависит диалог выхода. */
     @JavascriptInterface
     public void setDirty(boolean dirty) {
+        if (!isTrustedOrigin()) return;
         if (host != null) host.onDirtyChanged(dirty);
     }
 
     /** Вызывается веб-частью после сохранения: можно закрывать приложение. */
     @JavascriptInterface
     public void exitNow() {
+        if (!isTrustedOrigin()) return;
         if (host != null) host.onExitRequested();
     }
 
     /** Печать PDF журнала через системный диалог печати. */
     @JavascriptInterface
     public void printPdf(String name, String base64) {
+        if (!isTrustedOrigin()) return;
         try {
             byte[] data = Base64.decode(base64, Base64.DEFAULT);
             if (data.length == 0) return;
@@ -142,6 +162,7 @@ public class NativeBridge {
      */
     @JavascriptInterface
     public String shareFile(String name, String base64, String mime) {
+        if (!isTrustedOrigin()) return "err: недопустимый origin";
         try {
             byte[] data = Base64.decode(base64, Base64.DEFAULT);
             if (data.length == 0) return "err: пустой файл";
@@ -179,7 +200,7 @@ public class NativeBridge {
      */
     @JavascriptInterface
     public String takePendingFile() {
-        if (host == null) return "";
+        if (!isTrustedOrigin() || host == null) return "";
         String text = host.takePendingFile();
         return text == null ? "" : text;
     }
@@ -187,6 +208,7 @@ public class NativeBridge {
     /** Короткая вибрация: попадание в привязку, долгое нажатие. */
     @JavascriptInterface
     public void vibrate(int milliseconds) {
+        if (!isTrustedOrigin()) return;
         try {
             int duration = Math.max(1, Math.min(60, milliseconds));
             Vibrator vibrator;
@@ -209,6 +231,7 @@ public class NativeBridge {
 
     @JavascriptInterface
     public void toast(final String text) {
+        if (!isTrustedOrigin()) return;
         Toast.makeText(context, text == null ? "" : text, Toast.LENGTH_LONG).show();
     }
 }

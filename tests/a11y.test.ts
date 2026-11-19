@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import {
   FONT_SCALE_MAX,
   FONT_SCALE_MIN,
@@ -47,6 +48,14 @@ test('textZoom: некорректный fontScale даёт 100 % и не лом
   for (const value of garbage) {
     assert.equal(resolveTextZoom(value), TEXT_ZOOM_DEFAULT, `fontScale=${String(value)}`);
   }
+});
+
+test('error-баннер: кнопка закрытия подписана для скринридера', () => {
+  const app = readFileSync(new URL('../src/App.tsx', import.meta.url), 'utf8');
+  const banner = app.match(/className="banner error"[^>]*>.*?<\/div>/s)?.[0] ?? '';
+  assert.match(banner, /role="alert"/);
+  assert.match(banner, /aria-label="Закрыть сообщение об ошибке"/);
+  assert.doesNotMatch(banner, /<button(?![^>]*aria-label)[^>]*>×<\/button>/, 'icon-only кнопка без aria-label');
 });
 
 test('theme-color: светлая и тёмная системная тема', () => {
