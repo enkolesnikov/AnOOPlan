@@ -125,7 +125,12 @@ export function parseAnoPlanFile(input: unknown): ParsedProjectFile {
     if (!isRecord(input.project)) throw new ProjectSchemaError(NOT_A_PROJECT);
     // Формат новее поддерживаемого не парсим: непонятные поля нельзя терять молча.
     const formatVersion = input.formatVersion;
-    if (typeof formatVersion === 'number' && Number.isFinite(formatVersion) && formatVersion > ANOOPLAN_FORMAT_VERSION) {
+    // Версия формата — только целое число. Строка «2» или мусор не должны
+    // открываться молча: иначе неизвестные поля более нового файла потеряются.
+    if (formatVersion !== undefined && (typeof formatVersion !== 'number' || !Number.isInteger(formatVersion) || formatVersion < 1)) {
+      throw new ProjectSchemaError('Некорректная версия формата файла AnOOPlan.');
+    }
+    if (typeof formatVersion === 'number' && formatVersion > ANOOPLAN_FORMAT_VERSION) {
       throw new ProjectSchemaError(
         `Файл создан более новой версией AnOOPlan (формат ${formatVersion}). Обновите приложение.`,
       );

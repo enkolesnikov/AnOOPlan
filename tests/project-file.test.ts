@@ -213,6 +213,16 @@ test('migrateProject нормализует проект из .anooplan так �
   assert.equal(migrated.schemaVersion, 2);
 });
 
+test('версия формата строкой отклоняется, а не открывается молча', () => {
+  for (const formatVersion of ['2', '1', 0, -1, 1.5, Number.NaN, null, {}]) {
+    assert.throws(
+      () => parseAnoPlanFile({ format: ANOOPLAN_FORMAT, formatVersion, project: project() }),
+      ProjectSchemaError,
+      `formatVersion=${String(formatVersion)}`,
+    );
+  }
+});
+
 test('формат новее поддерживаемого отклоняется понятной ошибкой', () => {
   const base = buildAnoPlanFile(project(), PDFS, PHOTOS);
   const future = { ...JSON.parse(serializeAnoPlanFile(base)), formatVersion: ANOOPLAN_FORMAT_VERSION + 1 };
