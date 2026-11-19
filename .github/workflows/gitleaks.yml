@@ -1,0 +1,34 @@
+name: Gitleaks
+
+# Поиск секретов в истории git и в изменениях PR. Локальная быстрая проверка —
+# `npm run check:secrets`, полная — `gitleaks dir . --config .gitleaks.toml`.
+# Пользовательских секретов не требуется: GITHUB_TOKEN выдаётся Actions автоматически
+# (он нужен только для комментария в PR и ничего не публикует).
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pull-requests: read
+
+concurrency:
+  group: gitleaks-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  scan:
+    name: Gitleaks
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          # Вся история: иначе gitleaks не увидит старые коммиты и секреты в них.
+          fetch-depth: 0
+      - uses: gitleaks/gitleaks-action@ff98106e4c7b2bc287b24eaf42907196329070c7 # v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Явно указываем конфиг из корня: стандартные правила + свои (см. .gitleaks.toml).
+          GITLEAKS_CONFIG: .gitleaks.toml

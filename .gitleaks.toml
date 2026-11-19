@@ -1,0 +1,49 @@
+# Gitleaks: стандартный набор правил плюс ключи, которые встречаются именно у нас.
+# Локально: gitleaks dir . --config .gitleaks.toml --no-banner -v
+# В CI: .github/workflows/gitleaks.yml. Находка роняет job — это и нужно.
+
+[extend]
+useDefault = true
+
+[[rules]]
+id = "oc-sk"
+description = "Ключ oc_sk_* (внутренний формат)"
+regex = '''oc_sk_[A-Za-z0-9_]{16,}'''
+keywords = ["oc_sk_"]
+
+[[rules]]
+id = "github-pat"
+description = "GitHub fine-grained personal access token"
+regex = '''github_pat_[A-Za-z0-9_]{40,}'''
+keywords = ["github_pat_"]
+
+[[rules]]
+id = "github-token"
+description = "GitHub token: ghp_, gho_, ghu_, ghs_, ghr_"
+regex = '''gh[pousr]_[A-Za-z0-9]{36,}'''
+keywords = ["ghp_", "gho_", "ghu_", "ghs_", "ghr_"]
+
+[[rules]]
+id = "pem-private-key"
+description = "Заголовок приватного ключа PEM"
+regex = '''-----BEGIN (?:RSA |EC |OPENSSH |DSA |PGP )?PRIVATE KEY-----'''
+keywords = ["PRIVATE KEY"]
+
+# Заведомо безопасные места: фикстуры тестов, документация с примерами, артефакты сборки.
+# Весь репозиторий в allowlist не добавляем — иначе проверка теряет смысл.
+[allowlist]
+description = "Фикстуры, примеры в доках и сгенерированные артефакты"
+paths = [
+  '''tests/fixtures''',
+  '''docs/''',
+  '''node_modules/''',
+  '''dist/''',
+  '''build/''',
+  '''coverage/''',
+]
+# Сами шаблоны секретов: gitleaks и scripts/check-secrets.mjs содержат их как регулярки.
+regexes = [
+  '''oc_sk_\[A-Za-z0-9_\]''',
+  '''gh\[pousr\]_''',
+  '''github_pat_\[A-Za-z0-9_\]''',
+]

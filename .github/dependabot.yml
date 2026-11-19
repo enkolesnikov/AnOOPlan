@@ -1,0 +1,23 @@
+# Dependabot: еженедельные PR на обновления зависимостей.
+# npm: dev-зависимости приходят одним PR (groups), чтобы не заваливать CI десятком мелких.
+# github-actions: отдельный PR; закрепление по SHA сохраняется, Dependabot обновляет пин целиком.
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: "/"
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "chore(deps)"
+    groups:
+      dev-dependencies:
+        dependency-type: development
+
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "chore(ci)"
