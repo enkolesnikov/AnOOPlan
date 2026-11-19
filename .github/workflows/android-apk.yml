@@ -47,6 +47,9 @@ jobs:
           "$BT/aapt" version
           "$BT/d8" --version || true
 
+      - name: Проверить SHA инструментов Android
+        run: bash scripts/verify-tools.sh
+
       - name: Зависимости
         run: npm ci
 

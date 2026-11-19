@@ -91,6 +91,15 @@ fi
 if [ "$PLATFORM" = "35" ] && [ -f android.jar ]; then verify_sha android.jar "$SHA_ANDROID_JAR" android.jar; fi
 if [ -f r8.jar ] && [ "$R8_URL" = "https://dl.google.com/dl/android/maven2/com/android/tools/r8/8.5.35/r8-8.5.35.jar" ]; then verify_sha r8.jar "$SHA_R8" r8.jar; fi
 
+# Единый список пинов с release-гейтом CI: те же пути проверяются перед сборкой APK.
+if [ "$PLATFORM" = "35" ] && [ "$BT_VERSION" = "35.0.0" ]; then
+    AAPT="$BT_DIR/aapt" ZIPALIGN="$BT_DIR/zipalign" APKSIGNER="$BT_DIR/apksigner" \
+        D8_CMD="$BT_DIR/d8" ANDROID_JAR="$TOOLS/android.jar" \
+        bash "$ROOT/scripts/verify-tools.sh"
+else
+    echo "    нестандартные версии инструментов: verify-tools пропущен" >&2
+fi
+
 echo "==> Версии инструментов"
 "$BT_DIR/aapt" version
 "$BT_DIR/apksigner" --version

@@ -143,12 +143,13 @@ if [ ! -f "$KEYSTORE" ]; then
     if [ -z "$KS_PASS" ]; then
         KS_PASS="$(python3 -c 'import secrets; print(secrets.token_urlsafe(24))')"
     fi
-    keytool -genkeypair -v \
+    # Пароль передаётся через окружение, а не аргументом: argv виден другим процессам.
+    KS_PASS="$KS_PASS" keytool -genkeypair -v \
         -keystore "$KEYSTORE" \
         -alias "$KS_ALIAS" \
         -keyalg RSA -keysize 2048 -validity 10950 \
         -dname "CN=AnOOPlan, O=AnOOPlan, C=RU" \
-        -storepass "$KS_PASS" -keypass "$KS_PASS" >/dev/null
+        -storepass:env KS_PASS -keypass:env KS_PASS >/dev/null
     printf '%s' "$KS_PASS" > "$KS_PASS_FILE"
     chmod 600 "$KS_PASS_FILE"
     printf 'Keystore: %s\nAlias: %s\nПароль: см. %s (права 0600).\n\nХраните файл и пароль: без них невозможно выпустить обновление приложения.\n' \
@@ -160,10 +161,11 @@ if [ -z "$KS_PASS" ]; then
     exit 1
 fi
 rm -f "$OUT_APK"
-"$APKSIGNER" sign \
+# Пароль не попадает в argv: apksigner читает его из окружения.
+KS_PASS="$KS_PASS" "$APKSIGNER" sign \
     --ks "$KEYSTORE" \
-    --ks-pass "pass:$KS_PASS" \
-    --key-pass "pass:$KS_PASS" \
+    --ks-pass env:KS_PASS \
+    --key-pass env:KS_PASS \
     --v1-signing-enabled true \
     --v2-signing-enabled true \
     --v3-signing-enabled true \

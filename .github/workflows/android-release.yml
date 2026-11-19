@@ -44,6 +44,9 @@ jobs:
           } >> "$GITHUB_ENV"
           "$BT/aapt" version
 
+      - name: Проверить SHA инструментов Android
+        run: bash scripts/verify-tools.sh
+
       - name: Зависимости
         run: npm ci
 
@@ -70,6 +73,8 @@ jobs:
           npm run lint
           npm run knip
           npm run coverage
+          npm run build
+          npm run size
 
       - name: Тег создан из проверенного main
         run: |
@@ -107,20 +112,47 @@ jobs:
           KS_ALIAS: ${{ secrets.ANDROID_KS_ALIAS }}
         run: bash scripts/build-apk.sh
 
-      - name: Проверить сертификат подписи
+      - name: Проверить сертификат, версию, разрешения и размер APK
         env:
           EXPECTED_CERT: ${{ secrets.ANDROID_CERT_SHA256 }}
         run: |
           set -euo pipefail
           APK="$(ls build/AnOOPlan-*.apk | grep -v unsigned | head -1)"
+          [ -f "$APK" ] || { echo "Нет собранного APK" >&2; exit 1; }
           APKSIGNER="${APKSIGNER:-apksigner}"
+          AAPT="${AAPT:-aapt}"
+
+          # Пустой секрет не должен отключать проверку подписи.
+          [ -n "$EXPECTED_CERT" ] || { echo "Не задан секрет ANDROID_CERT_SHA256: релиз без проверки сертификата запрещён" >&2; exit 1; }
           CERT="$("$APKSIGNER" verify --print-certs "$APK" | sed -n 's/^Signer #1 certificate SHA-256 digest: //p' | head -1)"
           echo "SHA-256 сертификата: $CERT"
-          if [ -n "$EXPECTED_CERT" ] && [ "$CERT" != "$EXPECTED_CERT" ]; then
-            echo "Сертификат не совпадает с ANDROID_CERT_SHA256" >&2
+          [ "$CERT" = "$EXPECTED_CERT" ] || { echo "Сертификат не совпадает с ANDROID_CERT_SHA256" >&2; exit 1; }
+          "$APKSIGNER" verify --verbose "$APK" | head -12
+
+          VERSION_NAME="$(node -p "require('./package.json').version")"
+          VERSION_CODE="$(node -p "String(require('./package.json').androidVersionCode)")"
+          BADGING="$("$AAPT" dump badging "$APK" | head -1)"
+          echo "$BADGING"
+          case "$BADGING" in
+            *"versionCode='$VERSION_CODE'"*) ;;
+            *) echo "versionCode APK не совпадает с package.json ($VERSION_CODE)" >&2; exit 1 ;;
+          esac
+          case "$BADGING" in
+            *"versionName='$VERSION_NAME'"*) ;;
+            *) echo "versionName APK не совпадает с package.json ($VERSION_NAME)" >&2; exit 1 ;;
+          esac
+
+          PERMS="$("$AAPT" dump permissions "$APK")"
+          echo "$PERMS"
+          if echo "$PERMS" | grep -q 'android.permission.INTERNET'; then
+            echo "APK запрашивает INTERNET — офлайн-контракт нарушен" >&2
             exit 1
           fi
-          "$APKSIGNER" verify --verbose "$APK" | head -12
+
+          SIZE="$(stat -c%s "$APK")"
+          echo "Размер APK: $SIZE Б (бюджет 4194304)"
+          [ "$SIZE" -le 4194304 ] || { echo "APK больше 4 МБ" >&2; exit 1; }
+          sha256sum "$APK"
 
       - name: Опубликовать GitHub Release
         env:
