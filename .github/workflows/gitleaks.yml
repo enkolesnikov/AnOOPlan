@@ -8,6 +8,10 @@ on:
   push:
     branches: [main]
   pull_request:
+  # Полная история проверяется на schedule: action сканирует диапазон push/PR,
+  # а по расписанию — всю историю (поэтому fetch-depth: 0).
+  schedule:
+    - cron: '0 4 * * 1'
   workflow_dispatch:
 
 permissions:
@@ -25,7 +29,7 @@ jobs:
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
-          # Вся история: иначе gitleaks не увидит старые коммиты и секреты в них.
+          # Вся история: нужна для schedule-скана и поиска секретов в старых коммитах.
           fetch-depth: 0
       - uses: gitleaks/gitleaks-action@ff98106e4c7b2bc287b24eaf42907196329070c7 # v2.3.9
         env:

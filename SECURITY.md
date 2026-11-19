@@ -72,5 +72,5 @@ AnOOPlan — офлайн-приложение: в APK нет разрешени
 
 ## Что уже сделано
 
-В репозитории работают проверки, снижающие риск: `npm run check:secrets` перед коммитом,
+В репозитории работают проверки, снижающие риск: `npm run check:secrets` перед push и в CI,
 workflow Gitleaks (история git и PR), CodeQL для JavaScript/TypeScript.

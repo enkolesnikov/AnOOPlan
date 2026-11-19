@@ -26,7 +26,7 @@ keywords = ["ghp_", "gho_", "ghu_", "ghs_", "ghr_"]
 [[rules]]
 id = "pem-private-key"
 description = "Заголовок приватного ключа PEM"
-regex = '''-----BEGIN (?:RSA |EC |OPENSSH |DSA |PGP )?PRIVATE KEY-----'''
+regex = '''-----BEGIN (?:[A-Z0-9]+ )*PRIVATE KEY-----'''
 keywords = ["PRIVATE KEY"]
 
 # Заведомо безопасные места: фикстуры тестов, документация с примерами, артефакты сборки.
