@@ -150,4 +150,12 @@ export default tseslint.config(
     languageOptions: { globals: { ...globals.node } },
     rules: { 'no-console': 'off' },
   },
+  {
+    // Ручной бенчмарк: печатает таблицу в stdout и работает и в Node, и в page.evaluate.
+    files: ['tests/perf/**/*.ts', 'playwright.perf.config.ts'],
+    languageOptions: {
+      globals: { ...globals.node, ...globals.browser },
+    },
+    rules: { 'no-console': 'off', '@typescript-eslint/no-this-alias': 'off' },
+  },
 );
