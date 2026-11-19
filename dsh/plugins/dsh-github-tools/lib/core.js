@@ -111,7 +111,7 @@ async function request(config, path, { method = 'GET', body, contentType, token,
   if (auth) headers.Authorization = `Bearer ${auth}`;
   if (contentType) headers['Content-Type'] = contentType;
   try {
-    // codeql[js/file-access-to-http] — осознанная отправка тела запроса в GitHub API
+    // codeql[js/file-access-to-http]
     const response = await fetch(`${baseUrl(config)}${path}`, {
       method, headers, body, signal: AbortSignal.timeout(timeoutMs),
     });
@@ -227,16 +227,16 @@ export async function githubReleaseUpload(config, { tag, file, name, dryRun = fa
     // Читаем из уже проверенного дескриптора: путь между проверкой и чтением
     // повторно не используется.
     const body = readFileSync(fd);
-    // codeql[js/file-access-to-http] — осознанная загрузка ассета в GitHub Releases (см. пояснение выше)
+    // codeql[js/file-access-to-http]
     const response = await fetch(`${uploadUrl}?name=${encodeURIComponent(assetName)}`, {
       method: 'POST',
-      headers: { // codeql[js/file-access-to-http] — уходит токен из credential store, назначение проверено выше
+      headers: { // codeql[js/file-access-to-http]
         Accept: 'application/vnd.github+json',
         Authorization: `Bearer ${authToken()}`,
         'Content-Type': contentType,
         'User-Agent': 'dsh-github-tools',
       },
-      body, // codeql[js/file-access-to-http] — тело — проверенный ассет из workspace
+      body, // codeql[js/file-access-to-http]
       redirect: 'error',
       signal: AbortSignal.timeout(120_000),
     });
