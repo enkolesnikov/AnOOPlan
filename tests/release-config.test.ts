@@ -72,8 +72,9 @@ test('цепочка поставки: checksums инструментов и п�
   assert.match(fetchTools, /SHA256|SHA_ANDROID_JAR|sha256sum/);
   assert.match(fetchTools, /verify_sha/);
   const ci = read('.github/workflows/ci.yml');
-  // Без регэкспа: CodeQL справедливо ругался на незаякоренный шаблон, а нужна проверка подстроки.
-  assert.ok(!ci.includes('coverage.codacy.com'), 'CI не загружает покрытие на Codacy');
+  // Покрытие не уходит во внешние сервисы: ни шага, ни токена Codacy в CI нет.
+  // Проверка без регэкспа и без URL-подстроки: нужна именно отсутствие упоминания.
+  assert.equal(ci.toLowerCase().includes('codacy'), false, 'CI не загружает покрытие в Codacy');
   assert.match(ci, /hashFiles\('package-lock\.json'\)/);
   const release = read('.github/workflows/android-release.yml');
   assert.match(release, /npm run lint/);

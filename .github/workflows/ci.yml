@@ -1,7 +1,7 @@
 name: CI
 
 # Быстрый обязательный прогон на каждый push/PR: линт, типы, юнит-тесты с покрытием,
-# смоук и E2E. Покрытие (lcov) при заданном секрете загружается в Codacy.
+# смоук и E2E. Внешним сервисам покрытие не отправляется (см. тест release-config).
 # Pages деплоится отдельным workflow при изменениях приложения, неподписанный APK — вручную;
 # это не раздувает обязательный CI на каждый push.
 on:
@@ -20,10 +20,6 @@ concurrency:
 jobs:
   test:
     runs-on: ubuntu-24.04
-    env:
-      # Project token Codacy задаёт владелец в секретах. Пустое значение (форк/PR) —
-      # шаг загрузки покрытия пропускается. Токен в лог не выводится.
-      CODACY_PROJECT_TOKEN: ${{ secrets.CODACY_PROJECT_TOKEN }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
