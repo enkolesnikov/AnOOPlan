@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 // Юнит-тесты с покрытием и порогами (без новых зависимостей: node --experimental-test-coverage).
 // Порог чуть ниже текущего уровня, чтобы падать только на реальной регрессии.
-// Дополнительно пишем coverage/lcov.info (встроенный lcov-reporter Node 24) — его
-// загружает Codacy в CI, чтобы в отчёте было реальное покрытие, а не «не загружено».
+// Дополнительно пишем coverage/lcov.info (встроенный lcov-reporter Node 24) —
+// локальный артефакт для разбора покрытия; в CI он никуда не загружается.
 import { mkdirSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { join, resolve } from 'node:path';
@@ -32,6 +32,10 @@ const result = spawnSync('npx', [
 const output = `${result.stdout || ''}${result.stderr || ''}`;
 process.stdout.write(output.split('\n').filter(line => /tests |pass |fail |all files/.test(line)).join('\n') + '\n');
 if (result.status !== 0) {
+  // Диагностика: без хвоста отчёта в CI видно только «fail 1» без имени теста.
+  const tail = output.trimEnd().split('\n').slice(-60).join('\n');
+  console.error('--- подробности падения (хвост отчёта) ---');
+  console.error(tail);
   console.error('Юнит-тесты завершились с ошибкой');
   process.exit(result.status ?? 1);
 }
