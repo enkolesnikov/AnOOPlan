@@ -179,7 +179,7 @@ jobs:
           VERSION_NAME="$(node -p "require('./package.json').version")"
           APK="build/AnOOPlan-$VERSION_NAME.apk"
           [ -f "$APK" ] || { echo "Нет собранного APK: $APK" >&2; exit 1; }
-          sha256sum "$APK" | awk '{print $1"  AnOOPlan-"'"$VERSION_NAME"'.apk"}' > "$APK.sha256"
+          ( cd "$(dirname "$APK")" && sha256sum "$(basename "$APK")" ) > "$APK.sha256"
           # Описание релиза — аннотация тега. actions/checkout для тега может оставить локальный
           # тег облегчённым, поэтому сначала спрашиваем объект тега через GitHub API, затем
           # локальную аннотацию и только в крайнем случае — сообщение коммита.
