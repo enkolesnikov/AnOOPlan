@@ -2,6 +2,7 @@
   "entry": [
     "tests/**/*.test.ts",
     "tests/e2e/**/*.spec.ts",
+    "tests/perf/**/*.spec.ts",
     "scripts/*.mjs"
   ],
   "project": [

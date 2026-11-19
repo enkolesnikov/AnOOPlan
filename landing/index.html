@@ -41,7 +41,7 @@
           <h1>Кабельные планы<br /><span>без интернета</span></h1>
           <p class="lead">Загрузите PDF-план, расставьте оборудование, проведите трассы и получите кабельный журнал, ведомости и смету прямо на объекте — без сети, облака и аккаунтов.</p>
           <div class="actions">
-            <a class="btn primary" href="https://github.com/enkolesnikov/AnOOPlan/releases/latest">Скачать APK <small>2.9.0 · 1,6 МБ</small></a>
+            <a class="btn primary" href="https://github.com/enkolesnikov/AnOOPlan/releases/latest">Скачать APK <small>2.9.1 · 1,6 МБ</small></a>
             <a class="btn secondary" href="app/">Открыть веб-версию</a>
           </div>
           <ul class="proof" aria-label="Ключевые параметры">
@@ -61,7 +61,7 @@
       </section>
 
       <section class="stats wrap" aria-label="Коротко о приложении">
-        <div><strong>319</strong><span>юнит-тестов<i>плюс смоук, E2E и визуальные эталоны</i></span></div>
+        <div><strong>394</strong><span>юнит-тестов<i>плюс смоук, E2E и визуальные эталоны</i></span></div>
         <div><strong>4</strong><span>формата экспорта<i>PDF, XLSX, CSV, .anooplan</i></span></div>
         <div><strong>∞</strong><span>этажей и проектов<i>всё хранится на устройстве</i></span></div>
         <div><strong>0 ₽</strong><span>без рекламы и подписок<i>никакой монетизации</i></span></div>
@@ -102,17 +102,17 @@
       <section id="audit" class="section wrap">
         <div class="audit-card">
           <div>
-            <p class="eyebrow">Релиз 2.9.0 · ноябрь 2026</p>
-            <h2>Что нового в 2.9.0</h2>
-            <p class="section-lead">Аудит проверил сохранность проектов, расчёты, экспорт, производительность, доступность и офлайн-контракт. Подтверждённые дефекты закрыты отдельными коммитами с регрессионными тестами.</p>
-            <p class="audit-more"><a href="https://github.com/enkolesnikov/AnOOPlan/blob/main/docs/AUDIT-2.9.md">Полный отчёт аудита <span aria-hidden="true">↗</span></a></p>
+            <p class="eyebrow">Релиз 2.9.1 · ноябрь 2026</p>
+            <h2>Что нового в 2.9.1</h2>
+            <p class="section-lead">Релиз закрывает остатки аудита 2.9: углы на стыках и стояках, цены по сечениям, честные миграции, скорость ввода и перетаскивания. Каждый пункт — отдельный коммит с тестом.</p>
+            <p class="audit-more"><a href="https://github.com/enkolesnikov/AnOOPlan/blob/main/docs/RELEASE-NOTES-2.9.1.md">Заметки о релизе <span aria-hidden="true">↗</span></a></p>
           </div>
           <ul class="audit-list">
-            <li><b>Сохранность фото</b><span>удаление этажа или проекта не стирает снимки в обход undo — вложения восстанавливаются вместе с проектом</span></li>
-            <li><b>GC вложений</b><span>сборка мусора учитывает проект, открытый в другой вкладке, undo/redo и снимки версий</span></li>
-            <li><b>Точность расчётов</b><span>вставка вершины не удваивает запас, разнотипные трассы не объединяются, неизвестная высота даёт «нет данных», а не 0</span></li>
-            <li><b>Оглавление PDF</b><span>многостраничное оглавление не обрезается, а примечание не разрывает лист плана</span></li>
-            <li><b>LAN-токен</b><span>API по сети доступен только с токеном ANOOPLAN_TOKEN; без него сервер слушает loopback</span></li>
+            <li><b>Углы без потерь</b><span>цепочка строится в обе стороны, стояк не рвёт её, а угол на стыке разделённой трассы считается один раз</span></li>
+            <li><b>Цены по сечениям</b><span>смета даёт отдельные строки «Лоток · 100×50» и «Стояк · 50×50»; чужое сечение — прочерк и предупреждение, а не первая цена</span></li>
+            <li><b>Скорость</b><span>drag через requestAnimationFrame, totals из готовых расчётов и индекс заполнения: 16,7 мс/кадр на 2000 сегментах, без long tasks</span></li>
+            <li><b>Данные без подмены</b><span>количество 0/NaN и запасы не превращаются в правдоподобные числа; в журнале и CSV — прочерк</span></li>
+            <li><b>Надёжный экспорт</b><span>лист предупреждений, безопасное имя файла, PDF из IndexedDB на сервере и кэш хешированных ассетов</span></li>
           </ul>
         </div>
       </section>
@@ -143,7 +143,7 @@
         <div>
           <p class="eyebrow">Android</p>
           <h2>Скачайте AnOOPlan</h2>
-          <p>Бесплатно, без рекламы и встроенных покупок. Версия 2.9.0, Android 7.0+, WebView 98+.</p>
+          <p>Бесплатно, без рекламы и встроенных покупок. Версия 2.9.1, Android 7.0+, WebView 98+.</p>
           <div class="actions">
             <a class="btn primary" href="https://github.com/enkolesnikov/AnOOPlan/releases/latest">Скачать APK</a>
             <a class="btn secondary" href="app/">Открыть в браузере</a>
@@ -151,7 +151,7 @@
         </div>
         <aside class="download-card" aria-label="Параметры релиза">
           <span class="eyebrow">Релиз</span>
-          <strong>2.9.0</strong>
+          <strong>2.9.1</strong>
           <dl><div><dt>Размер</dt><dd>1,6 МБ</dd></div><div><dt>Подпись</dt><dd>release</dd></div><div><dt>Разрешения</dt><dd>VIBRATE</dd></div><div><dt>Сеть</dt><dd>не требуется</dd></div></dl>
           <a href="https://github.com/enkolesnikov/AnOOPlan" rel="noopener">Исходный код на GitHub <span aria-hidden="true">↗</span></a>
         </aside>
