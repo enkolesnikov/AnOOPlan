@@ -13,6 +13,15 @@ jobs:
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
+      - name: Тег соответствует версии package.json
+        run: |
+          set -euo pipefail
+          VERSION_NAME="$(node -p "require('./package.json').version")"
+          [ "$GITHUB_REF_NAME" = "v$VERSION_NAME" ] || {
+            echo "Тег $GITHUB_REF_NAME не совпадает с версией $VERSION_NAME: релиз запрещён." >&2
+            exit 1
+          }
+
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: 24
@@ -117,8 +126,9 @@ jobs:
           EXPECTED_CERT: ${{ secrets.ANDROID_CERT_SHA256 }}
         run: |
           set -euo pipefail
-          APK="$(ls build/AnOOPlan-*.apk | grep -v unsigned | head -1)"
-          [ -f "$APK" ] || { echo "Нет собранного APK" >&2; exit 1; }
+          VERSION_NAME="$(node -p "require('./package.json').version")"
+          APK="build/AnOOPlan-$VERSION_NAME.apk"
+          [ -f "$APK" ] || { echo "Нет собранного APK: $APK" >&2; exit 1; }
           APKSIGNER="${APKSIGNER:-apksigner}"
           AAPT="${AAPT:-aapt}"
 
@@ -148,6 +158,12 @@ jobs:
             echo "APK запрашивает INTERNET — офлайн-контракт нарушен" >&2
             exit 1
           fi
+          # Разрешения — точный allowlist, а не только отсутствие INTERNET.
+          EXTRA_PERMS="$(echo "$PERMS" | sed -n "s/^uses-permission: name='\(.*\)'$/\1/p" | grep -v '^android.permission.VIBRATE$' || true)"
+          if [ -n "$EXTRA_PERMS" ]; then
+            echo "Неожиданные разрешения APK: $EXTRA_PERMS" >&2
+            exit 1
+          fi
 
           SIZE="$(stat -c%s "$APK")"
           echo "Размер APK: $SIZE Б (бюджет 4194304)"
@@ -160,7 +176,10 @@ jobs:
         run: |
           set -euo pipefail
           TAG="${GITHUB_REF_NAME}"
-          APK="$(ls build/AnOOPlan-*.apk | grep -v unsigned | head -1)"
+          VERSION_NAME="$(node -p "require('./package.json').version")"
+          APK="build/AnOOPlan-$VERSION_NAME.apk"
+          [ -f "$APK" ] || { echo "Нет собранного APK: $APK" >&2; exit 1; }
+          sha256sum "$APK" | awk '{print $1"  AnOOPlan-"'"$VERSION_NAME"'.apk"}' > "$APK.sha256"
           # Описание релиза — аннотация тега. actions/checkout для тега может оставить локальный
           # тег облегчённым, поэтому сначала спрашиваем объект тега через GitHub API, затем
           # локальную аннотацию и только в крайнем случае — сообщение коммита.
@@ -173,9 +192,9 @@ jobs:
           [ -n "$NOTES" ] || NOTES="$(git log -1 --pretty=%B)"
           if gh release view "$TAG" >/dev/null 2>&1; then
             gh release edit "$TAG" --notes "$NOTES"
-            gh release upload "$TAG" "$APK" --clobber
+            gh release upload "$TAG" "$APK" "$APK.sha256" --clobber
           else
-            gh release create "$TAG" "$APK" --title "AnOOPlan ${TAG#v}" --notes "$NOTES"
+            gh release create "$TAG" "$APK" "$APK.sha256" --title "AnOOPlan ${TAG#v}" --notes "$NOTES"
           fi
 
       - name: Удалить keystore с раннера

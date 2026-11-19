@@ -18,6 +18,9 @@ test('release workflow проверяет версию, разрешения, р
   const workflow = liveYaml(read('.github/workflows/android-release.yml'));
   assert.match(workflow, /^\s*npm run build\s*$/m, 'свежий dist перед бюджетом размера');
   assert.match(workflow, /^\s*npm run size\s*$/m, 'бюджет JS/CSS в release-гейте');
+  assert.match(workflow, /\[ "\$GITHUB_REF_NAME" = "v\$VERSION_NAME" \]/, 'тег сверяется с package.json');
+  assert.match(workflow, /android\.permission\.VIBRATE/, 'разрешения — точный allowlist');
+  assert.match(workflow, /APK="build\/AnOOPlan-\$VERSION_NAME\.apk"/, 'точный путь APK, а не ls|head');
   assert.match(workflow, /dump badging/, 'versionName/versionCode из APK');
   assert.match(workflow, /versionName='\$VERSION_NAME'/, 'сверка versionName с package.json');
   assert.match(workflow, /versionCode='\$VERSION_CODE'/, 'сверка versionCode с package.json');
@@ -25,6 +28,7 @@ test('release workflow проверяет версию, разрешения, р
   assert.match(workflow, /grep -q 'android\.permission\.INTERNET'/, 'отказ при INTERNET');
   assert.match(squash(workflow), /\[ "\$SIZE" -le 4194304 \]/, 'бюджет APK ≤4 МБ (строго ≤)');
   assert.match(workflow, /sha256sum "\$APK"/, 'SHA-256 опубликованного APK');
+  assert.match(workflow, /\$APK\.sha256/, 'файл SHA-256 прикладывается к релизу');
   assert.match(workflow, /ANDROID_CERT_SHA256/, 'сертификат из секрета');
   // Пустой секрет — ошибка, а не тихий пропуск проверки.
   assert.match(squash(workflow), /\[ -n "\$EXPECTED_CERT" \] \|\| \{/);
