@@ -163,6 +163,21 @@ test('запас сегмента NaN не маскируется миграци
   assert.ok(hasError(migrated, RESERVE_ERROR), validateProject(migrated).join('; '));
 });
 
+test('координаты: отсутствие в старом файле — 0, явный NaN — повреждение', () => {
+  const raw = rawDemo();
+  (raw.equipment as Record<string, unknown>[])[0].x = Number.NaN;
+  (raw.pins as Record<string, unknown>[])[0].y = Number.NaN;
+  const migrated = migrateProject(raw);
+  assert.ok(Number.isNaN(migrated.equipment[0].x), 'NaN координаты не подменяется нулём');
+  assert.ok(Number.isNaN(migrated.pins[0].y));
+  assert.ok(validateProject(migrated).some(error => /неверные координаты/.test(error)));
+
+  const old = rawDemo();
+  delete (old.equipment as Record<string, unknown>[])[0].x;
+  const migratedOld = migrateProject(old);
+  assert.equal(migratedOld.equipment[0].x, 0, 'отсутствующая координата старого файла остаётся 0');
+});
+
 test('строки из старых копий по-прежнему становятся числами', () => {
   const raw = rawDemo();
   cableAt(raw).quantity = '2';

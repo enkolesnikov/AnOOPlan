@@ -67,6 +67,9 @@ const requiredNumber = (value: unknown): number => {
  */
 const reserveNumber = (value: unknown): number => (value === undefined ? 0 : requiredNumber(value));
 
+/** Координата: отсутствие в старом файле — 0, явный мусор/NaN — повреждение, а не 0. */
+const coordinateNumber = (value: unknown): number => (value === undefined ? 0 : requiredNumber(value));
+
 /**
  * Миграции "с версии N на N+1". Пока пусто; при добавлении v2 сюда
  * кладётся функция 1 → 2, и migrateProject применит её к старым файлам.
@@ -103,8 +106,8 @@ function normalizeEquipment(value: unknown): Project['equipment'][number] {
     name: typeof value.name === 'string' ? value.name : '',
     type: typeof value.type === 'string' ? value.type : 'Оборудование',
     floorId: String(value.floorId ?? ''),
-    x: Number(value.x) || 0,
-    y: Number(value.y) || 0,
+    x: coordinateNumber(value.x),
+    y: coordinateNumber(value.y),
     height: typeof value.height === 'number' ? value.height : null,
     note: typeof value.note === 'string' ? value.note : '',
     properties: isRecord(value.properties)
@@ -161,8 +164,8 @@ function normalizePin(value: unknown): Project['pins'][number] {
     id: String(value.id ?? ''),
     number: typeof value.number === 'string' ? value.number : '',
     floorId: String(value.floorId ?? ''),
-    x: Number(value.x) || 0,
-    y: Number(value.y) || 0,
+    x: coordinateNumber(value.x),
+    y: coordinateNumber(value.y),
     comment: typeof value.comment === 'string' ? value.comment : '',
     status,
     photos: Array.isArray(value.photos) ? value.photos.filter((key): key is string => typeof key === 'string' && key.length > 0) : [],
