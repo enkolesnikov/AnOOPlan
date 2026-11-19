@@ -85,6 +85,14 @@ test('позиция без size — универсальная для любо�
   assert.deepEqual(trays.warnings, []);
 });
 
+test('пустая трасса не добавляет строку 0 м и не обнуляет раздел', () => {
+  const result = estimate(project([route('Т1', [])], []));
+  const traySection = result.sections.find(section => section.kind === 'tray')!;
+  assert.deepEqual(traySection.lines, [], 'пустая трасса не должна давать строку материала');
+  assert.equal(traySection.total, 0);
+  assert.equal(traySection.complete, true);
+});
+
 test('normalizePriceSize: регистр, пробелы, x/х/× и диаметр приводятся к одному виду', () => {
   assert.equal(normalizePriceSize('100x50'), normalizePriceSize('100×50'));
   assert.equal(normalizePriceSize('100X50'), normalizePriceSize('100×50'));

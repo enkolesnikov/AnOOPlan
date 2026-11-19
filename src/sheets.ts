@@ -11,6 +11,9 @@ import { estimate } from './estimate';
 export type Cell = string | number | boolean | null;
 export interface ExportSheet { name: string; rows: Cell[][] }
 
+/** Конечное число для ячейки; NaN/Infinity/undefined — null (пусто), а не «NaN». */
+const finiteCell = (value: unknown): number | null => typeof value === 'number' && Number.isFinite(value) ? value : null;
+
 /** Диаметр кабеля для выгрузки: незаданное значение остаётся null, а не превращается в 0. */
 function cableDiameter(cable: Cable): number | null {
   const value = cable.outerDiameterMm;
@@ -40,7 +43,7 @@ export function exportSheets(project: Project): ExportSheet[] {
     const result = calculateCable(project, cable);
     const section = cableSection(cable);
     const name = (id: string) => project.equipment.find(e => e.id === id)?.number || id;
-    journal.push([cable.number, cable.name, cable.brand, cableDiameter(cable), section.areaMm2, cable.purpose, name(cable.fromId), name(cable.toId), cable.segmentIds.join(' → '), cable.quantity, result.geometry, result.routeReserve, result.cableReserve, result.endReserve, result.total, result.total === null ? null : result.total * cable.quantity, result.pricePerMeter, result.cost, result.complete, result.errors.join('; '), cable.note]);
+    journal.push([cable.number, cable.name, cable.brand, cableDiameter(cable), section.areaMm2, cable.purpose, name(cable.fromId), name(cable.toId), cable.segmentIds.join(' → '), finiteCell(cable.quantity), result.geometry, result.routeReserve, result.cableReserve, result.endReserve, result.total, result.total === null || finiteCell(cable.quantity) === null ? null : result.total * cable.quantity, result.pricePerMeter, result.cost, result.complete, result.errors.join('; '), cable.note]);
   }
 
   // Смета: позиции материальных разделов и их итоги; работы — отдельной итоговой строкой,

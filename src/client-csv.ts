@@ -20,7 +20,7 @@ export function clientCsv(project: Project): string {
   for (const cable of project.cables) {
     const result = calculateCable(project, cable);
     const name = (id: string) => project.equipment.find(item => item.id === id)?.number || id;
-    rows.push([cable.number, cable.name, cable.brand, cableDiameter(cable), cableSection(cable).areaMm2, name(cable.fromId), name(cable.toId), cable.quantity, result.total, result.total === null ? null : result.total * cable.quantity, result.complete ? 'Да' : 'Нет']);
+    rows.push([cable.number, cable.name, cable.brand, cableDiameter(cable), cableSection(cable).areaMm2, name(cable.fromId), name(cable.toId), Number.isFinite(cable.quantity) ? cable.quantity : null, result.total, result.total === null || !Number.isFinite(cable.quantity) ? null : result.total * cable.quantity, result.complete ? 'Да' : 'Нет']);
   }
   rows.push([]); rows.push(['Оборудование']); rows.push(['Тип', 'Модель', 'Этаж', 'Количество']);
   for (const group of specs.equipment) rows.push([group.type, group.model, group.floor, group.quantity]);
@@ -73,8 +73,9 @@ export function clientCsv(project: Project): string {
   const cell = (value: string | number | null) => {
     // Русский Excel ждёт десятичную запятую; без неё число остаётся текстом.
     // Округляем до трёх знаков, как в интерфейсе, а не выгружаем 28,274333882308138.
-    let text = value === null ? ''
-      : typeof value === 'number' && Number.isFinite(value)
+    // NaN/Infinity не печатаем как «NaN»: неизвестное значение — пустая ячейка.
+    let text = value === null || (typeof value === 'number' && !Number.isFinite(value)) ? ''
+      : typeof value === 'number'
         ? String(Number(value.toFixed(3))).replace('.', ',')
         : String(value);
     if (typeof value === 'string' && /^[=+\-@\t\r]/.test(text)) text = `'${text}`;

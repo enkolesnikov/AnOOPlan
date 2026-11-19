@@ -30,7 +30,9 @@ export function PropertiesPanel({ ui }: { ui: AppUi }) {
   const splittableVertices = route ? routeVertices.filter(vertex => route.segments.filter(segment => segment.a.id === vertex.id || segment.b.id === vertex.id).length === 2) : [];
   function itemField(label: string, key: string, numeric = false) {
     const val = activeItem ? (activeItem as unknown as Record<string, string | number | null>)[key] : '';
-    return field(label, val ?? '', value => setItem(key, numeric ? (value === '' ? null : Number(value)) : value), numeric);
+    // Повреждённое число (NaN/Infinity) не должно попадать в input как «NaN».
+    const safe = typeof val === 'number' && !Number.isFinite(val) ? '' : val ?? '';
+    return field(label, safe, value => setItem(key, numeric ? (value === '' ? null : Number(value)) : value), numeric);
   }
   function segmentName(id: string) {
     const owner = project.routes.find(r => r.segments.some(s => s.id === id));

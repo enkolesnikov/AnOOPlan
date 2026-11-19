@@ -232,6 +232,9 @@ function trayLines(project: Project): { lines: EstimateLine[]; warnings: string[
   // одной подсистемы могут быть разные лотки, и каждый оценивается своей ценой.
   const rows: { type: string; section: string; quantity: number | null }[] = [];
   for (const route of routeSummary(project).routes) {
+    // Пустая трасса не несёт материала: иначе она добавляет строку 0 м и,
+    // если её типа нет в прайсе, обнуляет весь раздел «Лотки».
+    if (!route.segments) continue;
     const sections = route.sections.length
       ? route.sections
       : [{ section: '—', length: route.length, segments: 0, overridden: false }];

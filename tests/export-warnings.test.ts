@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { exportSheets } from '../src/sheets';
+import { clientCsv } from '../src/client-csv';
 import { safeFileBaseName } from '../src/project-file';
 import type { Project } from '../src/model';
 
@@ -61,6 +62,16 @@ test('лист «Предупреждения» сообщает об отсут
     `нет предупреждения о цене кабеля: ${warnings.join(' | ')}`,
   );
   assert.equal(new Set(warnings).size, warnings.length, 'предупреждения не должны дублироваться');
+});
+
+test('повреждённое количество не попадает в журнал/CSV как «NaN»', () => {
+  const project = longTwistedPairProject();
+  project.cables[0].quantity = Number.NaN;
+  const journal = exportSheets(project).find(sheet => sheet.name === 'Кабельный журнал')!;
+  assert.equal(journal.rows[1][9], null, 'количество в XLSX-листе — пусто, а не NaN');
+  assert.equal(journal.rows[1][15], null, 'итог с количеством — пусто, а не NaN');
+  const csv = clientCsv(project);
+  assert.doesNotMatch(csv, /NaN|Infinity/, 'CSV не должен содержать NaN/Infinity');
 });
 
 test('безопасное базовое имя файла: пустое, пробельное и с запрещёнными символами', () => {
