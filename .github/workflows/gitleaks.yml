@@ -27,8 +27,11 @@ jobs:
         with:
           # Вся история: иначе gitleaks не увидит старые коммиты и секреты в них.
           fetch-depth: 0
-      - uses: gitleaks/gitleaks-action@ff98106e4c7b2bc287b24eaf42907196329070c7 # v2
+      - uses: gitleaks/gitleaks-action@ff98106e4c7b2bc287b24eaf42907196329070c7 # v2.3.9
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           # Явно указываем конфиг из корня: стандартные правила + свои (см. .gitleaks.toml).
           GITLEAKS_CONFIG: .gitleaks.toml
+          # Комментарии в PR выключены: у PR из форков токен read-only, а для нашей
+          # задачи достаточно упавшего job. Это убирает зависимость от прав на запись.
+          GITLEAKS_ENABLE_COMMENTS: 'false'
