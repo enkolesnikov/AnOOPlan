@@ -30,16 +30,18 @@ regex = '''-----BEGIN (?:RSA |EC |OPENSSH |DSA |PGP )?PRIVATE KEY-----'''
 keywords = ["PRIVATE KEY"]
 
 # Заведомо безопасные места: фикстуры тестов, документация с примерами, артефакты сборки.
-# Весь репозиторий в allowlist не добавляем — иначе проверка теряет смысл.
+# Пути — регэкспы, поэтому якорь ^ обязателен: без него `tests/fixtures` вывел бы
+# из-под скана и `tests/fixtures.ts`. Весь репозиторий в allowlist не добавляем —
+# иначе проверка теряет смысл.
 [allowlist]
 description = "Фикстуры, примеры в доках и сгенерированные артефакты"
 paths = [
-  '''tests/fixtures''',
-  '''docs/''',
-  '''node_modules/''',
-  '''dist/''',
-  '''build/''',
-  '''coverage/''',
+  '''^tests/fixtures/''',
+  '''^docs/''',
+  '''^node_modules/''',
+  '''^dist/''',
+  '''^build/''',
+  '''^coverage/''',
 ]
 # Сами шаблоны секретов: gitleaks и scripts/check-secrets.mjs содержат их как регулярки.
 regexes = [
