@@ -37,6 +37,36 @@ const optionalNumber = (value: unknown): number | undefined => {
 };
 
 /**
+ * Обязательное числовое поле старой копии (количество кабеля). Конечное число
+ * сохраняется как есть, включая 0 и отрицательные: их проверяет движок, а не миграция.
+ * Числовая строка («6.5») приводится к числу для совместимости со старыми копиями.
+ * Всё остальное (нет поля, NaN, Infinity, мусор) становится NaN — честным «значение
+ * неизвестно/повреждено», а не правдоподобной единицей. validateProject и расчёт
+ * кабеля видят NaN (`Number.isInteger` ложно) и выдают ошибку.
+ *
+ * JSON: `JSON.stringify(NaN)` пишет `null`, поэтому после сохранения в файле будет
+ * `null`, а при следующей загрузке `normalizeCable` снова сделает из него NaN.
+ * Повреждение не «чинится» само и не превращается в 1; 0 же переживает цикл
+ * сохранение→загрузка как 0.
+ */
+const requiredNumber = (value: unknown): number => {
+  if (typeof value === 'number') return Number.isFinite(value) ? value : Number.NaN;
+  if (typeof value === 'string' && value.trim() !== '') {
+    const number = Number(value);
+    return Number.isFinite(number) ? number : Number.NaN;
+  }
+  return Number.NaN;
+};
+
+/**
+ * Запас кабеля: отсутствие поля в очень старом файле — 0 (запаса нет), как раньше,
+ * чтобы не ломать валидные старые проекты. 0 и отрицательные сохраняются как есть
+ * (отрицательные ловит reserveErrors), а NaN и мусор остаются NaN, чтобы
+ * reserveErrors/validateProject показали ошибку, а не молчаливый 0.
+ */
+const reserveNumber = (value: unknown): number => (value === undefined || value === null ? 0 : requiredNumber(value));
+
+/**
  * Миграции "с версии N на N+1". Пока пусто; при добавлении v2 сюда
  * кладётся функция 1 → 2, и migrateProject применит её к старым файлам.
  */
@@ -216,11 +246,12 @@ function normalizeCable(value: unknown): Project['cables'][number] {
     fromId: String(value.fromId ?? ''),
     toId: String(value.toId ?? ''),
     segmentIds: Array.isArray(value.segmentIds) ? value.segmentIds.filter((id): id is string => typeof id === 'string') : [],
-    reservePercent: Number(value.reservePercent) || 0,
-    reserveFixed: Number(value.reserveFixed) || 0,
-    startReserve: Number(value.startReserve) || 0,
-    endReserve: Number(value.endReserve) || 0,
-    quantity: Number(value.quantity) > 0 ? Number(value.quantity) : 1,
+    reservePercent: reserveNumber(value.reservePercent),
+    reserveFixed: reserveNumber(value.reserveFixed),
+    startReserve: reserveNumber(value.startReserve),
+    endReserve: reserveNumber(value.endReserve),
+    // NaN — «количество неизвестно»: validateProject/расчёт дают ошибку, а не 1.
+    quantity: requiredNumber(value.quantity),
     note: typeof value.note === 'string' ? value.note : '',
     pricePerMeter: typeof value.pricePerMeter === 'number' ? value.pricePerMeter : undefined,
     outerDiameterMm: optionalNumber(value.outerDiameterMm),
