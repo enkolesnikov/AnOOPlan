@@ -26,7 +26,7 @@ PDF-план здания, расставьте оборудование (кам
 - **APK:** [последний релиз](https://github.com/enkolesnikov/AnOOPlan/releases/latest) —
   `AnOOPlan-2.9.1.apk`, около **1,6 МБ** (1 612 488 Б), Android 7.0+ (minSdk 24, targetSdk 35,
   WebView 98+), без интернета и аналитики. SHA-256:
-  `f98da8732c06f01510900746ea9ac370b269fbcb9e7aad65e4b639ab3f6e59d2`.
+  `926779d96bf8ef6a175b3841c9a4b31511e78aa34fa2f69547a4e592a0ca48d9`.
 - **Сайт:** [enkolesnikov.github.io/AnOOPlan](https://enkolesnikov.github.io/AnOOPlan/) —
   возможности, скриншоты и загрузка.
 - **Веб-версия:** [enkolesnikov.github.io/AnOOPlan/app/](https://enkolesnikov.github.io/AnOOPlan/app/) —
@@ -107,7 +107,7 @@ PDF-план здания, расставьте оборудование (кам
 | E2E / визуальные | **11** / **4** (`npm run test:ui`, `npm run test:visual`) |
 | Покрытие | 94,0 / 87,5 / 94,2 % по тестируемым модулям (пороги 93/85/92); 61,8 % по всем `src/` |
 | Стартовый бандл | **493,2 КБ JS** + **40,9 КБ CSS** (бюджеты 600/60) |
-| APK | **1 612 488 Б**, versionCode 46, minSdk 24, targetSdk 35; SHA-256 `f98da873…6e59d2` |
+| APK | **1 612 488 Б**, versionCode 46, minSdk 24, targetSdk 35; SHA-256 `926779d9…ca48d9` |
 | CI на push | lint → knip → tsc → покрытие → сборка/размер → смоук → E2E, ~110 с (бюджет 130) |
 
 ## Запуск локально

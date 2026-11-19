@@ -5,7 +5,7 @@
 не изменился: разрешение только `VIBRATE`, `INTERNET` нет, внешних вызовов нет.
 
 **APK:** `AnOOPlan-2.9.1.apk` · 1 612 488 Б · Android 7.0+ (minSdk 24, targetSdk 35)
-**SHA-256 APK:** `f98da8732c06f01510900746ea9ac370b269fbcb9e7aad65e4b639ab3f6e59d2`
+**SHA-256 APK:** `926779d96bf8ef6a175b3841c9a4b31511e78aa34fa2f69547a4e592a0ca48d9`
 **Подпись:** прежний сертификат SHA-256 `6431374c…92fe097`; versionCode 46.
 
 ## Что вошло
