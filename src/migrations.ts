@@ -62,9 +62,10 @@ const requiredNumber = (value: unknown): number => {
  * Запас кабеля: отсутствие поля в очень старом файле — 0 (запаса нет), как раньше,
  * чтобы не ломать валидные старые проекты. 0 и отрицательные сохраняются как есть
  * (отрицательные ловит reserveErrors), а NaN и мусор остаются NaN, чтобы
- * reserveErrors/validateProject показали ошибку, а не молчаливый 0.
+ * reserveErrors/validateProject показали ошибку, а не молчаливый 0. Явный `null`
+ * после JSON-цикла тоже означает повреждённое/неизвестное значение, а не «нет поля».
  */
-const reserveNumber = (value: unknown): number => (value === undefined || value === null ? 0 : requiredNumber(value));
+const reserveNumber = (value: unknown): number => (value === undefined ? 0 : requiredNumber(value));
 
 /**
  * Миграции "с версии N на N+1". Пока пусто; при добавлении v2 сюда

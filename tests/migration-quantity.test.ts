@@ -136,6 +136,24 @@ test('отсутствующие запасы старого файла оста
   assert.deepEqual(validateProject(migrated), [], 'проект без полей запасов не ломается');
 });
 
+test('цикл сохранение→загрузка: NaN запаса не превращается в 0', () => {
+  const raw = rawDemo();
+  cableAt(raw).reservePercent = Number.NaN;
+  cableAt(raw).startReserve = Number.NaN;
+  const migrated = migrateProject(JSON.parse(JSON.stringify(raw)) as Record<string, unknown>);
+  assert.ok(Number.isNaN(migrated.cables[0].reservePercent), 'JSON null не должен стать запасом 0');
+  assert.ok(Number.isNaN(migrated.cables[0].startReserve));
+  assert.ok(hasError(migrated, RESERVE_ERROR), validateProject(migrated).join('; '));
+  assert.ok(hasError(migrated, END_RESERVE_ERROR));
+
+  // Явный null в файле — тоже «неизвестно», а не отсутствие поля.
+  const explicit = rawDemo();
+  cableAt(explicit).reserveFixed = null;
+  const nullResult = migrateProject(explicit);
+  assert.ok(Number.isNaN(nullResult.cables[0].reserveFixed));
+  assert.ok(hasError(nullResult, RESERVE_ERROR));
+});
+
 test('запас сегмента NaN не маскируется миграцией', () => {
   const raw = rawDemo();
   const segments = (raw.routes as { segments: Record<string, unknown>[] }[])[0].segments;
