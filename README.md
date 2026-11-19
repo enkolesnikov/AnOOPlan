@@ -11,21 +11,22 @@ PDF-план здания, расставьте оборудование (кам
 </p>
 
 <p align="center">
-  <a href="https://github.com/enkolesnikov/AnOOPlan/releases/latest"><img alt="Скачать APK" src="https://img.shields.io/badge/скачать-APK_2.8.5-2ea043?logo=android&logoColor=white"></a>
+  <a href="https://github.com/enkolesnikov/AnOOPlan/releases/latest"><img alt="Скачать APK" src="https://img.shields.io/badge/скачать-APK_2.9.0-2ea043?logo=android&logoColor=white"></a>
   <a href="https://enkolesnikov.github.io/AnOOPlan/app/"><img alt="Веб-версия" src="https://img.shields.io/badge/веб--версия-открыть-38c6c9"></a>
   <a href="https://enkolesnikov.github.io/AnOOPlan/"><img alt="Сайт" src="https://img.shields.io/badge/сайт-открыть-122936"></a>
   <a href="docs/HANDOFF.md"><img alt="Документация" src="https://img.shields.io/badge/документация-HANDOFF-6e7781"></a>
 </p>
 
-<p align="center"><b>Версия 2.8.5 · APK 1 608 392 Б (1,6 МБ) · Android 7.0+</b></p>
+<p align="center"><b>Версия 2.9.0 · APK 1 608 392 Б (1,6 МБ) · Android 7.0+</b></p>
 
 <p align="center"><img src="docs/store/screenshots/01-plan.png" width="240" alt="План этажа с кабельными трассами и длинами сегментов"></p>
 
 ## Скачать и установить
 
 - **APK:** [последний релиз](https://github.com/enkolesnikov/AnOOPlan/releases/latest) —
-  `AnOOPlan-2.8.5.apk`, около **1,6 МБ** (1 608 392 Б), Android 7.0+ (minSdk 24, targetSdk 35,
-  WebView 98+), без интернета и аналитики.
+  `AnOOPlan-2.9.0.apk`, около **1,6 МБ** (1 608 392 Б), Android 7.0+ (minSdk 24, targetSdk 35,
+  WebView 98+), без интернета и аналитики. SHA-256:
+  `f1f9af638fa2bb839611178c691032c797ef25f686573a8ad291ec2f24b0cb16`.
 - **Сайт:** [enkolesnikov.github.io/AnOOPlan](https://enkolesnikov.github.io/AnOOPlan/) —
   возможности, скриншоты и загрузка.
 - **Веб-версия:** [enkolesnikov.github.io/AnOOPlan/app/](https://enkolesnikov.github.io/AnOOPlan/app/) —
@@ -76,12 +77,12 @@ PDF-план здания, расставьте оборудование (кам
   `ANOOPLAN_TOKEN`, токен из ссылки сохраняется в session-cookie.
 - `npm audit`: 0 high; 9 moderate — только dev-цепочка ESLint (`minimatch`), в APK не входит.
 
-## Аудит 2.9
+## Аудит 2.9 — что нового в 2.9.0
 
 Независимый аудит (ноябрь 2026) проверил сохранность данных, расчёты, экспорт, производительность,
 доступность и офлайн-контракт. Подтверждённые дефекты закрыты отдельными коммитами с регрессионными
-тестами — [полный отчёт](docs/AUDIT-2.9.md). Версия в `package.json` пока 2.8.5: изменения уже в `main`
-и войдут в плановый релиз 2.9.0.
+тестами и вошли в релиз **2.9.0** — [полный отчёт](docs/AUDIT-2.9.md),
+[заметки о релизе](docs/RELEASE-NOTES-2.9.0.md).
 
 - **Данные:** удаление этажа не стирает фото в обход undo; GC учитывает вложения проекта из другой вкладки; restore проверяет SHA-256.
 - **Расчёты:** вставка вершины не удваивает запас; разнотипные трассы не объединяются; неизвестная высота даёт `null`, а не 0.
@@ -98,7 +99,7 @@ PDF-план здания, расставьте оборудование (кам
 | E2E / визуальные | **8** / **4** (`npm run test:ui`, `npm run test:visual`) |
 | Покрытие | 95,2 / 87,2 / 95,0 % по тестируемым модулям (пороги 93/85/92); 58,3 % по всем `src/` |
 | Стартовый бандл | **486,6 КБ JS** + **40,9 КБ CSS** (бюджеты 600/60) |
-| APK | **1 608 392 Б**, versionCode 44, minSdk 24, targetSdk 35 |
+| APK | **1 608 392 Б**, versionCode 45, minSdk 24, targetSdk 35; SHA-256 `f1f9af63…24b0cb16` |
 | CI на push | lint → knip → tsc → покрытие → сборка/размер → смоук → E2E, ~107 с (бюджет 130) |
 
 ## Запуск локально
@@ -130,11 +131,11 @@ Dev-сервер по умолчанию слушает `127.0.0.1`. Для до
 
 APK — нативная оболочка (WebView) вокруг той же статической сборки, без Gradle:
 
-- `com.anooplan.app`, versionCode 44, версия 2.8.5;
+- `com.anooplan.app`, versionCode 45, версия 2.9.0;
 - ассеты отдаются по origin `https://appassets.local/`, поэтому работают localStorage, IndexedDB
   и `crypto.randomUUID()`;
 - экспорт PDF/XLSX/CSV/`.anooplan` собирается на телефоне и сохраняется через MediaStore;
-- сборка: `npm run build:apk` → `build/AnOOPlan-2.8.5.apk`; инструменты — в `tools/`, без Gradle.
+- сборка: `npm run build:apk` → `build/AnOOPlan-2.9.0.apk`; инструменты — в `tools/`, без Gradle.
 
 ## Документация
 
@@ -150,6 +151,7 @@ APK — нативная оболочка (WebView) вокруг той же с�
 
 | Версия | Тема | Итог |
 |---|---|---|
+| 2.9.0 | Аудит и надёжность | данные, расчёты, PDF, LAN-токен и restore; 319 тестов, APK 1 608 392 Б |
 | 2.8.5 | Трассы и размеры | разделение/объединение, цепочка, межэтажные размеры; 294 теста, APK 1 608 392 Б |
 | 2.8.4 | Вершины и привязки | удаление вершины, разворот, маркер привязки |
 | 2.8.3 | UX-аудит | фокус/Back, мобильная панель, вкладки экспорта, AA |
