@@ -30,11 +30,13 @@ test('демо-проект: страницы всех этажей сущест
   const data = demoPlanPdf();
   const pdf = atob(data.slice(data.indexOf(',') + 1));
   const count = Number(/\/Count\s+(\d+)/.exec(pdf)?.[1]);
-  assert.equal(count, 1, 'демо-PDF должен оставаться одностраничным');
-  for (const floor of createDemoProject().floors) {
+  assert.equal(count, 2, 'демо-PDF должен быть двухстраничным: по плану на этаж');
+  const floors = createDemoProject().floors;
+  for (const floor of floors) {
     assert.ok(floor.page >= 1 && floor.page <= count, `${floor.name}: страница ${floor.page} из ${count}`);
     assert.equal(planOverlayWarning(floor.name, floor.page, count, count), null, `${floor.name}: оверлей должен наноситься`);
   }
+  assert.deepEqual(floors.map(floor => floor.page), [1, 2], 'этажи должны занимать разные страницы');
 });
 
 test('общий PDF: каждый лист печатается один раз, оверлеи на своих страницах', () => {

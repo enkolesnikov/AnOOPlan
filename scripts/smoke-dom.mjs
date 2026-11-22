@@ -400,6 +400,16 @@ const setInput = (input, value) => {
   setter.call(input, value);
   input.dispatchEvent(new window.Event('input', { bubbles: true }));
 };
+const vatInput = document.querySelector('input[aria-label="НДС, %"]');
+const roundingSelect = document.querySelector('select[aria-label="Округление"]');
+// Демо уже приходит с НДС 20 % и округлением до рубля: для проверки переключений
+// начинаем с чистых настроек, иначе «НДС сверху» не меняет итог.
+if (vatInput) setInput(vatInput, '');
+if (roundingSelect) {
+  roundingSelect.value = '';
+  roundingSelect.dispatchEvent(new window.Event('change', { bubbles: true }));
+}
+await sleep(400);
 const baselineTotal = totalNumber();
 if (modeRadio('items')) {
   modeRadio('items').click();
@@ -432,7 +442,6 @@ check(
     && Math.abs(totalNumber() - (materialsTotal + 301.5)) < 0.01,
   `заполнение строки работы меняет итог раздела: строка ${workLineSum}, раздел ${workSectionTotal}, ИТОГО ${totalNumber()} (материалы ${materialsTotal} + 301,5)`,
 );
-const vatInput = document.querySelector('input[aria-label="НДС, %"]');
 const subtotalBeforeVat = moneyOf(totalsCard('Итого до НДС'));
 const totalBeforeVat = totalNumber();
 if (vatInput) {
@@ -458,7 +467,6 @@ check(
     && Math.abs(totalNumber() - subtotalForIncluded) < 0.01 && /в т\.ч\./.test(includedLabel),
   `чекбокс «включено» оставляет ИТОГО равным сумме до НДС: ${totalNumber()} = ${subtotalForIncluded} (${includedLabel})`,
 );
-const roundingSelect = document.querySelector('select[aria-label="Округление"]');
 if (roundingSelect) {
   roundingSelect.value = '1';
   roundingSelect.dispatchEvent(new window.Event('change', { bubbles: true }));

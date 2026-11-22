@@ -14,7 +14,7 @@ test('2.7.0: шаблон, комплект, импорт справочника
   await expect(page.locator('.template-modal')).toBeVisible();
   await page.locator('.template-option', { hasText: 'Офис' }).click();
   await expect(page.getByLabel('Название проекта')).toHaveValue('Офис');
-  await expect(page.locator('.statusbar')).toContainText('7 оборуд.');
+  await expect(page.locator('.statusbar')).toContainText('8 оборуд.');
 
   // Сохраняем текущий проект как шаблон.
   await page.getByRole('button', { name: 'Новый', exact: true }).click();

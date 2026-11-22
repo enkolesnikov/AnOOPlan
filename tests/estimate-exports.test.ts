@@ -198,12 +198,15 @@ test('НДС включён в цены: «НДС 20 % (в т.ч.)» и «Цен
   assert.ok(commercial.some(row => row[0] === 'Цены с НДС'), 'в КП нет примечания «Цены с НДС»');
 });
 
-test('демо-проект без НДС сохраняет прежнюю строку «Итого по смете»', () => {
+test('демо-проект: НДС 20 % и округление до рубля видны в смете', () => {
   const project = createDemoProject();
   const result = estimate(project);
   const rows = sheetRows(project, 'Смета');
-  assert.equal(result.vatRate, null);
-  assert.equal(rowByLabel(rows, 'Итого по смете')?.[5], result.total, 'без НДС подпись итога прежняя');
-  assert.ok(!rows.some(row => String(row[1]).startsWith('НДС')), 'в демо нет начисленного НДС');
+  assert.equal(result.vatRate, 20);
+  assert.equal(result.rounding, 1);
+  assert.equal(rowByLabel(rows, 'Итого до НДС')?.[5], result.total);
+  assert.equal(rowByLabel(rows, 'НДС 20 %')?.[5], result.vat);
+  assert.equal(rowByLabel(rows, 'Итого с НДС')?.[5], result.gross);
+  assert.ok(rows.some(row => row[1] === 'Округление: до 1 ₽'), 'нет строки округления');
   assert.ok(rows.some(row => row[1] === `Работы (${project.estimate!.laborPercent} %)`), 'строка процента работ на месте');
 });
