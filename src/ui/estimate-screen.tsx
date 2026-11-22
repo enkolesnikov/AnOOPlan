@@ -6,6 +6,7 @@ import { readCatalogFile } from '../catalog-file';
 import type { EstimateResult, EstimateSection as EstimateSectionData } from '../estimate';
 import { createUuid as uid } from '../compat';
 import { number } from './format';
+import { nonNegativeOrNull, workLineTotal, workLinesWord } from './estimate-fields';
 import { saveBlobOnDevice } from './native';
 import { NumberField } from './number-field';
 
@@ -15,28 +16,6 @@ const PRICE_SOURCE_LABELS: Record<'manual' | 'catalog', string> = { manual: 'в�
 /** Деньги и количества: null — «—», а не 0. */
 const moneyText = (value: number | null | undefined): string => (typeof value === 'number' && Number.isFinite(value) ? `${number(value)} ₽` : '—');
 const quantityText = (value: number | null | undefined): string => (typeof value === 'number' && Number.isFinite(value) ? number(value) : '—');
-/** Неотрицательное конечное число из строки, иначе null (пусто/мусор/минус не сохраняются). */
-export const nonNegativeOrNull = (raw: string): number | null => {
-  if (raw.trim() === '') return null;
-  const value = Number(raw.replace(',', '.'));
-  return Number.isFinite(value) && value >= 0 ? value : null;
-};
-
-/** Сумма строки работ (количество × цена) с округлением сметы; null — значение неизвестно. */
-export function workLineTotal(work: Pick<WorkLine, 'quantity' | 'price'>, rounding: number | null): number | null {
-  if (work.quantity === null || work.price === null) return null;
-  if (!Number.isFinite(work.quantity) || !Number.isFinite(work.price)) return null;
-  return roundMoney(work.quantity * work.price, rounding);
-}
-
-/** Склонение «строка» по числу: 1 строка, 2 строки, 5 строк. */
-export function workLinesWord(count: number): string {
-  const mod10 = count % 10;
-  const mod100 = count % 100;
-  if (mod10 === 1 && mod100 !== 11) return 'строка';
-  if (mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14)) return 'строки';
-  return 'строк';
-}
 
 /** Статус сметы, режим работ, НДС и дата прайса в шапке экрана. */
 function EstimateStatus({ result, catalogDateText }: { result: EstimateResult; catalogDateText: string }) {

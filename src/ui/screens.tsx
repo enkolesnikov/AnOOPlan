@@ -1,14 +1,20 @@
+import { lazy, Suspense } from 'react';
 import { specifications } from '../engine';
-import { EstimateScreen } from './estimate-screen';
 import { number } from './format';
 import { PlanScreen } from './plan-screen';
 import { IssueList, SpecificationTables } from './specification-tables';
 import type { AppUi } from './use-app-controller';
 
+/**
+ * Экран сметы грузится по действию: справочник цен, работы по видам и НДС
+ * занимают заметное место в стартовом бандле, а нужны не при каждом открытии.
+ */
+const EstimateScreen = lazy(() => import('./estimate-screen').then(module => ({ default: module.EstimateScreen })));
+
 /** Переключение основных экранов приложения. */
 export function MainArea({ ui }: { ui: AppUi }) {
   const { view } = ui;
-  return <main className="main-area">{view === 'plan' ? <PlanScreen ui={ui} /> : view === 'journal' ? <JournalScreen ui={ui} /> : view === 'specs' ? <SpecsScreen ui={ui} /> : <EstimateScreen project={ui.project} onChange={ui.mutate} onMessage={ui.setMessage} onError={ui.setError} />}</main>;
+  return <main className="main-area">{view === 'plan' ? <PlanScreen ui={ui} /> : view === 'journal' ? <JournalScreen ui={ui} /> : view === 'specs' ? <SpecsScreen ui={ui} /> : <Suspense fallback={<p className="help">Загрузка сметы…</p>}><EstimateScreen project={ui.project} onChange={ui.mutate} onMessage={ui.setMessage} onError={ui.setError} /></Suspense>}</main>;
 }
 
 /** Кабельный журнал: расчёт по кабелям проекта. */

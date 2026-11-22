@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { nonNegativeOrNull, workLineTotal, workLinesWord } from '../src/ui/estimate-screen';
+import { nonNegativeOrNull, workLineTotal, workLinesWord } from '../src/ui/estimate-fields';
 
 /**
  * Чистые помощники экрана сметы: разбор числовых полей строк работ и сумма

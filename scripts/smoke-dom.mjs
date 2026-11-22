@@ -279,7 +279,17 @@ console.log('\n6c. Смета и справочник цен');
 const estimateTab = Array.from(document.querySelectorAll('.view-tabs button')).find(button => (button.textContent || '').trim() === 'Смета');
 check(Boolean(estimateTab), 'вкладка «Смета» доступна');
 if (estimateTab) estimateTab.click();
-await sleep(300);
+// Экран сметы подгружается отдельным чанком (lazy): ждём его, а не фиксированные 300 мс.
+const waitFor = async (predicate, timeout = 3000) => {
+  const started = Date.now();
+  while (Date.now() - started < timeout) {
+    if (predicate()) return true;
+    await sleep(25);
+  }
+  return Boolean(predicate());
+};
+await waitFor(() => document.querySelector('.estimate-view'));
+await sleep(50);
 const estimateView = document.querySelector('.estimate-view');
 check(Boolean(estimateView), 'экран сметы открылся');
 const estimateText = estimateView?.textContent || '';
