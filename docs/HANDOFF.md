@@ -14,8 +14,8 @@
 - Сайт: <https://enkolesnikov.github.io/AnOOPlan/> — лендинг с возможностями и скриншотами.
 - Веб-версия: <https://enkolesnikov.github.io/AnOOPlan/app/> — та же сборка, что и APK; публикуется
   автоматически при изменениях приложения (ручной `workflow_dispatch` сохранён).
-- Текущая версия: **2.9.1**, versionCode 46, `com.anooplan.app`, minSdk 24, targetSdk 35.
-  APK 1 612 488 Б, WebView 98+, **394** юнит-теста + 235 проверок смоука + 11 E2E.
+- Текущая версия: **2.10.0**, versionCode 47, `com.anooplan.app`, minSdk 24, targetSdk 35.
+  APK 1 620 771 Б, WebView 98+, **476** юнит-тестов + 241 проверка смоука + 11 E2E.
 - Возможности: PDF-планы и калибровка, оборудование с иконками и цветом, трассы, кабели и автопрокладка,
   журнал, справочник цен и смета с коммерческим предложением, печатные формы (титул, оглавление,
   штамп ГОСТ, лист изменений), печать выбранных разделов, обмен PDF/XLSX и проектом `.anooplan`,
@@ -31,11 +31,33 @@
 - **Доступность:** системный размер шрифта Android (textZoom 85–160 %), тёмная тема, высокий контраст,
   reduced-motion; бюджет памяти рендера плана — 8 Мпикс с предупреждением.
 - Подпись: SHA-256 сертификата `6431374cf6a7d385c4c47f0f2bf54fcb5ee5b2c7120f057b18c4062af92fe097`.
-- Текущий релиз: [v2.9.1 «Точность и скорость»](https://github.com/enkolesnikov/AnOOPlan/releases/tag/v2.9.1) —
-  подписанный APK `AnOOPlan-2.9.1.apk` (versionCode 46, 1 612 488 Б,
-  SHA-256 `926779d96bf8ef6a175b3841c9a4b31511e78aa34fa2f69547a4e592a0ca48d9`), описание и проверенные метрики — в GitHub Release.
-- Предыдущий релиз: [v2.9.0 «Аудит и надёжность»](https://github.com/enkolesnikov/AnOOPlan/releases/tag/v2.9.0) —
-  APK `AnOOPlan-2.9.0.apk` (versionCode 45, 1 608 392 Б, SHA-256 `1940fe55…dec0b941`).
+- Текущий релиз: [v2.10.0 «Документы и смета»](https://github.com/enkolesnikov/AnOOPlan/releases/tag/v2.10.0) —
+  подписанный APK `AnOOPlan-2.10.0.apk` (versionCode 47, 1 620 771 Б,
+  SHA-256 `53a9c64f89c759f4e712757a5914da0eb923d2b38781d59809a71cbf873f01f1`), заметки — [RELEASE-NOTES-2.10.0.md](RELEASE-NOTES-2.10.0.md),
+  отчёт — [REPORT-2.10.0.md](REPORT-2.10.0.md).
+- Предыдущий релиз: [v2.9.1 «Точность и скорость»](https://github.com/enkolesnikov/AnOOPlan/releases/tag/v2.9.1) —
+  APK `AnOOPlan-2.9.1.apk` (versionCode 46, 1 612 488 Б, SHA-256 `926779d9…ca48d9`).
+
+### Состояние на 2026-11-23 (2.10.0, релиз)
+
+- **Смета:** работы по видам (`ProjectEstimate.works: WorkLine[]`) рядом с процентом; НДС
+  (`vatRate` 0–100, `vatIncluded`), округление (`rounding` 0.01/1/10/100). `EstimateResult`
+  отдаёт `worksMode`, `works`, `vat`, `gross`, `rounding`; `total` — итог ДО НДС.
+  Инварианты: `materials = Σ разделов`, `total = materials + labor`, `gross = total + vat`
+  (или `= total` при «в цене»); при `rounding: null` поведение 2.9.1 бит-в-бит.
+- **КНС:** цена/артикул по сечению, `totals[].cost`, `subsystems[]`, `totalLength`; строки
+  отсортированы по подсистеме → типу → сечению; XLSX и PDF печатают одинаковые подытоги.
+- **PDF:** штамп ГОСТ 2.104 форма 2 с «Лист N из M»; `JournalOptions.format` ('a4l' | 'a3l') и
+  `scale` 0.85–1.15 (масштаб таблиц); длинные строки/абзацы делятся между листами с маркером
+  «(продолж.)»; ёмкость оглавления считается от формата.
+- **XLSX:** `!cols`, `!autofilter`, `!rows`; закрепление шапки — `src/xlsx-freeze.ts` (правка ZIP,
+  без зависимостей; без `CompressionStream` файл выгружается без закрепления, данные целы).
+- **Планы:** `planFloors` (оборудование | трассы | пины), `groupFloorsByPdf`, `planSheetsForPdf`:
+  страница PDF рендерится один раз, оверлей — только на листе своего этажа.
+- **Бандл:** экран сметы (`src/ui/estimate-screen.tsx`) грузится лениво (`React.lazy` в
+  `src/ui/screens.tsx`), стартовый JS 481,8 КБ вместо 493,2 КБ; smoke ждёт появления `.estimate-view`.
+- **Проверки:** 476 тестов, 241 смоук, 11 E2E, 4 визуальных; покрытие 94,0/87,7/94,4 %
+  (пороги 93/85/92), 67,2 % по всем `src/`.
 
 ### Состояние на 2026-11-19 (2.9.1, релиз)
 
