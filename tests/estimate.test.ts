@@ -445,3 +445,14 @@ test('assertProject отклоняет некорректные дату пра�
   const badNote = { ...project(), estimate: { laborPercent: 25, note: 5 } } as unknown;
   rejectsProject(badNote, /project\.estimate: некорректное примечание/);
 });
+
+test('без новых полей смета считает как 2.9.1: режим процента, НДС не начислен, без округления', () => {
+  const result = estimate(project());
+  assert.equal(result.worksMode, 'percent');
+  assert.deepEqual(result.works, []);
+  assert.equal(result.vatRate, null);
+  assert.equal(result.vatIncluded, false);
+  assert.equal(result.vat, null);
+  assert.equal(result.gross, result.total);
+  assert.equal(result.rounding, null);
+});
