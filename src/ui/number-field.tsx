@@ -1,11 +1,12 @@
 import { useEffect, useRef, useState } from 'react';
 
 // Числовое поле: принимает и точку, и запятую (русская раскладка) и не теряет ввод.
-export function NumberField({ value, onCommit, placeholder, ariaLabel }: {
+export function NumberField({ value, onCommit, placeholder, ariaLabel, disabled }: {
   value: number | null;
   onCommit: (raw: string) => void;
   placeholder?: string;
   ariaLabel?: string;
+  disabled?: boolean;
 }) {
   const format = (input: number | null): string => (input === null || input === undefined || !Number.isFinite(input) ? '' : String(input));
   const [text, setText] = useState<string>(() => format(value));
@@ -19,6 +20,7 @@ export function NumberField({ value, onCommit, placeholder, ariaLabel }: {
     autoComplete="off"
     spellCheck={false}
     aria-label={ariaLabel}
+    disabled={disabled}
     placeholder={placeholder}
     value={text}
     onChange={event => {

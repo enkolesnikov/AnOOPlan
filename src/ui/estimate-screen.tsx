@@ -5,7 +5,7 @@ import { parseCatalogRows, mergeCatalog, type CatalogImportResult } from '../cat
 import { readCatalogFile } from '../catalog-file';
 import type { EstimateResult, EstimateSection as EstimateSectionData } from '../estimate';
 import { createUuid as uid } from '../compat';
-import { number } from './format';
+import { money, number } from './format';
 import { nonNegativeOrNull, workLineTotal, workLinesWord } from './estimate-fields';
 import { saveBlobOnDevice } from './native';
 import { NumberField } from './number-field';
@@ -13,8 +13,8 @@ import { NumberField } from './number-field';
 
 const PRICE_KIND_LABELS: Record<PriceKind, string> = { equipment: 'Оборудование', cable: 'Кабель', tray: 'КНС' };
 const PRICE_SOURCE_LABELS: Record<'manual' | 'catalog', string> = { manual: 'вручную', catalog: 'справочник' };
-/** Деньги и количества: null — «—», а не 0. */
-const moneyText = (value: number | null | undefined): string => (typeof value === 'number' && Number.isFinite(value) ? `${number(value)} ₽` : '—');
+/** Деньги и количества: null — «—», а не 0. Рубли — не больше двух знаков. */
+const moneyText = (value: number | null | undefined): string => (typeof value === 'number' && Number.isFinite(value) ? `${money(value)} ₽` : '—');
 const quantityText = (value: number | null | undefined): string => (typeof value === 'number' && Number.isFinite(value) ? number(value) : '—');
 
 /** Статус сметы, режим работ, НДС и дата прайса в шапке экрана. */
@@ -63,7 +63,7 @@ function EstimateControls({ project, onChange }: { project: Project; onChange: (
       </label>
       <small className="help">{itemsMode ? `Работы по видам: ${works.length} ${workLinesWord(works.length)} — чтобы вернуться к проценту, удалите строки в редакторе ниже.` : 'Процент применяется к стоимости материалов.'}</small>
     </fieldset>
-    <label className="field estimate-labor" title={itemsMode ? 'В режиме по видам процент работ не применяется' : undefined}>Работы, %<NumberField value={project.estimate?.laborPercent ?? null} ariaLabel="Работы, %" placeholder="Не задано" onCommit={raw => setEstimate({ laborPercent: raw === '' ? null : nonNegativeOrNull(raw) })} /></label>
+    <label className="field estimate-labor" title={itemsMode ? 'В режиме по видам процент не применяется' : undefined}>Работы, %<NumberField value={project.estimate?.laborPercent ?? null} ariaLabel="Работы, %" placeholder="Не задано" disabled={itemsMode} onCommit={raw => setEstimate({ laborPercent: raw === '' ? null : nonNegativeOrNull(raw) })} /></label>
     <label className="field estimate-vat">НДС, %<NumberField value={vatRate} ariaLabel="НДС, %" placeholder="Не начисляется" onCommit={raw => setEstimate({ vatRate: raw === '' ? null : nonNegativeOrNull(raw) })} /></label>
     <label className={`estimate-vat-included${vatApplies ? '' : ' is-disabled'}`}>
       <input type="checkbox" aria-label="Цены включают НДС" checked={project.estimate?.vatIncluded === true} disabled={!vatApplies} onChange={event => setEstimate({ vatIncluded: event.target.checked })} />
@@ -140,7 +140,7 @@ function EstimateTotals({ result }: { result: EstimateResult }) {
   return <div className="estimate-totals">
     <div><span>Материалы</span><strong>{result.materials === null ? 'не рассчитано' : moneyText(result.materials)}</strong></div>
     <div><span>Работы{worksLabel}</span><strong>{result.labor === null ? 'не рассчитано' : moneyText(result.labor)}</strong></div>
-    <div className="estimate-subtotal"><span>Итого до НДС</span><strong>{result.total === null ? 'не рассчитано' : moneyText(result.total)}</strong></div>
+    <div className="estimate-subtotal"><span>Итого до НДС</span>{result.vatIncluded ? <small className="estimate-net-note">(без НДС)</small> : null}<strong>{result.net === null ? 'не рассчитано' : moneyText(result.net)}</strong></div>
     {vatRate !== null && vatRate > 0 && <div className="estimate-vat-line">
       <span>НДС {number(vatRate)} % {result.vatIncluded ? '(в т.ч.)' : '(сверху)'}</span>
       <strong>{result.vat === null ? 'не рассчитано' : moneyText(result.vat)}</strong>

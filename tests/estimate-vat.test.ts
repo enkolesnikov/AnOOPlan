@@ -195,6 +195,88 @@ test('округление 1 ₽: все деньги кратны 1, инвар
   assert.equal(result.complete, true);
 });
 
+test('точность до копейки: 25 % от 115 134,7 = 28 783,68, итог 143 918,38', () => {
+  // Материалы: 2×50 000 + 10×1 000,5 + 10×512,97 = 115 134,7 ₽.
+  const project = priced(50000, 1000.5, 512.97);
+  project.estimate = { laborPercent: 25, vatRate: 20 };
+  const result = estimate(project);
+
+  assert.equal(result.rounding, null, 'правило округления не задано — значит копейка');
+  assert.equal(result.materials, 115134.7);
+  // Без исправления было 28 783,675 и в PDF/UI печаталось три знака.
+  assert.equal(result.labor, 28783.68);
+  assert.equal(result.total, 143918.38);
+  assert.equal(result.vat, 28783.68); // 20 % от 143 918,38 = 28 783,676 → копейка
+  assert.equal(result.gross, 172702.06);
+
+  // Инварианты: материалы = Σ разделов, итог = материалы + работы, gross = total + vat.
+  const materialSections = result.sections.filter(section => section.kind !== 'work');
+  const sectionsSum = materialSections.reduce((sum, section) => sum + (section.total as number), 0);
+  assert.ok(Math.abs(result.materials! - sectionsSum) < 1e-9, `материалы ${result.materials} ≠ Σ ${sectionsSum}`);
+  assert.ok(Math.abs(result.total! - (result.materials! + result.labor!)) < 1e-9);
+  assert.ok(Math.abs(result.gross! - (result.total! + result.vat!)) < 1e-9);
+  assertMultiples([result.materials, result.labor, result.total, result.vat, result.gross], 0.01);
+});
+
+test('строки и работы округляются до копейки, когда правила округления нет', () => {
+  // 1 × 28,675 = 28,675 → 28,68 (ровно половина копейки округляется вверх).
+  const project = base();
+  project.estimate = {
+    laborPercent: 25,
+    works: [{ id: 'w1', name: 'Настройка', unit: 'шт', quantity: 1, price: 28.675 }],
+  };
+  const result = estimate(project);
+  const line = result.sections[3].lines[0];
+
+  assert.equal(line.total, 28.68);
+  assert.equal(result.sections[3].total, 28.68);
+  assert.equal(result.labor, 28.68);
+  assert.equal(result.total, 15328.68);
+  assert.equal(result.materials, 15300, 'материалы уже целые');
+});
+
+test('net: без НДС совпадает с total, с НДС «в цене» — total − vat', () => {
+  // НДС не начисляется: ставка null или 0 — база без налога равна итогу.
+  for (const vatRate of [null, 0]) {
+    const project = base();
+    project.estimate = { laborPercent: 25, vatRate };
+    const result = estimate(project);
+    assert.equal(result.net, result.total, `ставка ${String(vatRate)}`);
+    assert.equal(result.net, 19125);
+  }
+
+  // НДС «сверху»: налог в total не входит, база без НДС — сам итог.
+  const above = base();
+  above.estimate = { laborPercent: 25, vatRate: 20, vatIncluded: false };
+  const aboveResult = estimate(above);
+  assert.equal(aboveResult.net, aboveResult.total);
+  assert.equal(aboveResult.net, 19125);
+
+  // НДС «в цене»: net = total − vat, и вместе с НДС даёт total.
+  const included = base();
+  included.estimate = { laborPercent: 25, vatRate: 20, vatIncluded: true };
+  const includedResult = estimate(included);
+  assert.equal(includedResult.total, 19125);
+  assert.equal(includedResult.vat, 3187.5);
+  assert.equal(includedResult.net, 15937.5);
+  assert.equal(includedResult.net! + includedResult.vat!, includedResult.total!);
+  assert.ok(includedResult.net! < includedResult.total!, 'база без НДС меньше суммы с налогом');
+});
+
+test('net: null при неверной ставке НДС и при неизвестном итоге', () => {
+  const invalid = base();
+  invalid.estimate = { laborPercent: 25, vatRate: 150 };
+  assert.equal(estimate(invalid).net, null);
+
+  const unknownTotal = base();
+  unknownTotal.estimate = { laborPercent: 25, vatRate: 20, vatIncluded: true };
+  unknownTotal.catalog = unknownTotal.catalog!.filter(item => item.kind !== 'equipment');
+  const result = estimate(unknownTotal);
+  assert.equal(result.total, null);
+  assert.equal(result.net, null);
+  assert.equal(result.vat, null);
+});
+
 test('округление null: числа бит-в-бит как в 2.9.1 (сырые значения)', () => {
   // .5 и .75 точно представимы в двоичной дроби, поэтому эталон можно зашивать жёстко.
   const project = priced(5000.5, 50.5, 480.5);
@@ -260,6 +342,9 @@ test('roundMoney и нормализация: допустимые шаги, nul
   assert.equal(roundMoney(1234.5678, 100), 1200);
   assert.equal(roundMoney(12.34, 0.01), 12.34);
   assert.equal(roundMoney(12.3456, null), 12.3456);
+  // Двоичное 1,005 чуть меньше половины копейки: округление должно быть десятичным.
+  assert.equal(roundMoney(1.005, 0.01), 1.01);
+  assert.equal(roundMoney(28783.675, 0.01), 28783.68);
 });
 
 test('normalizeWorks: битые элементы отбрасываются, поля обрезаются, дубли id разводятся', () => {
