@@ -1,4 +1,5 @@
 import type { PriceItem, Project } from '../model';
+import { normalizeRounding, roundMoney } from '../money';
 import { SECTION_DIM_KEYS, segmentSectionLabel } from '../route-kinds';
 import { calculateCable, finite, reserveErrors, segmentErrors, segmentIndex, segmentLength } from './geometry';
 import { routeSubsystemLabel, routeSummary } from './routes';
@@ -125,6 +126,10 @@ function sumKnown(values: (number | null)[]): number | null {
  */
 export function specificationKnS(project: Project): KnSSpecification {
   const summary = routeSummary(project);
+  // То же правило округления, что у сметы: строка КНС в PDF и сметная строка
+  // того же лотка должны совпадать по деньгам. Если правило не задано, округляем
+  // до копейки — стоимость не должна печататься машинной дробью вида 37.50000001.
+  const rounding = normalizeRounding(project.estimate?.rounding) ?? 0.01;
   const lines: KnSLine[] = [];
   const warnings: string[] = [];
   // Подсистемы запоминаются в порядке первого появления трасс: так же группируются строки.
@@ -152,7 +157,7 @@ export function specificationKnS(project: Project): KnSSpecification {
         existing.quantity = existing.quantity === null || item.length === null ? null : existing.quantity + item.length;
         existing.angles += angles;
         existing.routes += 1;
-        existing.cost = existing.quantity === null || existing.price === null ? null : existing.quantity * existing.price;
+        existing.cost = existing.quantity === null || existing.price === null ? null : roundMoney(existing.quantity * existing.price, rounding);
         return;
       }
       // Сначала ищем позицию по конкретному типу трассы и сечению, затем по группе (например, «Гофра»).
@@ -178,7 +183,7 @@ export function specificationKnS(project: Project): KnSSpecification {
         article: match?.article ?? '',
         manufacturer: match?.manufacturer ?? '',
         price: match?.price ?? null,
-        cost: item.length === null || !match || match.price === null ? null : item.length * match.price,
+        cost: item.length === null || !match || match.price === null ? null : roundMoney(item.length * match.price, rounding),
         routes: 1,
       });
     });

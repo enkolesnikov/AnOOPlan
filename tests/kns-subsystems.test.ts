@@ -124,6 +124,32 @@ test('нет цены для одного сечения: строка без ц
   );
 });
 
+test('округление: подытоги и «Всего КНС» — сумма уже округлённых строк', () => {
+  const p = project([
+    route('r1', [segment('s1', vertex('a', 0), vertex('b', 37.5))], {
+      type: 'Лоток', trayWidthMm: 100, trayHeightMm: 50, subsystem: 'trunk',
+    }),
+    route('r2', [segment('s2', vertex('c', 0), vertex('d', 25))], {
+      type: 'Лоток', trayWidthMm: 50, trayHeightMm: 50, subsystem: 'trunk',
+    }),
+  ], [
+    price('p100', 'Лоток', '100×50', 10, 'L-100'),
+    price('p50', 'Лоток', '50×50', 10, 'L-50'),
+  ]);
+  p.estimate = { laborPercent: 0, rounding: 10 };
+
+  const spec = specificationKnS(p);
+  assert.deepEqual(spec.lines.map(line => line.cost), [30, 40], '25 → 30 и 37,5 → 40');
+  // 37,5 + 25 = 62,5 дало бы 60 при пересчёте из длины; сумма строк — 70.
+  assert.equal(spec.subsystems[0].cost, 70);
+  assert.equal(spec.totals[0].cost, 70);
+  assert.equal(spec.totalCost, 70);
+
+  const sheet = exportSheets(p).find(item => item.name === 'Спецификация КНС')!;
+  const totalRow = sheet.rows.find(row => row[0] === 'Всего КНС')!;
+  assert.deepEqual(totalRow, ['Всего КНС', '', '', 'м', 6.25, null, '', '', '', 70]);
+});
+
 test('лист «Спецификация КНС»: подытоги по подсистемам, итоги по типам и «Всего КНС»', () => {
   const sheet = exportSheets(subsystemsProject()).find(item => item.name === 'Спецификация КНС')!;
   assert.deepEqual(sheet.rows[0], ['Наименование', 'Сечение', 'Подсистема', 'Ед.', 'Кол-во', 'Углы', 'Артикул', 'Производитель', 'Цена, ₽', 'Сумма, ₽']);

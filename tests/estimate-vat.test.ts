@@ -292,7 +292,7 @@ test('миграция: старый проект без новых полей �
   assert.equal(result.complete, true);
 });
 
-test('миграция: мусорные works/vatRate/rounding нормализуются, note не теряется', () => {
+test('миграция: works нормализуются, неверные vatRate/rounding сохраняются и предупреждают', () => {
   const raw = JSON.parse(JSON.stringify(base())) as Record<string, unknown>;
   raw.estimate = {
     laborPercent: 25,
@@ -303,6 +303,8 @@ test('миграция: мусорные works/vatRate/rounding нормализ
       { id: 'w1', name: ' Прокладка лотка ', unit: ' м ', quantity: 120, price: 180 },
       { name: 'Монтаж', quantity: -5, price: Number.NaN },
     ],
+    // Недопустимые, но конечные значения: миграция обязана их сохранить, иначе
+    // после перезагрузки проекта пропадёт предупреждение движка.
     vatRate: 150,
     vatIncluded: 'да',
     rounding: 3,
@@ -315,10 +317,15 @@ test('миграция: мусорные works/vatRate/rounding нормализ
       { id: 'w1', name: 'Прокладка лотка', unit: 'м', quantity: 120, price: 180 },
       { id: 'work-4', name: 'Монтаж', unit: 'шт', quantity: null, price: null },
     ],
-    vatRate: null,
-    rounding: null,
+    vatRate: 150,
+    rounding: 3,
   });
-  assert.deepEqual(estimate(migrateProject(raw)).works[0], { id: 'w1', name: 'Прокладка лотка', unit: 'м', quantity: 120, price: 180 });
+  const result = estimate(migrateProject(raw));
+  assert.deepEqual(result.works[0], { id: 'w1', name: 'Прокладка лотка', unit: 'м', quantity: 120, price: 180 });
+  assert.ok(result.warnings.includes('Смета: неверная ставка НДС'), result.warnings.join('; '));
+  assert.ok(result.warnings.includes('Смета: неверное правило округления'), result.warnings.join('; '));
+  assert.equal(result.vatRate, null);
+  assert.equal(result.rounding, null);
   // Нормализованная смета переживает сохранение → загрузку без потерь.
   const migrated = migrateProject(raw);
   assert.deepEqual(migrateProject(JSON.parse(JSON.stringify(migrated))).estimate, migrated.estimate);

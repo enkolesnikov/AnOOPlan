@@ -188,6 +188,26 @@ test('specificationKnS: цена и артикул берутся для сеч�
   assert.equal(spec.totalCost, 6300);
 });
 
+test('округление сметы: строка КНС и сметная строка лотка дают одну сумму', () => {
+  const p = project([
+    route('r1', [segment('s1', vertex('a', 0), vertex('b', 37.5))], { type: 'Лоток', trayWidthMm: 100, trayHeightMm: 50 }),
+  ], [trayPrice('p10', '100×50', 10)]);
+  p.estimate = { laborPercent: 0, rounding: 10 };
+
+  const spec = specificationKnS(p);
+  const line = spec.lines[0];
+  assert.equal(line.quantity, 3.75, '37,5 единиц плана × 0,1 = 3,75 м');
+  assert.equal(line.cost, 40, '3,75 м × 10 ₽ = 37,5 → при rounding 10 стоимость 40');
+  // Подытоги — сумма уже округлённых строк, а не пересчёт из длины.
+  assert.equal(spec.subsystems[0].cost, line.cost);
+  assert.equal(spec.totals[0].cost, line.cost);
+  assert.equal(spec.totalCost, line.cost);
+
+  const tray = estimate(p).sections.find(section => section.kind === 'tray')!;
+  assert.equal(tray.lines[0].total, line.cost, 'в смете та же строка стоит столько же');
+  assert.equal(tray.total, spec.totalCost);
+});
+
 test('одно имя, три сечения, нет позиции для среднего: средняя строка без цены, у остальных свои артикулы', () => {
   const p = project([
     route('r1', [segment('s1', vertex('a', 0), vertex('b', 100))], { type: 'Лоток', trayWidthMm: 100, trayHeightMm: 50 }),

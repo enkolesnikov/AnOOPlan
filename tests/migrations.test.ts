@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { CURRENT_SCHEMA_VERSION, migrateProject, ProjectSchemaError } from '../src/migrations';
+import { estimate } from '../src/estimate';
 import { createDemoProject } from '../src/demo';
 import type { Project } from '../src/model';
 
@@ -226,6 +227,52 @@ test('смета: некорректный процент работ стано�
   const zero = rawProject();
   zero.estimate = { laborPercent: 0, note: 'Без работ' };
   assert.deepEqual(migrateProject(zero).estimate, { laborPercent: 0, note: 'Без работ' });
+});
+
+test('смета: неверные vatRate/rounding не гасятся миграцией и предупреждают после перезагрузки', () => {
+  const raw = rawProject();
+  raw.equipment = [];
+  raw.cables = [];
+  raw.routes = [];
+  raw.estimate = { laborPercent: 0, vatRate: 150, rounding: 3 };
+  // Сохранение → загрузка: миграция не должна «починить» введённые значения.
+  const loaded = migrateProject(JSON.parse(JSON.stringify(migrateProject(raw))));
+  assert.equal(loaded.estimate?.vatRate, 150);
+  assert.equal(loaded.estimate?.rounding, 3);
+
+  const result = estimate(loaded);
+  assert.ok(result.warnings.includes('Смета: неверная ставка НДС'), result.warnings.join('; '));
+  assert.ok(result.warnings.includes('Смета: неверное правило округления'), result.warnings.join('; '));
+  assert.equal(result.vatRate, null);
+  assert.equal(result.vat, null);
+  assert.equal(result.gross, null);
+  assert.equal(result.rounding, null);
+
+  // Отрицательная ставка — тоже конечное число: движок предупредит, миграция не сотрёт.
+  const negative = rawProject();
+  negative.estimate = { laborPercent: 0, vatRate: -5 };
+  assert.equal(migrateProject(negative).estimate?.vatRate, -5);
+});
+
+test('смета: валидные vatRate и rounding переживают перезагрузку без изменений', () => {
+  const raw = rawProject();
+  raw.estimate = { laborPercent: 0, vatRate: 20, rounding: 10 };
+  const loaded = migrateProject(JSON.parse(JSON.stringify(migrateProject(raw))));
+  assert.equal(loaded.estimate?.vatRate, 20);
+  assert.equal(loaded.estimate?.rounding, 10);
+});
+
+test('смета: настоящий мусор в vatRate/rounding не сохраняется', () => {
+  for (const vatRate of ['abc', Number.NaN, Number.POSITIVE_INFINITY, true, {}, []]) {
+    const raw = rawProject();
+    raw.estimate = { laborPercent: 0, vatRate };
+    assert.equal(migrateProject(raw).estimate?.vatRate, undefined, `ставка ${JSON.stringify(vatRate)}`);
+  }
+  for (const rounding of ['abc', Number.NaN, Number.POSITIVE_INFINITY, true, {}, []]) {
+    const raw = rawProject();
+    raw.estimate = { laborPercent: 0, rounding };
+    assert.equal(migrateProject(raw).estimate?.rounding, undefined, `шаг ${JSON.stringify(rounding)}`);
+  }
 });
 
 test('catalogDate: валидная дата сохраняется, мусор и null — undefined', () => {

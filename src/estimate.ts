@@ -2,6 +2,7 @@ import type { PriceItem, PriceKind, Project, WorkLine } from './model';
 import { calculateCable, routeSummary } from './engine';
 import { segmentIndex } from './engine/geometry';
 import { resolveTrayPrice } from './engine/specification';
+import { normalizeRounding, ROUNDING_STEPS, roundMoney } from './money';
 
 /**
  * Смета проекта 1.17.0.
@@ -102,21 +103,11 @@ export function catalogPrice(catalog: PriceItem[] | undefined, kind: PriceKind, 
   return null;
 }
 
-/** Допустимые правила округления денег, ₽: копейка, рубль, десяток, сотня. */
-export const ROUNDING_STEPS = [0.01, 1, 10, 100] as const;
-
-/** Правило округления денег из проекта: одно из 0.01/1/10/100 или null (без округления). */
-export function normalizeRounding(value: unknown): number | null {
-  return typeof value === 'number' && (ROUNDING_STEPS as readonly number[]).includes(value) ? value : null;
-}
-
-/**
- * Округление денежного значения до шага (0.01, 1, 10 или 100 ₽).
- * `null` — значение без изменений; `Math.round(value / rounding) * rounding`.
- */
-export function roundMoney(value: number, rounding: number | null): number {
-  return rounding === null ? value : Math.round(value / rounding) * rounding;
-}
+// Реализация живёт в `money.ts` (без импортов), чтобы спецификация КНС могла
+// брать то же правило округления без циклического импорта; публичные имена
+// остаются доступными из `estimate` для существующих потребителей.
+/** @public */
+export { normalizeRounding, ROUNDING_STEPS, roundMoney };
 
 /**
  * Строка работ из внешних данных (JSON-копия, импорт): имя и единица обрезаются,

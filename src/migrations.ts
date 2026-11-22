@@ -1,6 +1,6 @@
 import type { ChangeEntry, Dimension, Project, Segment } from './model';
 import { normalizeEquipmentColor } from './equipment-icons';
-import { isCatalogDate, normalizeCatalog, normalizeRounding, normalizeWorks } from './estimate';
+import { isCatalogDate, normalizeCatalog, normalizeWorks } from './estimate';
 import { SECTION_DIM_KEYS, normalizeRouteColor } from './route-kinds';
 
 /**
@@ -241,7 +241,9 @@ const normalizeDocument = (value: unknown): Project['document'] => {
 /**
  * Смета: процент работ и примечание нормализуются как раньше; новые поля (работы
  * по видам, НДС, округление) необязательны — их отсутствие не добавляет ключи,
- * чтобы старые копии оставались прежними, а явный мусор становится null, а не 0.
+ * чтобы старые копии оставались прежними, а мусор без числа становится undefined,
+ * а не 0. Конечные числа (в том числе недопустимые 150 или 3) сохраняются как есть:
+ * их проверяет движок и предупреждает, миграция не должна гасить ошибку молча.
  */
 function normalizeEstimate(value: unknown): Project['estimate'] {
   if (!isRecord(value)) return undefined;
@@ -254,14 +256,19 @@ function normalizeEstimate(value: unknown): Project['estimate'] {
   // Битые строки работ отбрасываются; пустой список не храним — «работ по видам нет».
   const works = normalizeWorks(value.works);
   if (works.length) estimate.works = works;
-  if (value.vatRate !== undefined) {
-    estimate.vatRate = typeof value.vatRate === 'number' && Number.isFinite(value.vatRate) && value.vatRate >= 0 && value.vatRate <= 100
-      ? value.vatRate
-      : null;
-  }
+  // Конечное число ставки сохраняется как есть, даже вне 0..100 (150, −5):
+  // движок сам предупредит «неверная ставка НДС» и не начислит НДС. Если
+  // превратить такую ставку в null, после перезагрузки предупреждение исчезло бы
+  // и проект молча остался бы без НДС. Мусор без числа (строка без цифр, NaN,
+  // объект, boolean) — не значение: поле не добавляем, как и раньше.
+  const vatRate = value.vatRate === null ? null : optionalNumber(value.vatRate);
+  if (vatRate !== undefined) estimate.vatRate = vatRate;
   // false — значение по умолчанию («НДС сверху»), поэтому храним только true.
   if (value.vatIncluded === true) estimate.vatIncluded = true;
-  if (value.rounding !== undefined) estimate.rounding = normalizeRounding(value.rounding);
+  // Шаг округления тоже сохраняется любым конечным числом (например 3): смета
+  // покажет «неверное правило округления», а не забудет ошибку при следующей загрузке.
+  const rounding = value.rounding === null ? null : optionalNumber(value.rounding);
+  if (rounding !== undefined) estimate.rounding = rounding;
   return estimate;
 }
 
