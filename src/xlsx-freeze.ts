@@ -5,8 +5,21 @@
 // xl/worksheets/sheetN.xml, добавляем в них <pane ... state="frozen"/> и
 // пересобираем архив с новыми CRC-32, размерами и центральным каталогом.
 
-/** Тег закрепления первой строки: шапка остаётся на месте при прокрутке. */
-const FROZEN_PANE = '<pane ySplit="1" topLeftCell="A2" activePane="bottomLeft" state="frozen"/>';
+/**
+ * Тег закрепления N строк: шапка остаётся на месте при прокрутке.
+ * Для листа с шапкой не в первой строке (КП) закрепляем и строки над ней:
+ * ySplit = fromRow + 1, данные начинаются с A(fromRow + 2).
+ */
+function frozenPane(rows: number): string {
+  const count = Math.max(1, rows);
+  return `<pane ySplit="${count}" topLeftCell="A${count + 1}" activePane="bottomLeft" state="frozen"/>`;
+}
+
+/** Сколько строк листа закрепить: шапка — первая строка автофильтра, иначе первая строка. */
+function headerRowCount(xml: string): number {
+  const filter = /<autoFilter[^>]*\bref="[A-Z]+(\d+)/.exec(xml);
+  return filter ? Math.max(1, Number(filter[1])) : 1;
+}
 
 /** CRC-32 (IEEE 802.3), таблица считается один раз при загрузке модуля. */
 const CRC_TABLE = ((): Uint32Array => {
@@ -240,18 +253,19 @@ function writeZip(entries: ZipEntry[]): Uint8Array {
  * Вставить дочерний <pane> в <sheetView>. Уже закреплённый лист не трогаем,
  * чтобы повторный вызов был идемпотентным.
  */
-export function addFrozenPane(xml: string): string {
+export function addFrozenPane(xml: string, frozenRows = 1): string {
   if (/<pane\b/.test(xml)) return xml;
+  const pane = frozenPane(frozenRows);
   const view = /<sheetView\b([^>]*?)(\/?)>/.exec(xml);
   if (!view) {
     // Нет ни одного sheetView — вставляем целый блок перед данными листа.
     if (!xml.includes('<sheetData')) return xml;
-    return xml.replace('<sheetData', `<sheetViews><sheetView workbookViewId="0">${FROZEN_PANE}</sheetView></sheetViews><sheetData`);
+    return xml.replace('<sheetData', `<sheetViews><sheetView workbookViewId="0">${pane}</sheetView></sheetViews><sheetData`);
   }
   const start = view.index;
   const end = start + view[0].length;
-  if (view[2] === '/') return `${xml.slice(0, start)}<sheetView${view[1]}>${FROZEN_PANE}</sheetView>${xml.slice(end)}`;
-  return `${xml.slice(0, end)}${FROZEN_PANE}${xml.slice(end)}`;
+  if (view[2] === '/') return `${xml.slice(0, start)}<sheetView${view[1]}>${pane}</sheetView>${xml.slice(end)}`;
+  return `${xml.slice(0, end)}${pane}${xml.slice(end)}`;
 }
 
 /** Есть ли в окружении потоковые компрессоры (старый WebView их не имеет). */
@@ -275,7 +289,7 @@ async function patchWorksheets(bytes: Uint8Array): Promise<Uint8Array> {
     else continue;
 
     const xml = new TextDecoder().decode(xmlBytes);
-    const updated = addFrozenPane(xml);
+    const updated = addFrozenPane(xml, headerRowCount(xml));
     if (updated === xml) continue;
 
     const output = encoder.encode(updated);
@@ -292,7 +306,8 @@ async function patchWorksheets(bytes: Uint8Array): Promise<Uint8Array> {
 }
 
 /**
- * Закрепить первую строку на всех листах книги.
+ * Закрепить шапку на всех листах книги: одна строка, а у листа с шапкой ниже
+ * (коммерческое предложение) — все строки до неё включительно.
  *
  * Возвращает исходные байты без исключения, если потоковые компрессоры
  * недоступны (старый WebView) или архив не разобрался: книга остаётся

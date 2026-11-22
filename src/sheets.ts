@@ -10,7 +10,17 @@ const localizedNumber = (value: number | null): string =>
 import { estimate } from './estimate';
 
 export type Cell = string | number | boolean | null;
-export interface ExportSheet { name: string; rows: Cell[][] }
+export interface ExportSheet {
+  name: string;
+  rows: Cell[][];
+  /**
+   * Границы непрерывной таблицы для автофильтра: fromRow — строка шапки,
+   * toRow — последняя строка данных (0-based, включительно).
+   * Поля нет — лист без автофильтра: итоги стоят вперемешку с данными
+   * («Смета», «Спецификация КНС»), и фильтр перемешал бы их.
+   */
+  table?: { fromRow: number; toRow: number };
+}
 
 /** Конечное число для ячейки; NaN/Infinity/undefined — null (пусто), а не «NaN». */
 const finiteCell = (value: unknown): number | null => typeof value === 'number' && Number.isFinite(value) ? value : null;
@@ -94,14 +104,16 @@ export function exportSheets(project: Project): ExportSheet[] {
   }
 
   // Коммерческое предложение — короткая сводка по разделам для заказчика с теми же
-  // итогами и примечанием, включён ли НДС в цены.
+  // итогами и примечанием, включён ли НДС в цены. Шапка таблицы стоит ниже
+  // реквизитов, поэтому автофильтр начинается с неё, а не с первой строки листа.
   const commercial: Cell[][] = [
     ['Проект', project.name],
     ['Дата прайса', estimateResult.catalogDate ?? '—'],
     ['Примечание', project.estimate?.note ?? ''],
     [],
-    ['Раздел', 'Сумма, ₽'],
   ];
+  const commercialFromRow = commercial.length;
+  commercial.push(['Раздел', 'Сумма, ₽']);
   for (const section of materialSections) commercial.push([section.title, section.total]);
   commercial.push(['Итого материалы', estimateResult.materials]);
   commercial.push([laborLabel(estimateResult.laborPercent, estimateResult.worksMode), estimateResult.labor]);
@@ -110,14 +122,10 @@ export function exportSheets(project: Project): ExportSheet[] {
     commercial.push([vatLabel(estimateResult), estimateResult.vat]);
     commercial.push(['Итого с НДС', estimateResult.gross]);
   }
+  // Хвост «Цены с НДС» отделён пустой строкой: фильтр его не накрывает.
+  const commercialToRow = commercial.length - 1;
   commercial.push([]);
   commercial.push([pricesVatLabel(estimateResult)]);
-
-  // Справочник цен проекта: позиции с ценами и примечаниями.
-  const catalog: Cell[][] = [['Вид', 'Наименование', 'Ед.', 'Цена, ₽', 'Примечание']];
-  for (const item of project.catalog ?? []) {
-    catalog.push([PRICE_KIND_LABELS[item.kind] ?? item.kind, item.name, item.unit, item.price, item.note]);
-  }
 
   // Спецификация КНС: строки идут блоками по подсистемам (порядок задаёт specificationKnS),
   // после каждого блока — подытог; тип, сечение и стоимость остаются в своих колонках шапки.
@@ -135,20 +143,43 @@ export function exportSheets(project: Project): ExportSheet[] {
   }
   knsRows.push(['Всего КНС', '', '', 'м', specKnS.totalLength, null, '', '', '', specKnS.totalCost]);
 
+  // Непрерывная таблица: шапка в первой строке, данные до последней строки листа.
+  const wholeTable = (rows: Cell[][]): { fromRow: number; toRow: number } => ({ fromRow: 0, toRow: rows.length - 1 });
+
+  const equipmentRows: Cell[][] = [['Тип', 'Модель', 'Этаж', 'Количество'], ...specs.equipment.map(r => [r.type, r.model, r.floor, r.quantity])];
+  const cableRows: Cell[][] = [['Марка', 'Количество линий', 'Геометрия, м', 'Итого, м'], ...specs.cables.map(r => [r.brand, r.lines, r.geometry, r.total])];
+  // Схема трасс: итоги по типам идут после пустой строки, поэтому фильтр накрывает
+  // только строки трасс, а не итоги.
+  const routeRows: Cell[][] = specs.routeSummary.routes.map(r => [r.number, r.type, routeSectionsText(r.sections, localizedNumber), r.length, r.segments, r.group === 'Кабель-канал' ? r.angles.total : null]);
+  const routeSchemeRows: Cell[][] = [
+    ['Трасса', 'Тип КНС', 'Сечения', 'Длина, м', 'Сегментов', 'Углы'],
+    ...routeRows,
+    [],
+    ['Итого по типам', '', '', '', '', ''],
+    ...specs.routeSummary.groups.map(g => [g.group, '', '', g.length, g.routes, g.group === 'Кабель-канал' ? g.angles.total : null]),
+  ];
+  const infrastructureRows: Cell[][] = [['Тип', 'Длина, м', 'Сегментов', 'Кабелей', 'Макс. заполнение, %', 'Сегментов с превышением'], ...specs.infrastructure.map(r => [r.type, r.length, r.segments, r.cables, r.maxFillPercent, r.overSegments])];
+  const fillRows: Cell[][] = [['Трасса', 'Сегмент', 'Тип трассы', 'КНС, мм', 'Площадь КНС, мм²', 'Линий', 'Площадь кабелей, мм²', 'Заполнение, %', 'Статус'], ...specs.trayFill.map(r => [r.route, r.segment, r.routeType, r.tray, r.trayAreaMm2, r.lines, r.areaMm2, r.fillPercent, r.status])];
+  const catalogRows: Cell[][] = [['Вид', 'Наименование', 'Ед.', 'Цена, ₽', 'Примечание'], ...(project.catalog ?? []).map(item => [PRICE_KIND_LABELS[item.kind] ?? item.kind, item.name, item.unit, item.price, item.note])];
+  const pinRows: Cell[][] = [['Номер', 'Этаж', 'X', 'Y', 'Замечание', 'Статус', 'Фото'], ...(project.pins ?? []).map(pin => [pin.number, project.floors.find(floor => floor.id === pin.floorId)?.name || '—', pin.x, pin.y, pin.comment, pin.status === 'closed' ? 'закрыто' : 'открыто', (pin.photos || []).length])];
+  // Доменные предупреждения (витая пара >100 м, нет цены кабеля, пустая трасса) и
+  // предупреждения сметы дополняют проверку проекта; дубликаты убираем.
+  const warningRows: Cell[][] = [['Предупреждение'], ...[...new Set([...validateProject(project), ...specs.errors, ...estimateResult.warnings, ...domainWarnings(project)])].map(e => [e])];
+
   return [
-    { name: 'Кабельный журнал', rows: journal },
-    { name: 'Оборудование', rows: [['Тип', 'Модель', 'Этаж', 'Количество'], ...specs.equipment.map(r => [r.type, r.model, r.floor, r.quantity])] },
-    { name: 'Кабели', rows: [['Марка', 'Количество линий', 'Геометрия, м', 'Итого, м'], ...specs.cables.map(r => [r.brand, r.lines, r.geometry, r.total])] },
-    { name: 'Схема трасс', rows: [['Трасса', 'Тип КНС', 'Сечения', 'Длина, м', 'Сегментов', 'Углы'], ...specs.routeSummary.routes.map(r => [r.number, r.type, routeSectionsText(r.sections, localizedNumber), r.length, r.segments, r.group === 'Кабель-канал' ? r.angles.total : null]), [], ['Итого по типам', '', '', '', '', ''], ...specs.routeSummary.groups.map(g => [g.group, '', '', g.length, g.routes, g.group === 'Кабель-канал' ? g.angles.total : null])] },
+    { name: 'Кабельный журнал', rows: journal, table: wholeTable(journal) },
+    { name: 'Оборудование', rows: equipmentRows, table: wholeTable(equipmentRows) },
+    { name: 'Кабели', rows: cableRows, table: wholeTable(cableRows) },
+    { name: 'Схема трасс', rows: routeSchemeRows, table: { fromRow: 0, toRow: routeRows.length } },
+    // В «Спецификации КНС» и «Смете» итоги стоят среди данных: автофильтр
+    // перемешал бы их, поэтому только закрепление шапки и ширины.
     { name: 'Спецификация КНС', rows: knsRows },
-    { name: 'Инфраструктура', rows: [['Тип', 'Длина, м', 'Сегментов', 'Кабелей', 'Макс. заполнение, %', 'Сегментов с превышением'], ...specs.infrastructure.map(r => [r.type, r.length, r.segments, r.cables, r.maxFillPercent, r.overSegments])] },
-    { name: 'Заполнение КНС', rows: [['Трасса', 'Сегмент', 'Тип трассы', 'КНС, мм', 'Площадь КНС, мм²', 'Линий', 'Площадь кабелей, мм²', 'Заполнение, %', 'Статус'], ...specs.trayFill.map(r => [r.route, r.segment, r.routeType, r.tray, r.trayAreaMm2, r.lines, r.areaMm2, r.fillPercent, r.status])] },
+    { name: 'Инфраструктура', rows: infrastructureRows, table: wholeTable(infrastructureRows) },
+    { name: 'Заполнение КНС', rows: fillRows, table: wholeTable(fillRows) },
     { name: 'Смета', rows: estimateRows },
-    { name: 'Коммерческое предложение', rows: commercial },
-    { name: 'Справочник цен', rows: catalog },
-    { name: 'Замечания', rows: [['Номер', 'Этаж', 'X', 'Y', 'Замечание', 'Статус', 'Фото'], ...(project.pins ?? []).map(pin => [pin.number, project.floors.find(floor => floor.id === pin.floorId)?.name || '—', pin.x, pin.y, pin.comment, pin.status === 'closed' ? 'закрыто' : 'открыто', (pin.photos || []).length])] },
-    // Доменные предупреждения (витая пара >100 м, нет цены кабеля, пустая трасса) и
-    // предупреждения сметы дополняют проверку проекта; дубликаты убираем.
-    { name: 'Предупреждения', rows: [['Предупреждение'], ...[...new Set([...validateProject(project), ...specs.errors, ...estimateResult.warnings, ...domainWarnings(project)])].map(e => [e])] },
+    { name: 'Коммерческое предложение', rows: commercial, table: { fromRow: commercialFromRow, toRow: commercialToRow } },
+    { name: 'Справочник цен', rows: catalogRows, table: wholeTable(catalogRows) },
+    { name: 'Замечания', rows: pinRows, table: wholeTable(pinRows) },
+    { name: 'Предупреждения', rows: warningRows, table: wholeTable(warningRows) },
   ];
 }
