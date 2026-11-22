@@ -1,7 +1,7 @@
 // Офлайн-сборка PDF кабельного журнала: pdf-lib + встроенный PT Sans (кириллица).
 // Документ A4/A3 landscape, повторяющиеся заголовки таблиц, полный штамп ГОСТ 2.104
 // (форма 2) и отметка неполного расчёта.
-import { PDFDocument, rgb, type PDFFont, type PDFPage } from 'pdf-lib';
+import { PDFDocument, rgb, type PDFFont, type PDFImage, type PDFPage } from 'pdf-lib';
 import fontkit from '@pdf-lib/fontkit';
 import type { Cable, Project } from './model';
 import { cableSection, calculateCable, domainWarnings, routeSectionsText, specificationKnS, specifications, validateProject } from './engine';
@@ -371,7 +371,10 @@ class Renderer {
         return;
       }
       // Строка целиком влезает на пустой лист — переносим её, как раньше.
-      if (height <= this.contentHeight) {
+      // Свежий лист тратит место на шапку (и подпись продолжения), поэтому сравниваем
+      // не с полной высотой контента, а с остатком после них: иначе строка уходит ниже штампа.
+      const freshCapacity = this.contentHeight - headerHeight - (sectionTitle ? 12.4 : 0) - 2;
+      if (height <= freshCapacity) {
         this.addPage();
         beginPage(true);
         drawRow(wrapped, height, bold, zebra, danger);
@@ -469,11 +472,13 @@ class Renderer {
   /** Фотографии; возвращает номер страницы заголовка или null, если снимков нет. */
   async photos(items: JournalPhoto[], title = 'Фотографии оборудования'): Promise<number | null> {
     if (!items.length) return null;
-    const page = this.heading(title, `Снимков в проекте: ${items.length}. Форматы: JPEG и PNG.`);
     const gap = 16;
     const cellWidth = (this.content - gap) / 2;
     const imageHeight = 200;
     const captionHeight = 22;
+    // Заголовок и первый ряд снимков — на одном листе: иначе заголовок остаётся сиротой.
+    this.ensure(56 + imageHeight + captionHeight + 12);
+    const page = this.heading(title, `Снимков в проекте: ${items.length}. Форматы: JPEG и PNG.`);
     for (let index = 0; index < items.length; index += 2) {
       const row = items.slice(index, index + 2);
       this.ensure(imageHeight + captionHeight + 12);
@@ -506,29 +511,30 @@ class Renderer {
   async plans(items: JournalPlan[]): Promise<TocEntry[]> {
     const entries: TocEntry[] = [];
     for (const item of items) {
-      // Заголовок и изображение должны попасть на один лист: иначе план уезжает на следующую
-      // страницу, а заголовок остаётся сиротой внизу предыдущей.
-      // Учитываем высоту примечания заранее: иначе заголовок остаётся на одном
-      // листе, а картинка уезжает на следующий (регрессия 2.3.0).
+      // Заголовок и изображение должны попасть на один лист: резервируем место сразу
+      // под заголовок, примечание и фактическую высоту картинки. Иначе заголовок
+      // остаётся сиротой внизу листа, а план уезжает на следующий (регрессия 2.3.0).
       const noteLines = item.note ? wrapText(item.note, this.regular, 8.6, this.content).length : 0;
-      const reserve = Math.min(this.contentHeight, 56 + noteLines * 13 + 20);
-      this.ensure(reserve);
+      let rendered: { image: PDFImage; width: number; height: number } | null;
+      try {
+        const image = await this.document.embedPng(item.png);
+        const maxHeight = Math.max(160, Math.min(380, this.contentHeight - 110 - noteLines * 13));
+        const scale = Math.min(this.content / image.width, maxHeight / image.height);
+        rendered = { image, width: image.width * scale, height: image.height * scale };
+      } catch {
+        rendered = null;
+      }
+      this.ensure(56 + noteLines * 13 + 10 + (rendered ? rendered.height + 16 : 20));
       const title = `План: ${item.title}`;
       const page = this.heading(title, 'Подложка этажа и нанесённые трассы с оборудованием — лист для подписи.');
       entries.push({ title, page });
       if (item.note) this.paragraph(item.note, DANGER);
-      try {
-        const image = await this.document.embedPng(item.png);
-        // Картинка занимает остаток листа: на A4 со штампом меньше, на A3 больше.
-        const maxHeight = Math.max(160, Math.min(380, this.contentHeight - reserve));
-        const scale = Math.min(this.content / image.width, maxHeight / image.height);
-        const width = image.width * scale;
-        const height = image.height * scale;
-        this.ensure(height + 16);
+      if (rendered) {
+        const { image, width, height } = rendered;
         this.page.drawImage(image, { x: this.margin + (this.content - width) / 2, y: this.y - height, width, height });
         this.page.drawRectangle({ x: this.margin, y: this.y - height, width: this.content, height, borderColor: BORDER, borderWidth: 0.6 });
         this.y -= height + 18;
-      } catch {
+      } else {
         this.paragraph('План не встроен: не удалось подготовить изображение.', DANGER);
       }
     }
@@ -1053,11 +1059,16 @@ export async function buildJournalPdf(project: Project, fonts: JournalFonts, opt
   const estimateResult = estimate(project);
   const include = new Set<JournalSectionId>(options.include ?? DEFAULT_JOURNAL_SECTIONS);
   const sections = buildSections(project, estimateResult);
+  // Предупреждения считаются до резервирования листов оглавления: иначе на каждый
+  // документ добавлялся пустой зарезервированный лист «Оглавление (продолжение)».
+  const warnings = include.has('warnings')
+    ? [...new Set([...validateProject(project), ...domainWarnings(project), ...specifications(project).errors, ...estimateResult.warnings])]
+    : [];
   const expectedEntries = sections.filter(section => include.has(section.id)).length
     + (include.has('plans') ? (options.plans?.length ?? 0) : 0)
     + (include.has('photos') && options.photos?.length ? 1 : 0)
     + (include.has('pinPhotos') && options.pinPhotos?.length ? 1 : 0)
-    + 1;
+    + (warnings.length ? 1 : 0);
   // Ёмкость листа оглавления считается по фактической нижней границе контента:
   // со штампом ГОСТ она выше, чем раньше, поэтому шаг 23 pt даёт меньше строк.
   const tocTop = renderer.height - renderer.margin - 64;
@@ -1089,7 +1100,6 @@ export async function buildJournalPdf(project: Project, fonts: JournalFonts, opt
   }
 
   if (include.has('warnings')) {
-    const warnings = [...new Set([...validateProject(project), ...domainWarnings(project), ...specifications(project).errors, ...estimateResult.warnings])];
     if (warnings.length) {
       const page = renderer.heading('Замечания и предупреждения', 'Проверьте данные перед применением документации на объекте.');
       toc.push({ title: 'Замечания и предупреждения', page });

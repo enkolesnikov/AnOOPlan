@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
+import { deflateSync } from 'node:zlib';
 import { PDFDocument } from 'pdf-lib';
 import { buildJournalPdf, formatNumber } from '../src/export-pdf';
 import { createDemoProject } from '../src/demo';
@@ -243,4 +244,78 @@ test('КНС: подытоги по подсистемам и «Всего КН�
   assert.ok(flat.includes('Всего КНС:'), 'нет строки «Всего КНС»');
   assert.ok(flat.includes(squash(`${formatNumber(spec.totalLength)} м`)), 'нет общего метража КНС');
   assert.ok(flat.includes(squash(`${formatNumber(spec.totalCost)} ₽`)), 'нет общей стоимости КНС');
+});
+
+/** Серый PNG заданного размера: нужны настоящие пропорции листа, а не 1×1. */
+function grayPng(width: number, height: number): Uint8Array {
+  const raw = Buffer.concat(Array.from({ length: height }, () => Buffer.concat([Buffer.from([0]), Buffer.alloc(width, 200)])));
+  const chunk = (type: string, data: Buffer): Buffer => {
+    const body = Buffer.concat([Buffer.from(type, 'latin1'), data]);
+    let crc = 0xffffffff;
+    for (const byte of body) {
+      crc ^= byte;
+      for (let bit = 0; bit < 8; bit += 1) crc = (crc >>> 1) ^ (0xedb88320 & -(crc & 1));
+    }
+    const size = Buffer.alloc(4); size.writeUInt32BE(data.length);
+    const sum = Buffer.alloc(4); sum.writeUInt32BE((crc ^ 0xffffffff) >>> 0);
+    return Buffer.concat([size, body, sum]);
+  };
+  const header = Buffer.alloc(13);
+  header.writeUInt32BE(width, 0); header.writeUInt32BE(height, 4);
+  header[8] = 8; header[9] = 0; header[10] = 0; header[11] = 0; header[12] = 0;
+  return new Uint8Array(Buffer.concat([
+    Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+    chunk('IHDR', header), chunk('IDAT', deflateSync(raw, { level: 9 })), chunk('IEND', Buffer.alloc(0)),
+  ]));
+}
+
+/** Сколько растровых изображений на листе (pdfjs operator list). */
+async function pageImageCount(bytes: Uint8Array, pageNumber: number): Promise<number> {
+  const pdfjs = await import('pdfjs-dist/legacy/build/pdf.mjs');
+  const task = pdfjs.getDocument({ data: new Uint8Array(bytes), useSystemFonts: false });
+  const document = await task.promise;
+  const page = await document.getPage(pageNumber);
+  const ops = await page.getOperatorList();
+  const count = ops.fnArray.filter((fn: number) => fn === pdfjs.OPS.paintImageXObject || fn === pdfjs.OPS.paintInlineImageXObject).length;
+  await task.destroy();
+  return count;
+}
+
+test('планы: заголовок и изображение всегда на одном листе (регрессия E-03)', async () => {
+  const png = grayPng(1600, 1131);
+  const plans = [1, 2, 3, 4].map(number => ({ title: `Помещение ${number}`, png }));
+  // Полный комплект разделов: перед планами лист заполнен, поэтому проверяется резерв места.
+  const info = await pdfInfo(await buildJournalPdf(createDemoProject(), fonts, { plans }));
+  const headingPages = info.pageTexts
+    .map((text, index) => ({ text, page: index + 1 }))
+    .filter(item => (item.text.match(/План:/g) ?? []).length === 1 && !item.text.includes('Оглавление'));
+  assert.equal(headingPages.length, plans.length, `заголовков планов: ${headingPages.length} из ${plans.length}`);
+  for (const item of headingPages) {
+    assert.equal(await pageImageCount(await buildJournalPdf(createDemoProject(), fonts, { plans }), item.page), 1,
+      `на листе ${item.page} заголовок «План:» без изображения`);
+  }
+});
+
+test('оглавление не резервирует пустой лист «(продолжение)»', async () => {
+  const png = grayPng(1600, 1131);
+  const plans = [1, 2, 3, 4].map(number => ({ title: `Помещение ${number}`, png }));
+  const info = await pdfInfo(await buildJournalPdf(createDemoProject(), fonts, { plans }));
+  const tocPages = info.pageTexts.filter(text => text.includes('Оглавление'));
+  assert.equal(tocPages.length, 1, `листов оглавления: ${tocPages.length}`);
+  const emptyPages = info.pageTexts.filter(text => squash(text).trim() === '');
+  assert.deepEqual(emptyPages, [], 'в документе есть пустые листы');
+});
+
+test('строка таблицы не опускается под верх штампа даже при разбиении', async () => {
+  const project = createDemoProject();
+  // Ячейка «Замечание» на 39 строк: строка выше листа делится, и её хвост
+  // раньше уходил в графы штампа (наезд на основную надпись).
+  project.pins[0].comment = Array.from({ length: 40 }, (_, index) => `КОНЕЦ-${index + 1}`).join('\n');
+  const info = await pdfInfo(await buildJournalPdf(project, fonts));
+  const stampTop = 18 + 40 * 2.83465;
+  const below = info.pageItems.flatMap((items, index) => items
+    .filter(item => (item.str ?? '').includes('КОНЕЦ-') && item.transform?.[5] !== undefined && item.transform[5] < stampTop + 0.5)
+    .map(item => `лист ${index + 1}: «${item.str}» y=${item.transform?.[5]?.toFixed(1)}`));
+  assert.deepEqual(below, [], 'текст строки попал в область штампа');
+  assert.ok(squash(info.text).includes('КОНЕЦ-40'), 'хвост длинной ячейки потерян');
 });
