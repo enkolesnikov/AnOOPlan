@@ -2,6 +2,7 @@
 // чтобы XLSX/PDF/CSV содержали одни и те же данные и колонки.
 import type { Cable, PriceKind, Project } from './model';
 import { cableSection, calculateCable, domainWarnings, routeSectionsText, specificationKnS, specifications, validateProject } from './engine';
+import type { EstimateResult } from './estimate';
 
 /** Число в русской локали; null — прочерк (для текстовых ячеек выгрузки). */
 const localizedNumber = (value: number | null): string =>
@@ -31,8 +32,24 @@ export const PRICE_KIND_LABELS: Record<PriceKind, string> = {
 export const priceSourceLabel = (source: 'manual' | 'catalog' | null): string | null =>
   source === 'manual' ? 'вручную' : source === 'catalog' ? 'справочник' : null;
 
-/** Подпись строки работ: «Работы (25 %)»; без заданного процента — «Работы (не задан)», а не 0. */
-export const laborLabel = (percent: number | null): string => (percent === null ? 'Работы (не задан)' : `Работы (${percent.toLocaleString('ru-RU')} %)`);
+/**
+ * Подпись строки работ: «Работы (25 %)» в режиме процента, «Работы (по видам)» в режиме
+ * работ по видам; без заданного процента — «Работы (не задан)», а не 0.
+ */
+export const laborLabel = (percent: number | null, mode: 'percent' | 'items' = 'percent'): string =>
+  mode === 'items'
+    ? 'Работы (по видам)'
+    : percent === null ? 'Работы (не задан)' : `Работы (${percent.toLocaleString('ru-RU')} %)`;
+
+/** НДС начисляется: нулевая или отсутствующая ставка — нет. */
+export const vatCharged = (result: EstimateResult): boolean => result.vatRate !== null && result.vatRate > 0;
+
+/** Строка НДС: «НДС 20 %» или «НДС 20 % (в т.ч.)», если налог уже включён в цены. */
+export const vatLabel = (result: EstimateResult): string =>
+  `НДС ${result.vatRate!.toLocaleString('ru-RU')} %${result.vatIncluded ? ' (в т.ч.)' : ''}`;
+
+/** Примечание о налоге в ценах: «Цены с НДС» / «Цены без НДС». */
+export const pricesVatLabel = (result: EstimateResult): string => (result.vatIncluded ? 'Цены с НДС' : 'Цены без НДС');
 
 export function exportSheets(project: Project): ExportSheet[] {
   const specs = specifications(project);
@@ -46,8 +63,11 @@ export function exportSheets(project: Project): ExportSheet[] {
     journal.push([cable.number, cable.name, cable.brand, cableDiameter(cable), section.areaMm2, cable.purpose, name(cable.fromId), name(cable.toId), cable.segmentIds.join(' → '), finiteCell(cable.quantity), result.geometry, result.routeReserve, result.cableReserve, result.endReserve, result.total, result.total === null || finiteCell(cable.quantity) === null ? null : result.total * cable.quantity, result.pricePerMeter, result.cost, result.complete, result.errors.join('; '), cable.note]);
   }
 
-  // Смета: позиции материальных разделов и их итоги; работы — отдельной итоговой строкой,
-  // чтобы не дублировать раздел «Работы» (у него нет позиций, только стоимость).
+  // Смета: позиции материальных разделов и их итоги; в режиме работ по видам строки работ
+  // выводятся обычными позициями раздела «Работы» (с «Итого: Работы»), в режиме процента —
+  // одной итоговой строкой, чтобы не дублировать раздел без позиций. Далее — итоги до НДС,
+  // НДС и итог с НДС; при заданном округлении в конце примечание о его шаге.
+  const worksSection = estimateResult.sections.find(section => section.kind === 'work');
   const materialSections = estimateResult.sections.filter(section => section.kind !== 'work');
   const estimateRows: Cell[][] = [['Раздел', 'Позиция', 'Ед.', 'Количество', 'Цена, ₽', 'Сумма, ₽', 'Источник цены', 'Примечание']];
   for (const section of materialSections) {
@@ -56,11 +76,25 @@ export function exportSheets(project: Project): ExportSheet[] {
     }
     estimateRows.push(['', `Итого: ${section.title}`, '', '', '', section.total, '', '']);
   }
+  if (estimateResult.worksMode === 'items') {
+    for (const line of worksSection?.lines ?? []) {
+      estimateRows.push([worksSection?.title ?? 'Работы', line.name, line.unit, line.quantity, line.price, line.total, priceSourceLabel(line.priceSource), line.note]);
+    }
+    estimateRows.push(['', `Итого: ${worksSection?.title ?? 'Работы'}`, '', '', '', estimateResult.labor, '', '']);
+  }
   estimateRows.push(['', 'Итого материалы', '', '', '', estimateResult.materials, '', '']);
-  estimateRows.push(['', laborLabel(estimateResult.laborPercent), '', '', '', estimateResult.labor, '', '']);
-  estimateRows.push(['', 'Итого по смете', '', '', '', estimateResult.total, '', '']);
+  estimateRows.push(['', laborLabel(estimateResult.laborPercent, estimateResult.worksMode), '', '', '', estimateResult.labor, '', '']);
+  estimateRows.push(['', vatCharged(estimateResult) ? 'Итого до НДС' : 'Итого по смете', '', '', '', estimateResult.total, '', '']);
+  if (vatCharged(estimateResult)) {
+    estimateRows.push(['', vatLabel(estimateResult), '', '', '', estimateResult.vat, '', '']);
+    estimateRows.push(['', 'Итого с НДС', '', '', '', estimateResult.gross, '', '']);
+  }
+  if (estimateResult.rounding !== null) {
+    estimateRows.push(['', `Округление: до ${estimateResult.rounding.toLocaleString('ru-RU')} ₽`, '', '', '', '', '', '']);
+  }
 
-  // Коммерческое предложение — короткая сводка по разделам для заказчика.
+  // Коммерческое предложение — короткая сводка по разделам для заказчика с теми же
+  // итогами и примечанием, включён ли НДС в цены.
   const commercial: Cell[][] = [
     ['Проект', project.name],
     ['Дата прайса', estimateResult.catalogDate ?? '—'],
@@ -70,8 +104,14 @@ export function exportSheets(project: Project): ExportSheet[] {
   ];
   for (const section of materialSections) commercial.push([section.title, section.total]);
   commercial.push(['Итого материалы', estimateResult.materials]);
-  commercial.push([laborLabel(estimateResult.laborPercent), estimateResult.labor]);
-  commercial.push(['Итого', estimateResult.total]);
+  commercial.push([laborLabel(estimateResult.laborPercent, estimateResult.worksMode), estimateResult.labor]);
+  commercial.push([vatCharged(estimateResult) ? 'Итого до НДС' : 'Итого', estimateResult.total]);
+  if (vatCharged(estimateResult)) {
+    commercial.push([vatLabel(estimateResult), estimateResult.vat]);
+    commercial.push(['Итого с НДС', estimateResult.gross]);
+  }
+  commercial.push([]);
+  commercial.push([pricesVatLabel(estimateResult)]);
 
   // Справочник цен проекта: позиции с ценами и примечаниями.
   const catalog: Cell[][] = [['Вид', 'Наименование', 'Ед.', 'Цена, ₽', 'Примечание']];

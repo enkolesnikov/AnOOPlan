@@ -1,7 +1,7 @@
 import type { Cable, Project } from './model';
 import { cableSection, calculateCable, routeSectionsText, specificationKnS, specifications } from './engine';
 import { estimate } from './estimate';
-import { PRICE_KIND_LABELS, laborLabel, priceSourceLabel } from './sheets';
+import { PRICE_KIND_LABELS, laborLabel, priceSourceLabel, pricesVatLabel, vatCharged, vatLabel } from './sheets';
 
 /** Диаметр кабеля для выгрузки: незаданное значение остаётся пустым, а не превращается в 0. */
 function cableDiameter(cable: Cable): number | null {
@@ -41,20 +41,32 @@ export function clientCsv(project: Project): string {
   rows.push([]); rows.push(['Заполнение КНС']); rows.push(['Трасса', 'Сегмент', 'КНС, мм', 'Линий', 'Площадь кабелей, мм²', 'Заполнение, %', 'Статус']);
   for (const row of specs.trayFill) rows.push([row.route, row.segment, row.tray, row.lines, row.areaMm2, row.fillPercent, row.status]);
 
-  // Смета: позиции материальных разделов и их итоги; работы — отдельной итоговой строкой.
+  // Смета: позиции материальных разделов и их итоги; в режиме работ по видам строки работ
+  // идут обычными позициями раздела «Работы», в режиме процента — одной итоговой строкой.
+  const worksSection = estimateResult.sections.find(section => section.kind === 'work');
   const materialSections = estimateResult.sections.filter(section => section.kind !== 'work');
-  const worksLabel = laborLabel(estimateResult.laborPercent);
+  const worksLabel = laborLabel(estimateResult.laborPercent, estimateResult.worksMode);
   rows.push([]); rows.push(['Смета']);
   rows.push(['Раздел', 'Позиция', 'Ед.', 'Количество', 'Цена, ₽', 'Сумма, ₽', 'Источник цены', 'Примечание']);
   for (const section of materialSections) {
     for (const line of section.lines) rows.push([section.title, line.name, line.unit, line.quantity, line.price, line.total, priceSourceLabel(line.priceSource), line.note]);
     rows.push(['', `Итого: ${section.title}`, '', '', '', section.total, '', '']);
   }
+  if (estimateResult.worksMode === 'items') {
+    for (const line of worksSection?.lines ?? []) rows.push([worksSection?.title ?? 'Работы', line.name, line.unit, line.quantity, line.price, line.total, priceSourceLabel(line.priceSource), line.note]);
+    rows.push(['', `Итого: ${worksSection?.title ?? 'Работы'}`, '', '', '', estimateResult.labor, '', '']);
+  }
   rows.push(['', 'Итого материалы', '', '', '', estimateResult.materials, '', '']);
   rows.push(['', worksLabel, '', '', '', estimateResult.labor, '', '']);
-  rows.push(['', 'Итого по смете', '', '', '', estimateResult.total, '', '']);
+  rows.push(['', vatCharged(estimateResult) ? 'Итого до НДС' : 'Итого по смете', '', '', '', estimateResult.total, '', '']);
+  if (vatCharged(estimateResult)) {
+    rows.push(['', vatLabel(estimateResult), '', '', '', estimateResult.vat, '', '']);
+    rows.push(['', 'Итого с НДС', '', '', '', estimateResult.gross, '', '']);
+  }
+  if (estimateResult.rounding !== null) rows.push(['', `Округление: до ${estimateResult.rounding.toLocaleString('ru-RU')} ₽`, '', '', '', '', '', '']);
 
-  // Коммерческое предложение — сводка по разделам для заказчика.
+  // Коммерческое предложение — сводка по разделам для заказчика с теми же итогами
+  // и примечанием, включён ли НДС в цены.
   rows.push([]); rows.push(['Коммерческое предложение']);
   rows.push(['Проект', project.name]);
   rows.push(['Дата прайса', estimateResult.catalogDate ?? '—']);
@@ -63,7 +75,13 @@ export function clientCsv(project: Project): string {
   for (const section of materialSections) rows.push([section.title, section.total]);
   rows.push(['Итого материалы', estimateResult.materials]);
   rows.push([worksLabel, estimateResult.labor]);
-  rows.push(['Итого', estimateResult.total]);
+  rows.push([vatCharged(estimateResult) ? 'Итого до НДС' : 'Итого', estimateResult.total]);
+  if (vatCharged(estimateResult)) {
+    rows.push([vatLabel(estimateResult), estimateResult.vat]);
+    rows.push(['Итого с НДС', estimateResult.gross]);
+  }
+  rows.push([]);
+  rows.push([pricesVatLabel(estimateResult)]);
 
   // Справочник цен проекта.
   rows.push([]); rows.push(['Справочник цен']);
