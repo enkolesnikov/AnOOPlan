@@ -187,3 +187,27 @@ test('specificationKnS: цена и артикул берутся для сеч�
   assert.deepEqual([narrow.quantity, narrow.price, narrow.article, narrow.cost], [5, 300, 'L-50', 1500]);
   assert.equal(spec.totalCost, 6300);
 });
+
+test('одно имя, три сечения, нет позиции для среднего: средняя строка без цены, у остальных свои артикулы', () => {
+  const p = project([
+    route('r1', [segment('s1', vertex('a', 0), vertex('b', 100))], { type: 'Лоток', trayWidthMm: 100, trayHeightMm: 50 }),
+    route('r2', [segment('s2', vertex('c', 0), vertex('d', 50))], { type: 'Лоток', trayWidthMm: 50, trayHeightMm: 50 }),
+    route('r3', [segment('s3', vertex('e', 0), vertex('f', 25))], { type: 'Лоток', trayWidthMm: 25, trayHeightMm: 25 }),
+  ], [
+    trayPrice('p100', '100×50', 480, 'L-100'),
+    trayPrice('p25', '25×25', 200, 'L-25'),
+  ]);
+
+  const spec = specificationKnS(p);
+  assert.equal(spec.lines.length, 3);
+  const rows = spec.lines.map(line => [line.section, line.price, line.article, line.cost]);
+  assert.deepEqual(rows.find(row => row[0] === '100×50'), ['100×50', 480, 'L-100', 4800]);
+  assert.deepEqual(rows.find(row => row[0] === '50×50'), ['50×50', null, '', null], 'цена чужого сечения не подставляется');
+  assert.deepEqual(rows.find(row => row[0] === '25×25'), ['25×25', 200, 'L-25', 500]);
+  assert.ok(
+    spec.warnings.includes('КНС: для «Лоток» нет цены сечения 50×50 в справочнике'),
+    spec.warnings.join('; '),
+  );
+  assert.equal(spec.totalLength, 17.5);
+  assert.equal(spec.totalCost, null, 'одна строка без цены делает итог неизвестным');
+});

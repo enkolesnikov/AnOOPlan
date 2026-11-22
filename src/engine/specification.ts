@@ -71,11 +71,52 @@ export interface KnSLine {
   cost: number | null;
   routes: number;
 }
+/** Итог по типу КНС: сколько метров, углов и денег приходится на все строки типа. */
+export interface KnSTypeTotal {
+  group: string;
+  /** Метраж, null если хотя бы одна строка без известной длины. */
+  length: number | null;
+  angles: number;
+  /** Стоимость, null если хотя бы одна строка без цены. */
+  cost: number | null;
+}
+
+/** Итог по подсистеме: метраж, углы, стоимость и число строк. */
+export interface KnSSubsystemTotal {
+  subsystem: string;
+  /** Метраж, null если хотя бы одна длина неизвестна. */
+  length: number | null;
+  angles: number;
+  /** Стоимость, null если хотя бы одна цена неизвестна. */
+  cost: number | null;
+  /** Число строк спецификации в подсистеме. */
+  lines: number;
+}
+
 export interface KnSSpecification {
+  /** Строки по подсистемам (порядок первого появления), затем тип и сечение. */
   lines: KnSLine[];
-  totals: { group: string; length: number | null; angles: number }[];
+  totals: KnSTypeTotal[];
+  /** Итоги по подсистемам в порядке первого появления. */
+  subsystems: KnSSubsystemTotal[];
+  /** Метраж всех строк; null если хоть одна длина неизвестна, 0 без строк. */
+  totalLength: number | null;
   totalCost: number | null;
   warnings: string[];
+}
+
+/** Прибавление к итогу: любое неизвестное слагаемое делает итог неизвестным. */
+const addKnown = (sum: number | null, value: number | null): number | null =>
+  sum === null || value === null ? null : sum + value;
+
+/** Сумма ряда: null, если хоть одно значение неизвестно; пустой ряд — 0, а не «неизвестно». */
+function sumKnown(values: (number | null)[]): number | null {
+  let sum = 0;
+  for (const value of values) {
+    if (value === null) return null;
+    sum += value;
+  }
+  return sum;
 }
 
 /**
@@ -86,11 +127,14 @@ export function specificationKnS(project: Project): KnSSpecification {
   const summary = routeSummary(project);
   const lines: KnSLine[] = [];
   const warnings: string[] = [];
+  // Подсистемы запоминаются в порядке первого появления трасс: так же группируются строки.
+  const subsystemOrder: string[] = [];
   const catalog = project.catalog ?? [];
   for (const route of project.routes) {
     const row = summary.routes.find(item => item.id === route.id);
     if (!row || !route.segments.length) continue;
     const subsystem = routeSubsystemLabel(route);
+    if (!subsystemOrder.includes(subsystem)) subsystemOrder.push(subsystem);
     // Сечения могут различаться по сегментам: в спецификацию входит метраж каждого сечения.
     const sections = row.sections.length
       ? row.sections
@@ -139,18 +183,38 @@ export function specificationKnS(project: Project): KnSSpecification {
       });
     });
   }
-  const totals: { group: string; length: number | null; angles: number }[] = [];
+  // Детерминированный порядок строк: подсистема (порядок первого появления), тип, сечение.
+  // Так PDF и XLSX печатают подсистемы блоками, а не в порядке трасс.
+  const subsystemRank = new Map(subsystemOrder.map((name, index) => [name, index]));
+  const compareSection = (left: string, right: string): number => left.localeCompare(right, 'ru', { numeric: true });
+  lines.sort((left, right) => {
+    const bySubsystem = (subsystemRank.get(left.subsystem) ?? 0) - (subsystemRank.get(right.subsystem) ?? 0);
+    if (bySubsystem) return bySubsystem;
+    const byName = left.name.localeCompare(right.name, 'ru');
+    return byName || compareSection(left.section, right.section);
+  });
+  const totals: KnSTypeTotal[] = [];
   for (const line of lines) {
     let group = totals.find(item => item.group === line.name);
-    if (!group) { group = { group: line.name, length: 0, angles: 0 }; totals.push(group); }
-    group.length = group.length === null || line.quantity === null ? null : group.length + line.quantity;
+    if (!group) { group = { group: line.name, length: 0, angles: 0, cost: 0 }; totals.push(group); }
+    group.length = addKnown(group.length, line.quantity);
     group.angles += line.angles;
+    group.cost = addKnown(group.cost, line.cost);
   }
-  // Нет строк — нет материалов: стоимость 0, а не «неизвестно».
-  const complete = lines.every(line => line.cost !== null);
-  const totalCost = complete ? lines.reduce((sum, line) => sum + (line.cost as number), 0) : null;
+  const subsystems: KnSSubsystemTotal[] = [];
+  for (const line of lines) {
+    let group = subsystems.find(item => item.subsystem === line.subsystem);
+    if (!group) { group = { subsystem: line.subsystem, length: 0, angles: 0, cost: 0, lines: 0 }; subsystems.push(group); }
+    group.length = addKnown(group.length, line.quantity);
+    group.angles += line.angles;
+    group.cost = addKnown(group.cost, line.cost);
+    group.lines += 1;
+  }
+  // Нет строк — нет материалов: 0, а не «неизвестно»; одна неизвестная длина/цена даёт null.
+  const totalLength = sumKnown(lines.map(line => line.quantity));
+  const totalCost = sumKnown(lines.map(line => line.cost));
   if (lines.some(line => line.price === null)) warnings.push('Для части КНС нет цены в справочнике — стоимость не рассчитана.');
-  return { lines, totals, totalCost, warnings };
+  return { lines, totals, subsystems, totalLength, totalCost, warnings };
 }
 
 export interface TrayFillRow {
