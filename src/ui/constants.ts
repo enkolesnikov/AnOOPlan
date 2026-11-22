@@ -1,4 +1,4 @@
-import type { JournalSectionId } from '../export-pdf';
+import type { JournalFormat, JournalSectionId } from '../export-pdf';
 
 /** Радиус привязки к соседним объектам в пикселях экрана. */
 export const SNAP_PX = 12;
@@ -12,6 +12,11 @@ export const SHEET_SIZES: Record<string, { landscape: number; portrait: number }
 };
 /** Максимальное расстояние от конца трассы до устройства, при котором концы привязываются. */
 export const CABLE_SNAP_LIMIT = 100;
+/** Форматы листа печати: только горизонт — широкие таблицы в портрет не влезают. */
+export const JOURNAL_FORMATS: { id: JournalFormat; label: string }[] = [
+  { id: 'a4l', label: 'A4, горизонт' },
+  { id: 'a3l', label: 'A3, горизонт' },
+];
 /** Разделы печатной формы: порядок и подписи чекбоксов «Печать выбранных разделов». */
 export const JOURNAL_SECTIONS: { id: JournalSectionId; label: string }[] = [
   { id: 'journal', label: 'Журнал' },

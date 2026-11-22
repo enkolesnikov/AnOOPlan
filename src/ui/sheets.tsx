@@ -1,9 +1,9 @@
 import { useState, type KeyboardEvent as ReactKeyboardEvent } from 'react';
 import { createUuid as uid } from '../compat';
-import type { JournalSectionId } from '../export-pdf';
+import type { JournalFormat, JournalSectionId } from '../export-pdf';
 import type { ChangeEntry } from '../model';
 import type { ObjectKind } from './types';
-import { JOURNAL_SECTIONS } from './constants';
+import { JOURNAL_FORMATS, JOURNAL_SECTIONS } from './constants';
 import { nativeBridge } from './native';
 import type { AppUi } from './use-app-controller';
 
@@ -46,6 +46,7 @@ const SHORT_PRINT_SET: JournalSectionId[] = ['journal', 'equipment', 'cables', '
 export function ExportSheet({ ui }: { ui: AppUi }) {
   const {
     project, busy, run, download, printSections, setPrintSections, togglePrintSection, printJournal, setExportOpen,
+    printFormat, setPrintFormat, printScale, setPrintScale,
     shareExport, shareAnoPlan, saveAnoPlan, openHistory, restoreInput, mutate,
   } = ui;
   const [tab, setTab] = useState<ExportTab>('files');
@@ -85,6 +86,10 @@ export function ExportSheet({ ui }: { ui: AppUi }) {
           <span className="section-label">Печать: выбранные разделы <span className="print-sections-count">{printSections.length} из {JOURNAL_SECTIONS.length}</span></span>
           <div className="print-presets"><button type="button" onClick={() => setPrintSections(JOURNAL_SECTIONS.map(section => section.id))}>Выбрать все</button><button type="button" onClick={() => setPrintSections([])}>Снять выбор</button><button type="button" onClick={() => setPrintSections(SHORT_PRINT_SET)}>Короткий комплект</button></div>
           <div className="print-sections">{JOURNAL_SECTIONS.map(section => <label key={section.id} className="print-section"><input type="checkbox" className="section-checkbox" checked={printSections.includes(section.id)} onChange={() => togglePrintSection(section.id)} />{section.label}</label>)}</div>
+          <div className="sheet-fields">
+            <label className="field">Формат листа<select aria-label="Формат листа" value={printFormat} onChange={event => setPrintFormat(event.target.value as JournalFormat)}>{JOURNAL_FORMATS.map(format => <option key={format.id} value={format.id}>{format.label}</option>)}</select></label>
+            <label className="field">Масштаб таблиц<select aria-label="Масштаб таблиц" value={String(printScale)} onChange={event => setPrintScale(Number(event.target.value))}><option value="0.9">90 %</option><option value="1">100 %</option><option value="1.1">110 %</option></select></label>
+          </div>
           <button className="print-selected" disabled={busy} onClick={() => { setExportOpen(false); void run(() => printJournal()); }}>Печать выбранных разделов</button>
           <p className="help">Печать откроется в мобильном приложении системным диалогом. Отметьте хотя бы один раздел — пустой выбор ничего не печатает.</p>
         </div>
