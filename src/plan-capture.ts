@@ -7,7 +7,7 @@ import { logDiagnostic } from './diagnostics';
 import { idbGet } from './idb';
 import type { PlanSheet } from './plan-pages';
 import { groupFloorsByPdf, planFloors, planSheetsForPdf } from './plan-pages';
-import { planRasterWidth } from './plan-raster';
+import { limitPlanRaster, planRasterWarning } from './plan-raster';
 
 type PdfjsModule = typeof import('pdfjs-dist/legacy/build/pdf.mjs');
 type PdfLoadingTask = ReturnType<PdfjsModule['getDocument']>;
@@ -74,49 +74,86 @@ async function canvasToPlan(canvas: HTMLCanvasElement, title: string): Promise<C
 }
 
 /** План без PDF: белый лист и только SVG-оверлей. */
-async function fallbackPlan(project: Project, floor: Floor): Promise<CapturedPlan | null> {
-  const width = 1600;
-  const height = Math.max(1, Math.round(width * floor.height / Math.max(1, floor.width)));
-  const surface = canvasContext(width, height);
-  if (!surface) return null;
+async function fallbackPlan(project: Project, floor: Floor): Promise<{ plan: CapturedPlan | null; warnings: string[] }> {
+  const warnings: string[] = [];
+  const desiredWidth = 1600;
+  const ratio = Math.max(1, floor.height) / Math.max(1, floor.width);
+  // Бюджет — на сам холст плана: при 1:10 ширина 1600 дала бы 25,6 Мпикс,
+  // и браузер мог не создать канву вовсе. Уменьшаем ширину и говорим об этом.
+  const fit = limitPlanRaster(desiredWidth, desiredWidth * ratio);
+  const warning = planRasterWarning(floor.name, fit.width, fit.limited);
+  if (warning) warnings.push(warning);
+  const height = Math.max(1, Math.floor(fit.width * ratio));
+  const surface = canvasContext(fit.width, height);
+  if (!surface) {
+    warnings.push(`Этаж «${floor.name}»: не хватило памяти на холст ${fit.width}×${height}, лист плана не выгружен.`);
+    return { plan: null, warnings };
+  }
   surface.context.fillStyle = '#ffffff';
-  surface.context.fillRect(0, 0, width, height);
+  surface.context.fillRect(0, 0, fit.width, height);
   await drawOverlay(surface.canvas, project, floor);
   const plan = await canvasToPlan(surface.canvas, floor.name);
   releaseCanvas(surface.canvas);
-  return plan;
+  if (!plan) warnings.push(`Этаж «${floor.name}»: не удалось сохранить лист плана в PNG.`);
+  return { plan, warnings };
 }
 
 /** Один лист: PDF-страница и оверлей этажа, если он назначен раскладкой. */
-async function captureSheet(project: Project, document: PdfDocument, sheet: PlanSheet): Promise<CapturedPlan | null> {
+async function captureSheet(
+  project: Project,
+  document: PdfDocument,
+  sheet: PlanSheet,
+): Promise<{ plan: CapturedPlan | null; warnings: string[] }> {
+  const warnings: string[] = [];
   const page = await document.getPage(sheet.page);
   const viewport = page.getViewport({ scale: 1 });
   const floor = sheet.floor;
-  const width = planRasterWidth(floor ? floor.width : viewport.width, floor ? floor.height : viewport.height);
-  const height = Math.max(1, Math.round(floor
-    ? width * floor.height / Math.max(1, floor.width)
-    : width * viewport.height / Math.max(1, viewport.width)));
-  const surface = canvasContext(width, height);
-  if (!surface) return null;
-  surface.context.fillStyle = '#ffffff';
-  surface.context.fillRect(0, 0, width, height);
+  const sheetWidth = floor ? floor.width : viewport.width;
+  const sheetHeight = floor ? floor.height : viewport.height;
+  const surfaceRatio = Math.max(1, sheetHeight) / Math.max(1, sheetWidth);
+  const layerRatio = Math.max(1, viewport.height) / Math.max(1, viewport.width);
+  // 150 dpi, но не меньше 1600 px; высоты обеих канв считаем от ширины,
+  // поэтому бюджет проверяется по их сумме, а не по каждой отдельно.
+  const desiredWidth = Math.max(1600, Math.round(Math.max(1, sheetWidth) / 72 * 150));
+  const fit = limitPlanRaster(desiredWidth, desiredWidth * (surfaceRatio + layerRatio));
+  const fittedWidth = fit.width;
+  const fittedHeight = Math.max(1, Math.floor(fittedWidth * surfaceRatio));
+  const fittedLayerHeight = Math.max(1, Math.floor(fittedWidth * layerRatio));
+  const warning = fit.limited
+    ? (floor
+      ? planRasterWarning(floor.name, fittedWidth, true)
+      : `Лист ${sheet.page} уменьшен до ${fittedWidth} px по бюджету памяти.`)
+    : null;
+  if (warning) warnings.push(warning);
 
-  const layer = canvasContext(width, width * viewport.height / Math.max(1, viewport.width));
+  const surface = canvasContext(fittedWidth, fittedHeight);
+  if (!surface) {
+    warnings.push(`Лист ${sheet.page}: не хватило памяти на холст ${fittedWidth}×${fittedHeight}, лист плана не выгружен.`);
+    return { plan: null, warnings };
+  }
+  surface.context.fillStyle = '#ffffff';
+  surface.context.fillRect(0, 0, fittedWidth, fittedHeight);
+
+  const layer = canvasContext(fittedWidth, fittedLayerHeight);
   if (layer) {
     const renderTask = page.render({
       canvasContext: layer.context,
-      viewport: page.getViewport({ scale: width / viewport.width }),
+      viewport: page.getViewport({ scale: fittedWidth / viewport.width }),
       canvas: layer.canvas,
     });
     await renderTask.promise;
-    surface.context.drawImage(layer.canvas, 0, 0, width, height);
+    surface.context.drawImage(layer.canvas, 0, 0, fittedWidth, fittedHeight);
     releaseCanvas(layer.canvas);
+  } else {
+    // Оверлей всё равно нанесём на белый лист, но о потере подложки скажем.
+    warnings.push(`Лист ${sheet.page}: подложка PDF не нарисована — не хватило памяти на слой.`);
   }
   if (floor) await drawOverlay(surface.canvas, project, floor);
   const plan = await canvasToPlan(surface.canvas, sheet.title);
   if (plan && sheet.note) plan.note = sheet.note;
   releaseCanvas(surface.canvas);
-  return plan;
+  if (!plan) warnings.push(`Лист ${sheet.page}: не удалось сохранить план в PNG.`);
+  return { plan, warnings };
 }
 
 function mergeWarnings(target: string[], items: readonly string[]): void {
@@ -144,9 +181,10 @@ async function captureFloorGroup(project: Project, pdfId: string, floors: Floor[
       if (renderedPages.has(sheet.page)) continue;
       renderedPages.add(sheet.page);
       try {
-        const plan = await captureSheet(project, pdf.document, sheet);
-        if (plan) {
-          plans.push(plan);
+        const captured = await captureSheet(project, pdf.document, sheet);
+        mergeWarnings(warnings, captured.warnings);
+        if (captured.plan) {
+          plans.push(captured.plan);
           continue;
         }
       } catch (error) {
@@ -159,13 +197,15 @@ async function captureFloorGroup(project: Project, pdfId: string, floors: Floor[
       // Оверлей этажа не должен потеряться: печатаем белый лист с ним.
       if (sheet.floor) {
         const fallback = await fallbackPlan(project, sheet.floor);
-        if (fallback) plans.push(fallback);
+        if (fallback.plan) plans.push(fallback.plan);
+        mergeWarnings(warnings, fallback.warnings);
       }
     }
     if (!plans.length) {
       for (const floor of floors) {
         const fallback = await fallbackPlan(project, floor);
-        if (fallback) plans.push(fallback);
+        if (fallback.plan) plans.push(fallback.plan);
+        mergeWarnings(warnings, fallback.warnings);
         mergeWarnings(warnings, [`Этаж «${floor.name}»: PDF не удалось отрисовать, выгружен лист без подложки.`]);
       }
     }
@@ -176,7 +216,8 @@ async function captureFloorGroup(project: Project, pdfId: string, floors: Floor[
     const warnings: string[] = [];
     for (const floor of floors) {
       const fallback = await fallbackPlan(project, floor);
-      if (fallback) plans.push(fallback);
+      if (fallback.plan) plans.push(fallback.plan);
+      mergeWarnings(warnings, fallback.warnings);
       mergeWarnings(warnings, [`Этаж «${floor.name}»: PDF не удалось прочитать, выгружен лист без подложки.`]);
     }
     return { plans, warnings };
@@ -198,8 +239,9 @@ export async function collectPlans(project: Project, onProgress?: (done: number,
     onProgress?.(done, floors.length);
     if (group.pdfId === null) {
       for (const floor of group.floors) {
-        const plan = await fallbackPlan(project, floor);
-        if (plan) plans.push(plan);
+        const fallback = await fallbackPlan(project, floor);
+        if (fallback.plan) plans.push(fallback.plan);
+        mergeWarnings(warnings, fallback.warnings);
         done += 1;
         onProgress?.(done, floors.length);
       }

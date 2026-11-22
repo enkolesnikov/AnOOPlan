@@ -17,6 +17,51 @@ const escapeXml = (value: string): string => value.replace(/[<>&"']/g, character
 
 const round = (value: number): number => Math.round(value * 10) / 10;
 
+/** Оценка ширины подписи: в sans-serif кириллица занимает около 0.62em на знак. */
+const estimateTextWidth = (text: string, fontSize: number): number => text.length * fontSize * 0.62;
+
+interface LabelPlacement {
+  x: number;
+  y: number;
+  anchor: 'start' | 'middle';
+}
+
+/**
+ * Подпись символа на плане: справа от бейджа с просветом не меньше 20 % его
+ * размера, если справа хватает места, иначе — под бейджем. У края листа подпись
+ * прижимается внутрь, чтобы не выходить за рамку.
+ */
+function placeLabel(
+  cx: number,
+  cy: number,
+  half: number,
+  fontSize: number,
+  text: string,
+  sheetWidth: number,
+  sheetHeight: number,
+): LabelPlacement {
+  // 25 % диаметра: 20 % — минимум по требованиям, но вплотную номер всё ещё
+  // сливается с обводкой бейджа на печати в уменьшенном масштабе.
+  const gap = Math.max(4, half * 0.5);
+  const width = estimateTextWidth(text, fontSize);
+  const margin = Math.max(2, fontSize * 0.25);
+  const right = cx + half + gap;
+  if (right + width <= sheetWidth - margin) {
+    return { x: right, y: cy + fontSize * 0.35, anchor: 'start' };
+  }
+  // Справа места нет — под бейджем по центру; x прижимаем к рамке листа.
+  const below = cy + half + gap + fontSize;
+  const x = Math.min(Math.max(cx, width / 2 + margin), Math.max(width / 2 + margin, sheetWidth - width / 2 - margin));
+  return { x, y: Math.min(below, Math.max(margin, sheetHeight - margin)), anchor: 'middle' };
+}
+
+/** Текст подписи с белой обводкой: на плотном плане без неё номер не читается. */
+function labelText(placement: LabelPlacement, fontSize: number, fill: string, text: string): string {
+  return `<text x="${round(placement.x)}" y="${round(placement.y)}" font-size="${round(fontSize)}" fill="${fill}" ` +
+    `stroke="#fff" stroke-width="${round(Math.max(2, fontSize * 0.28))}" paint-order="stroke" ` +
+    `font-family="sans-serif" text-anchor="${placement.anchor}" data-label="${escapeXml(text)}">${escapeXml(text)}</text>`;
+}
+
 export function buildPlanSvg(project: Project, floor: Floor): string {
   const width = Math.max(1, floor.width);
   const height = Math.max(1, floor.height);
@@ -74,6 +119,7 @@ export function buildPlanSvg(project: Project, floor: Floor): string {
   // Оборудование — те же иконки, что и на экране: белый бейдж с обводкой цвета типа
   // и глиф заливкой; бейдж маленький, чтобы оверлей оставался прозрачным.
   const iconSize = Math.max(12, width / 70) * 1.4;
+  const labelSize = symbol * 0.72;
   const equipment = project.equipment
     .filter(item => item.floorId === floor.id)
     .map(item => {
@@ -84,11 +130,36 @@ export function buildPlanSvg(project: Project, floor: Floor): string {
       const paths = EQUIPMENT_ICON_GLYPHS[icon].paths
         .map(path => `<path d="${path}" fill="${color}" fill-rule="evenodd" />`)
         .join('');
+      const placement = placeLabel(item.x, item.y, half, labelSize, item.number, width, height);
       return `<g data-icon="${icon}" transform="translate(${round(item.x - half)}, ${round(item.y - half)}) scale(${scale})">` +
         `<rect x="1" y="1" width="22" height="22" rx="5" fill="#fff" stroke="${color}" stroke-width="2" />` +
         paths +
         `</g>` +
-        `<text x="${round(item.x + half + 4)}" y="${round(item.y + iconSize / 3)}" font-size="${round(symbol * 0.72)}" fill="#122936" font-family="sans-serif">${escapeXml(item.number)}</text>`;
+        labelText(placement, labelSize, '#122936', item.number);
+    });
+
+  // Пины-замечания: открытые — заметное оранжевое кольцо с точкой, закрытые —
+  // серое кольцо с галочкой. Номер подписан рядом с белой обводкой, иначе
+  // на плотном плане его не видно. Размеры масштабируются вместе с листом.
+  const pinRadius = Math.max(6, width / 90);
+  const pinStroke = Math.max(2, width / 480);
+  const pinFont = Math.max(9, symbol * 0.7);
+  const pins = (project.pins ?? [])
+    .filter(pin => pin.floorId === floor.id)
+    .map(pin => {
+      const open = pin.status !== 'closed';
+      const color = open ? '#e07b00' : '#88949a';
+      const ring =
+        `<circle data-pin="${escapeXml(pin.number)}" data-status="${pin.status}" cx="${round(pin.x)}" cy="${round(pin.y)}" ` +
+        `r="${round(pinRadius)}" fill="#fff" stroke="${color}" stroke-width="${round(pinStroke)}" />`;
+      const mark = open
+        ? `<circle cx="${round(pin.x)}" cy="${round(pin.y)}" r="${round(pinRadius * 0.32)}" fill="${color}" />`
+        : `<path d="M ${round(pin.x - pinRadius * 0.45)} ${round(pin.y + pinRadius * 0.02)} ` +
+          `L ${round(pin.x - pinRadius * 0.12)} ${round(pin.y + pinRadius * 0.36)} ` +
+          `L ${round(pin.x + pinRadius * 0.48)} ${round(pin.y - pinRadius * 0.34)}" ` +
+          `fill="none" stroke="${color}" stroke-width="${round(pinStroke * 1.4)}" stroke-linecap="round" stroke-linejoin="round" />`;
+      const placement = placeLabel(pin.x, pin.y, pinRadius, pinFont, pin.number, width, height);
+      return ring + mark + labelText(placement, pinFont, open ? '#a35a00' : '#5f6f77', pin.number);
     });
 
   const captionHeight = Math.max(24, height / 24);
@@ -100,6 +171,7 @@ export function buildPlanSvg(project: Project, floor: Floor): string {
     risers.join('') +
     dimensions.join('') +
     equipment.join('') +
+    pins.join('') +
     caption +
     `</svg>`;
 }
