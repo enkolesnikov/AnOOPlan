@@ -529,6 +529,15 @@ td small { display: block; color: var(--muted); font-size: 12px; }
 .catalog-preview-actions { display: flex; gap: 8px; justify-content: flex-end; }
 .catalog-series input, .catalog-size input { min-width: 80px; }
 
+/* На экранах документов (смета, журнал, ведомости) плавающая кнопка свойств
+   закрывает числа в таблице на телефоне: там она не нужна, объект выбирают на плане. */
+@media (max-width: 1023px) {
+  /* На документных экранах есть своя кнопка «Свойства» (.props-toggle-doc),
+     а плавающая поверх таблицы кнопка только закрывала числа. */
+  .app-shell.view-estimate .props-fab,
+  .app-shell.view-journal .props-fab,
+  .app-shell.view-specs .props-fab { display: none; }
+}
 @media (max-width: 1023px) {
   .menu-toggle {
     display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0;

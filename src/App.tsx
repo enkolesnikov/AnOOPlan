@@ -11,7 +11,9 @@ import { Workspace } from './ui/workspace';
  */
 export default function App() {
   const ui = useAppController();
-  return <div className="app-shell">
+  // Экран передаётся в корень: на телефоне плавающие кнопки свойств/истории
+  // мешают таблицам документов, и CSS скрывает их на этих экранах.
+  return <div className={`app-shell view-${ui.view}`}>
     <Topbar ui={ui} />
     <CommandBar ui={ui} />
     {ui.error && <div className="banner error" role="alert"><strong>Не удалось выполнить действие.</strong> {ui.error}<button type="button" aria-label="Закрыть сообщение об ошибке" title="Закрыть" onClick={() => ui.setError('')}>×</button></div>}
