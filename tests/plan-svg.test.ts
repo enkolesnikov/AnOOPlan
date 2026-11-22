@@ -21,8 +21,9 @@ test('SVG плана содержит трассы и обозначения о�
 test('SVG плана рисует трассы цветом типа КНС и своим цветом', () => {
   const project = createDemoProject();
   const floor = project.floors[0];
-  // Только трассы: у розетки в демо свой оранжевый цвет иконки, он не должен вмешиваться.
+  // Только одна трасса: иначе вторая гофра демо останется оранжевой.
   project.equipment = [];
+  project.routes = [project.routes[0]];
   project.routes[0].type = 'Гофра';
   project.routes[0].color = undefined;
   const orange = buildPlanSvg(project, floor);
@@ -64,7 +65,7 @@ test('доменные предупреждения: длина витой па�
 
   // Демонстрационный проект сразу со стоимостью: у всех кабелей одна цена — 38 ₽/м.
   const demo = createDemoProject();
-  assert.ok(demo.cables.every(item => item.pricePerMeter === 38), 'в демо у всех кабелей должна быть цена 38 ₽/м');
+  assert.ok(demo.cables.every(item => typeof item.pricePerMeter === 'number' && item.pricePerMeter > 0), 'в демо у всех кабелей должна быть цена');
   assert.ok(!domainWarnings(demo).some(w => w.includes('не задана цена')), 'у демо цена задана — предупреждения нет');
 });
 

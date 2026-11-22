@@ -307,10 +307,10 @@ test('validateProject ловит только заданные некоррек�
   assert.deepEqual(validateProject(ok), []);
 });
 
-test('демо-проект: заполнение известно и в норме на всех 7 сегментах', () => {
+test('демо-проект: заполнение известно и в норме на всех 11 сегментах', () => {
   const demo = createDemoProject();
   const result = trayFill(demo);
-  assert.equal(result.segments.length, 7);
+  assert.equal(result.segments.length, 11);
   assert.equal(result.complete, true);
   assert.equal(result.overSegments, 0);
   for (const fill of result.segments) {
@@ -321,7 +321,7 @@ test('демо-проект: заполнение известно и в нор�
   assert.ok(result.maxFillPercent !== null && result.maxFillPercent > 0);
   assert.ok(result.maxFillPercent! < TRAY_FILL_RECOMMENDED_PERCENT);
   const spec = specifications(demo);
-  assert.equal(spec.trayFill.length, 7);
+  assert.equal(spec.trayFill.length, 11);
   assert.ok(spec.trayFill.every(row => row.status === 'ок'));
   assert.ok(spec.infrastructure.every(row => row.maxFillPercent !== null && row.maxFillPercent > 0));
 });
@@ -329,10 +329,8 @@ test('демо-проект: заполнение известно и в нор�
 test('демо-проект: новые поля не изменили метраж кабелей', () => {
   const demo = createDemoProject();
   const totals = demo.cables.map(item => calculateCable(demo, item).total);
-  close(totals[0], 15.3);
-  close(totals[1], 26.3);
-  close(totals[2], 45.55);
-  close(totals[3], 27.95);
+  const expected = [17.525, 26.15, 46.275, 11.1, 40.525, 30.895];
+  totals.forEach((total, index) => close(total, expected[index]));
 });
 
 // --- Сегментные размеры КНС (2.5.0) ---

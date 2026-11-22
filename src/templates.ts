@@ -60,7 +60,7 @@ export function builtInTemplates(): ProjectTemplate[] {
   const perimeter = oneFloorDemo('Периметр', number => ['Ш1', 'К1', 'К2', 'К3'].includes(number));
   return [
     { id: 'blank', name: 'Пустой проект', description: 'Один этаж без объектов — начать с нуля.', builtIn: true, project: freshProject() },
-    { id: 'office', name: 'Офис', description: '2 этажа, 7 единиц оборудования, 3 трассы и 4 кабеля.', builtIn: true, project: office },
+    { id: 'office', name: 'Офис', description: '2 этажа: камеры, шкафы и розетка; готовые трассы и кабели.', builtIn: true, project: office },
     { id: 'warehouse', name: 'Склад', description: '1 этаж, шкаф, камеры и розетка; трассы и кабели первого этажа.', builtIn: true, project: warehouse },
     { id: 'perimeter', name: 'Периметр', description: '1 этаж, шкаф и три камеры — быстрый старт видеонаблюдения.', builtIn: true, project: perimeter },
   ];
