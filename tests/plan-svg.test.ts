@@ -123,3 +123,65 @@ test('SVG плана рисует относительный размер меж
   assert.ok(svg.includes('stroke="#875ec5"'), 'нет линии размера');
   assert.ok(/\d[\d,.]* (мм|м)/.test(svg), 'нет подписи расстояния');
 });
+
+test('этаж только с пинами: в SVG есть элемент пина и его номер', () => {
+  const project = createDemoProject();
+  const floor = project.floors[0];
+  // Ни оборудования, ни трасс: раньше такой лист печатался пустым.
+  project.equipment = [];
+  project.routes = [];
+  const own = project.pins.filter(pin => pin.floorId === floor.id);
+  const other = project.pins.filter(pin => pin.floorId !== floor.id);
+  assert.ok(own.length > 0, 'в демо есть пин на первом этаже');
+  const svg = buildPlanSvg(project, floor);
+  for (const pin of own) {
+    assert.ok(svg.includes(`data-pin="${pin.number}"`), `нет элемента пина ${pin.number}`);
+    assert.ok(svg.includes(`>${pin.number}</text>`), `нет номера пина ${pin.number}`);
+  }
+  assert.ok(svg.includes('stroke="#e07b00"'), 'открытый пин должен быть заметного оранжевого цвета');
+  for (const pin of other) assert.ok(!svg.includes(`data-pin="${pin.number}"`), `пин чужого этажа ${pin.number} не должен попадать на лист`);
+});
+
+test('закрытый пин на плане — серое кольцо с галочкой', () => {
+  const project = createDemoProject();
+  const floor = project.floors[1];
+  project.equipment = [];
+  project.routes = [];
+  const closed = project.pins.find(pin => pin.floorId === floor.id);
+  assert.ok(closed, 'в демо есть пин на втором этаже');
+  closed.status = 'closed';
+  const svg = buildPlanSvg(project, floor);
+  assert.ok(svg.includes(`data-pin="${closed.number}"`), 'нет элемента закрытого пина');
+  assert.ok(svg.includes('stroke="#88949a"'), 'закрытый пин должен быть приглушённым серым');
+});
+
+test('подпись оборудования стоит справа от бейджа и имеет белую обводку', () => {
+  const project = createDemoProject();
+  const floor = project.floors[0];
+  const item = project.equipment.find(candidate => candidate.number === 'Ш1');
+  assert.ok(item, 'в демо есть шкаф Ш1');
+  const svg = buildPlanSvg(project, floor);
+  const match = new RegExp(`<text x="([\\d.]+)"[^>]*data-label="${item.number}"[^>]*>`).exec(svg);
+  assert.ok(match, `нет подписи ${item.number}`);
+  const tag = match[0];
+  const labelX = Number(match[1]);
+  const iconSize = Math.max(12, floor.width / 70) * 1.4;
+  const half = iconSize / 2;
+  // Подпись не должна начинаться внутри бейджа и просвет — не меньше 20 % иконки.
+  assert.ok(labelX > item.x + half, `подпись ${item.number} внутри бейджа: x=${labelX}`);
+  assert.ok(labelX >= item.x + half + iconSize * 0.2 - 0.1, `просвет меньше 20 % иконки: ${labelX - item.x - half}`);
+  assert.ok(tag.includes('paint-order="stroke"'), 'у подписи нет белой обводки');
+  assert.ok(tag.includes('stroke="#fff"'), 'обводка подписи должна быть белой');
+});
+
+test('подпись пина тоже получает белую обводку', () => {
+  const project = createDemoProject();
+  const floor = project.floors[0];
+  const pin = project.pins.find(candidate => candidate.floorId === floor.id);
+  assert.ok(pin);
+  const svg = buildPlanSvg(project, floor);
+  const tag = new RegExp(`<text x="[\\d.]+"[^>]*data-label="${pin.number}"[^>]*>`).exec(svg)?.[0];
+  assert.ok(tag, `нет подписи пина ${pin.number}`);
+  assert.ok(tag.includes('paint-order="stroke"'));
+  assert.ok(tag.includes('stroke="#fff"'));
+});
