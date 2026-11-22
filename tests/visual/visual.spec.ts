@@ -11,8 +11,8 @@ async function openDemo(page: Page) {
   await page.evaluate(() => localStorage.clear());
   await page.reload({ waitUntil: 'networkidle' });
   await page.getByRole('button', { name: 'Учебный проект' }).click();
-  // Демо-проект: 7 оборудования, 3 трассы, 4 кабеля — ждём именно его, а не пустой проект.
-  await expect(page.locator('.statusbar')).toContainText('7 оборуд.');
+  // Демо-проект: 8 оборудования, 5 трасс, 6 кабелей — ждём именно его, а не пустой проект.
+  await expect(page.locator('.statusbar')).toContainText('8 оборуд.');
   await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
 }
 
