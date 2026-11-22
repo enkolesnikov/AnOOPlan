@@ -20,10 +20,10 @@ test('2.8.5: разделение/объединение трассы и цеп�
   await page.getByLabel('Разделить трассу по вершине').selectOption({ index: 1 });
   await expect(page.locator('.statusbar')).toContainText('разделена');
   const routesAfterSplit = await page.getByRole('button', { name: /^Трассы/ }).textContent();
-  expect(routesAfterSplit).toContain('4');
+  expect(routesAfterSplit).toContain('6');
 
   // Объединить обратно со второй частью.
-  await page.getByLabel('Объединить трассу').selectOption({ index: 3 });
+  await page.getByLabel('Объединить трассу').selectOption({ index: 5 });
   await expect(page.locator('.statusbar')).toContainText('объединены');
   await page.keyboard.press('Control+z');
   await page.keyboard.press('Control+z');

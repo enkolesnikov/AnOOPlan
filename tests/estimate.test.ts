@@ -372,13 +372,16 @@ test('демо-проект: смета полная, итог положите�
   const [equipment, cables, trays] = result.sections;
   assert.equal(equipment.lines.length, 7);
   assert.ok(equipment.lines.every(line => line.priceSource === 'catalog' && line.price !== null));
-  assert.equal(cables.lines.length, 4);
-  assert.ok(cables.lines.every(line => line.priceSource === 'manual' && line.price === 38));
+  assert.equal(cables.lines.length, 6);
+  assert.ok(cables.lines.every(line => line.priceSource === 'manual' && (line.price === 38 || line.price === 24)));
   assert.deepEqual(trays.lines.map(line => [line.name, line.quantity, line.price]), [
-    ['Лоток · 100×50', 55, 480],
+    ['Лоток · 100×50', 68, 480],
     ['Стояк · 50×50', 4, 620],
+    ['Кабель-канал · 25×25', 12.5, 280],
+    ['Гофра · Ø20', 2.5, 95],
   ]);
-  assert.deepEqual(cables.lines.map(line => line.quantity), [15.3, 26.3, 91.1, 27.95]);
+  const quantities = [17.525, 26.15, 92.55, 11.1, 40.525, 30.895];
+  cables.lines.forEach((line, index) => close(line.quantity, quantities[index]));
 });
 
 test('снимок: смена прайса в живом проекте не пересчитывает старую копию', () => {
