@@ -1071,9 +1071,9 @@ button, input, select, textarea, summary,
   /* «＋ Кабель» больше не сжимается в столбик по буквам. */
   .document-title .primary { flex: 0 0 auto; white-space: nowrap; }
   .document-title { flex-wrap: wrap; gap: 8px; }
-  /* Имя проекта в шапке: эллипсис вместо обрезки посреди слова. */
+  /* Имя проекта в шапке: эллипсис вместо обрезки посреди слова, высота — тач-цель. */
   .project-heading { min-width: 0; }
-  .project-heading input { text-overflow: ellipsis; }
+  .project-heading input { text-overflow: ellipsis; min-height: 44px; }
   /* Подписи вкладок сайдбара не рвутся по слогам. */
   .sidebar-tabs button { overflow-wrap: normal; word-break: normal; font-size: 11px; }
 }
