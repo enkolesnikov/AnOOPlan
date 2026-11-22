@@ -16,7 +16,7 @@ export function clientCsv(project: Project): string {
   const estimateResult = estimate(project);
   const rows: (string | number | null)[][] = [];
   rows.push(['Кабельный журнал']);
-  rows.push(['Номер', 'Наименование', 'Марка', 'Диаметр, мм', 'Сечение, мм²', 'От', 'До', 'Количество', 'Итог одного, м', 'Итог всего, м', 'Полный']);
+  rows.push(['Номер', 'Наименование', 'Марка', 'Диаметр, мм', 'S каб., мм²', 'От', 'До', 'Количество', 'Итог одного, м', 'Итог всего, м', 'Полный']);
   for (const cable of project.cables) {
     const result = calculateCable(project, cable);
     const name = (id: string) => project.equipment.find(item => item.id === id)?.number || id;

@@ -30,10 +30,9 @@ const CATALOG_HEADER = ['Вид', 'Наименование', 'Ед.', 'Цена
 /** PDF-текст: любые пробельные разделители (nbsp) сводим к обычному пробелу для сравнения. */
 const squash = (value: string): string => value.replace(/\s+/g, ' ');
 // Деньги в PDF печатаются до копейки (formatMoney), количества — до трёх знаков.
-const pdfNumber = (value: number | null): string => squash(formatNumber(value));
 /** Деньги в PDF печатаются до копейки, поэтому ищем именно денежный формат. */
 const pdfMoney = (value: number | null): string => squash(formatMoney(value));
-const JOURNAL_HEADER = ['Номер', 'Наименование', 'Марка', 'Диаметр, мм', 'Сечение, мм²', 'Назначение', 'От', 'До', 'Трасса (ID)', 'Количество', 'Геометрия, м', 'Запас трассы, м', 'Запас кабеля, м', 'Запас концов, м', 'Итог одного, м', 'Итог с количеством, м', 'Цена, ₽/м', 'Стоимость, ₽', 'Расчёт полный', 'Предупреждения', 'Примечание'];
+const JOURNAL_HEADER = ['Номер', 'Наименование', 'Марка', 'Диаметр, мм', 'S каб., мм²', 'Назначение', 'От', 'До', 'Трасса (ID)', 'Количество', 'Геометрия, м', 'Запас трассы, м', 'Запас кабеля, м', 'Запас концов, м', 'Итог одного, м', 'Итог с количеством, м', 'Цена, ₽/м', 'Стоимость, ₽', 'Расчёт полный', 'Предупреждения', 'Примечание'];
 const FILL_HEADER = ['Трасса', 'Сегмент', 'Тип трассы', 'КНС, мм', 'Площадь КНС, мм²', 'Линий', 'Площадь кабелей, мм²', 'Заполнение, %', 'Статус'];
 
 const emptyProject = (): Project => ({
@@ -113,10 +112,10 @@ test('XLSX собирается в приложении и читается об
   assert.equal(rows.length, project.cables.length);
   assert.ok(rows.some(row => row['Номер'] === project.cables[0].number));
   assert.ok(rows.every(row => 'Итог одного, м' in row));
-  assert.ok(rows.every(row => 'Диаметр, мм' in row && 'Сечение, мм²' in row));
+  assert.ok(rows.every(row => 'Диаметр, мм' in row && 'S каб., мм²' in row));
   const first = rows.find(row => row['Номер'] === project.cables[0].number)!;
   assert.equal(first['Диаметр, мм'], 6, 'в демо-проекте у кабеля диаметр 6 мм');
-  assert.ok(Math.abs(Number(first['Сечение, мм²']) - Math.PI * 9) < 0.01, 'сечение должно считаться по диаметру');
+  assert.ok(Math.abs(Number(first['S каб., мм²']) - Math.PI * 9) < 0.01, 'сечение должно считаться по диаметру');
   const pins = XLSX.utils.sheet_to_json<Record<string, string>>(workbook.Sheets['Замечания'], { defval: '' });
   assert.equal(pins.length, project.pins.length);
   assert.ok(pins.some(row => row['Номер'] === project.pins[0].number));
@@ -304,11 +303,11 @@ test('CSV содержит диаметр, сечение и раздел зап
   const journalHeader = lines.find(line => line.startsWith('"Номер";"Наименование"'));
   assert.ok(journalHeader, 'нет заголовка кабельного журнала');
   assert.ok(journalHeader.includes('"Диаметр, мм"'), 'в CSV нет колонки диаметра');
-  assert.ok(journalHeader.includes('"Сечение, мм²"'), 'в CSV нет колонки сечения');
+  assert.ok(journalHeader.includes('"S каб., мм²"'), 'в CSV нет колонки сечения');
   const journalHeaderIndex = lines.indexOf(journalHeader);
   const journalRow = lines[journalHeaderIndex + 1].split(';');
   assert.equal(journalRow[3], '"6"', 'у кабеля демо-проекта диаметр 6 мм');
-  assert.ok(journalRow[4].startsWith('"28,2'), 'сечение считается по диаметру; в CSV десятичная запятая');
+  assert.ok(journalRow[4].startsWith('"28,274'), 'площадь кабеля считается по диаметру; в CSV десятичная запятая');
 
   const start = lines.indexOf('"Заполнение КНС"');
   assert.ok(start > 0, 'в CSV нет раздела заполнения лотков');
@@ -358,7 +357,7 @@ test('незаданные размеры выгружаются как null/п�
   const project = bareProject();
   const sheets = exportSheets(project);
   const journal = sheets[0];
-  assert.deepEqual(journal.rows[0].slice(2, 5), ['Марка', 'Диаметр, мм', 'Сечение, мм²']);
+  assert.deepEqual(journal.rows[0].slice(2, 5), ['Марка', 'Диаметр, мм', 'S каб., мм²']);
   assert.equal(journal.rows[1][3], null, 'неизвестный диаметр — null, не 0');
   assert.equal(journal.rows[1][4], null, 'неизвестное сечение — null, не 0');
 
@@ -375,7 +374,7 @@ test('незаданные размеры выгружаются как null/п�
   const workbook = XLSX.read(buildWorkbook(sheets), { type: 'array' });
   const journalRows = XLSX.utils.sheet_to_json<Record<string, string>>(workbook.Sheets['Кабельный журнал'], { defval: '' });
   assert.equal(journalRows[0]['Диаметр, мм'], '');
-  assert.equal(journalRows[0]['Сечение, мм²'], '');
+  assert.equal(journalRows[0]['S каб., мм²'], '');
   const fillRows = XLSX.utils.sheet_to_json<unknown[]>(workbook.Sheets['Заполнение КНС'], { header: 1, defval: '' });
   assert.equal(fillRows[1][7], '');
   assert.equal(fillRows[1][8], 'неполный');

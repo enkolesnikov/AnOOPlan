@@ -25,6 +25,14 @@ export interface ExportSheet {
 /** Конечное число для ячейки; NaN/Infinity/undefined — null (пусто), а не «NaN». */
 const finiteCell = (value: unknown): number | null => typeof value === 'number' && Number.isFinite(value) ? value : null;
 
+/**
+ * Измеряемое число для таблицы: 3 знака после запятой — предел, который вообще
+ * имеет смысл в кабельном журнале. Без округления в Excel попадали хвосты
+ * двоичной арифметики («160,64999999999998 м», «28,274333882308138 мм²»).
+ */
+const roundCell = (value: number | null, digits = 3): number | null =>
+  value === null || !Number.isFinite(value) ? null : Number(value.toFixed(digits));
+
 /** Диаметр кабеля для выгрузки: незаданное значение остаётся null, а не превращается в 0. */
 function cableDiameter(cable: Cable): number | null {
   const value = cable.outerDiameterMm;
@@ -72,12 +80,12 @@ export function exportSheets(project: Project): ExportSheet[] {
   const specs = specifications(project);
   const specKnS = specificationKnS(project);
   const estimateResult = estimate(project);
-  const journal: Cell[][] = [['Номер', 'Наименование', 'Марка', 'Диаметр, мм', 'Сечение, мм²', 'Назначение', 'От', 'До', 'Трасса (ID)', 'Количество', 'Геометрия, м', 'Запас трассы, м', 'Запас кабеля, м', 'Запас концов, м', 'Итог одного, м', 'Итог с количеством, м', 'Цена, ₽/м', 'Стоимость, ₽', 'Расчёт полный', 'Предупреждения', 'Примечание']];
+  const journal: Cell[][] = [['Номер', 'Наименование', 'Марка', 'Диаметр, мм', 'S каб., мм²', 'Назначение', 'От', 'До', 'Трасса (ID)', 'Количество', 'Геометрия, м', 'Запас трассы, м', 'Запас кабеля, м', 'Запас концов, м', 'Итог одного, м', 'Итог с количеством, м', 'Цена, ₽/м', 'Стоимость, ₽', 'Расчёт полный', 'Предупреждения', 'Примечание']];
   for (const cable of project.cables) {
     const result = calculateCable(project, cable);
     const section = cableSection(cable);
     const name = (id: string) => project.equipment.find(e => e.id === id)?.number || id;
-    journal.push([cable.number, cable.name, cable.brand, cableDiameter(cable), section.areaMm2, cable.purpose, name(cable.fromId), name(cable.toId), cable.segmentIds.join(' → '), finiteCell(cable.quantity), result.geometry, result.routeReserve, result.cableReserve, result.endReserve, result.total, result.total === null || finiteCell(cable.quantity) === null ? null : result.total * cable.quantity, result.pricePerMeter, result.cost, result.complete, result.errors.join('; '), cable.note]);
+    journal.push([cable.number, cable.name, cable.brand, cableDiameter(cable), roundCell(section.areaMm2), cable.purpose, name(cable.fromId), name(cable.toId), cable.segmentIds.join(' → '), finiteCell(cable.quantity), roundCell(result.geometry), roundCell(result.routeReserve), roundCell(result.cableReserve), roundCell(result.endReserve), roundCell(result.total), roundCell(result.total === null || finiteCell(cable.quantity) === null ? null : result.total * cable.quantity), result.pricePerMeter, result.cost, result.complete, result.errors.join('; '), cable.note]);
   }
 
   // Смета: позиции материальных разделов и их итоги; в режиме работ по видам строки работ
@@ -154,10 +162,10 @@ export function exportSheets(project: Project): ExportSheet[] {
   const wholeTable = (rows: Cell[][]): { fromRow: number; toRow: number } => ({ fromRow: 0, toRow: rows.length - 1 });
 
   const equipmentRows: Cell[][] = [['Тип', 'Модель', 'Этаж', 'Количество'], ...specs.equipment.map(r => [r.type, r.model, r.floor, r.quantity])];
-  const cableRows: Cell[][] = [['Марка', 'Количество линий', 'Геометрия, м', 'Итого, м'], ...specs.cables.map(r => [r.brand, r.lines, r.geometry, r.total])];
+  const cableRows: Cell[][] = [['Марка', 'Количество линий', 'Геометрия, м', 'Итого, м'], ...specs.cables.map(r => [r.brand, r.lines, roundCell(r.geometry), roundCell(r.total)])];
   // Схема трасс: итоги по типам идут после пустой строки, поэтому фильтр накрывает
   // только строки трасс, а не итоги.
-  const routeRows: Cell[][] = specs.routeSummary.routes.map(r => [r.number, r.type, routeSectionsText(r.sections, localizedNumber), r.length, r.segments, r.group === 'Кабель-канал' ? r.angles.total : null]);
+  const routeRows: Cell[][] = specs.routeSummary.routes.map(r => [r.number, r.type, routeSectionsText(r.sections, localizedNumber), roundCell(r.length), r.segments, r.group === 'Кабель-канал' ? r.angles.total : null]);
   const routeSchemeRows: Cell[][] = [
     ['Трасса', 'Тип КНС', 'Сечения', 'Длина, м', 'Сегментов', 'Углы'],
     ...routeRows,
@@ -165,8 +173,8 @@ export function exportSheets(project: Project): ExportSheet[] {
     ['Итого по типам', '', '', '', '', ''],
     ...specs.routeSummary.groups.map(g => [g.group, '', '', g.length, g.routes, g.group === 'Кабель-канал' ? g.angles.total : null]),
   ];
-  const infrastructureRows: Cell[][] = [['Тип', 'Длина, м', 'Сегментов', 'Кабелей', 'Макс. заполнение, %', 'Сегментов с превышением'], ...specs.infrastructure.map(r => [r.type, r.length, r.segments, r.cables, r.maxFillPercent, r.overSegments])];
-  const fillRows: Cell[][] = [['Трасса', 'Сегмент', 'Тип трассы', 'КНС, мм', 'Площадь КНС, мм²', 'Линий', 'Площадь кабелей, мм²', 'Заполнение, %', 'Статус'], ...specs.trayFill.map(r => [r.route, r.segment, r.routeType, r.tray, r.trayAreaMm2, r.lines, r.areaMm2, r.fillPercent, r.status])];
+  const infrastructureRows: Cell[][] = [['Тип', 'Длина, м', 'Сегментов', 'Кабелей', 'Макс. заполнение, %', 'Сегментов с превышением'], ...specs.infrastructure.map(r => [r.type, roundCell(r.length), r.segments, r.cables, roundCell(r.maxFillPercent), r.overSegments])];
+  const fillRows: Cell[][] = [['Трасса', 'Сегмент', 'Тип трассы', 'КНС, мм', 'Площадь КНС, мм²', 'Линий', 'Площадь кабелей, мм²', 'Заполнение, %', 'Статус'], ...specs.trayFill.map(r => [r.route, r.segment, r.routeType, r.tray, roundCell(r.trayAreaMm2), r.lines, roundCell(r.areaMm2), roundCell(r.fillPercent), r.status])];
   const catalogRows: Cell[][] = [['Вид', 'Наименование', 'Ед.', 'Цена, ₽', 'Примечание'], ...(project.catalog ?? []).map(item => [PRICE_KIND_LABELS[item.kind] ?? item.kind, item.name, item.unit, item.price, item.note])];
   const pinRows: Cell[][] = [['Номер', 'Этаж', 'X', 'Y', 'Замечание', 'Статус', 'Фото'], ...(project.pins ?? []).map(pin => [pin.number, project.floors.find(floor => floor.id === pin.floorId)?.name || '—', pin.x, pin.y, pin.comment, pin.status === 'closed' ? 'закрыто' : 'открыто', (pin.photos || []).length])];
   // Доменные предупреждения (витая пара >100 м, нет цены кабеля, пустая трасса) и

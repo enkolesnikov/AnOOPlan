@@ -321,22 +321,20 @@ test('строка таблицы не опускается под верх шт
 });
 
 test('2.10.1: деньги в смете печатаются до копейки, без третьего знака', async () => {
+  // Демо в 2.10.1 округляет до рубля, поэтому берём проект без правила округления:
+  // 25 % от материалов даёт третью цифру после запятой.
   const project = createDemoProject();
+  project.estimate = { ...(project.estimate ?? { laborPercent: null }), laborPercent: 25, rounding: null };
   const result = estimate(project);
-  const info = await pdfInfo(await buildJournalPdf(project, fonts));
-  const flat = squash(info.text);
   assert.ok(result.labor !== null, 'работы должны быть рассчитаны');
   const plain = (value: string) => value.replace(/\u00a0/g, ' ');
-  const kopecks = plain(formatMoney(result.labor));
-  const threeDecimals = plain(result.labor.toLocaleString('ru-RU', { maximumFractionDigits: 3 }));
-  if (kopecks !== threeDecimals) {
-    assert.ok(flat.includes(kopecks), `нет суммы работ до копейки «${kopecks}»`);
-    assert.ok(!flat.includes(threeDecimals), `в документе осталась сумма «${threeDecimals}» с тысячными`);
+  const info = await pdfInfo(await buildJournalPdf(project, fonts));
+  const flat = squash(info.text);
+  assert.ok(flat.includes(plain(formatMoney(result.labor))), `нет суммы работ до копейки «${formatMoney(result.labor)}»`);
+  // Тысячных у рублей быть не должно: печатаем только до копейки.
+  for (const match of flat.matchAll(/(\d[\d ]*),\d{3}(?=\s*(?:₽|м\b))/g)) {
+    assert.fail(`деньги с тремя знаками после запятой: «${match[0]}»`);
   }
-  // Площади кабелей печатаются с тремя знаками (28,274 мм²) — это не деньги;
-  // проверяем именно денежные суммы: тысячных у рублей быть не должно.
-  assert.ok(!flat.includes('28 783,675'), 'работы напечатаны с тысячными');
-  assert.ok(!flat.includes('143 918,375'), 'итог напечатан с тысячными');
 });
 
 test('2.10.1: даты документа печатаются в виде ДД.ММ.ГГГГ, а не ISO', async () => {
