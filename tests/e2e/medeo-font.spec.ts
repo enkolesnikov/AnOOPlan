@@ -1,6 +1,9 @@
 import { test, expect } from '@playwright/test';
 
 test('2.8.0: Medeo Sans подключён, двойной клик по сегменту вставляет вершину', async ({ page }) => {
+  // План должен быть виден целиком: на 1280×720 нижняя панель перекрывает
+  // середину длинного сегмента, и двойной клик попадает в панель.
+  await page.setViewportSize({ width: 1280, height: 900 });
   page.on('dialog', dialog => void dialog.accept());
   await page.goto('/');
   await page.evaluate(() => localStorage.clear());
@@ -18,9 +21,17 @@ test('2.8.0: Medeo Sans подключён, двойной клик по сег�
   const segments = page.locator('g[data-object="segment"]');
   const before = await segments.count();
   expect(before).toBeGreaterThan(2);
-  const box = await segments.first().boundingBox();
-  expect(box).not.toBeNull();
-  await page.mouse.dblclick(box!.x + box!.width / 2, box!.y + box!.height / 2);
+  // Двойной клик — по самому длинному сегменту: у коротких середина может попасть
+  // в иконку оборудования, и вставка вершины не сработает. locator.dblclick сам
+  // прокручивает план к элементу.
+  const longest = await segments.evaluateAll(nodes => {
+    const lengths = nodes.map(node => {
+      const box = node.getBoundingClientRect();
+      return Math.max(box.width, box.height);
+    });
+    return lengths.indexOf(Math.max(...lengths));
+  });
+  await segments.nth(longest).dblclick({ force: true });
   await expect(segments).toHaveCount(before + 1);
   await page.keyboard.press('Control+z');
   await expect(segments).toHaveCount(before);
