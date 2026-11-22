@@ -116,7 +116,9 @@ test('normalizeBaseUrl: миллион слэшей обрабатывается
   const started = performance.now();
   assert.throws(() => normalizeBaseUrl(huge), RangeError);
   const elapsed = performance.now() - started;
-  assert.ok(elapsed < 50, `отклонение 1e6 слэшей заняло ${elapsed.toFixed(2)} мс`);
+  // Порог с запасом: на общих раннерах CI разброс времени в разы, а тест доказывает
+  // отсутствие квадратичного роста, а не скорость конкретной машины.
+  assert.ok(elapsed < 500, `отклонение 1e6 слэшей заняло ${elapsed.toFixed(2)} мс`);
 });
 
 test('trimTrailingSlashes: линейный разбор миллиона слэшей', () => {
@@ -126,7 +128,7 @@ test('trimTrailingSlashes: линейный разбор миллиона слэ
   const started = performance.now();
   assert.equal(trimTrailingSlashes(huge), '');
   const elapsed = performance.now() - started;
-  assert.ok(elapsed < 50, `срез 1e6 слэшей занял ${elapsed.toFixed(2)} мс`);
+  assert.ok(elapsed < 500, `срез 1e6 слэшей занял ${elapsed.toFixed(2)} мс`);
   assert.equal(trimTrailingSlashes('https://api.github.com///'), 'https://api.github.com');
   assert.equal(trimTrailingSlashes('https://ghe.example.com//api//v3'), 'https://ghe.example.com//api//v3');
 });
