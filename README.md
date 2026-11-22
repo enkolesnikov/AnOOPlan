@@ -11,22 +11,22 @@ PDF-план здания, расставьте оборудование (кам
 </p>
 
 <p align="center">
-  <a href="https://github.com/enkolesnikov/AnOOPlan/releases/latest"><img alt="Скачать APK" src="https://img.shields.io/badge/скачать-APK_2.10.0-2ea043?logo=android&logoColor=white"></a>
+  <a href="https://github.com/enkolesnikov/AnOOPlan/releases/latest"><img alt="Скачать APK" src="https://img.shields.io/badge/скачать-APK_2.10.1-2ea043?logo=android&logoColor=white"></a>
   <a href="https://enkolesnikov.github.io/AnOOPlan/app/"><img alt="Веб-версия" src="https://img.shields.io/badge/веб--версия-открыть-38c6c9"></a>
   <a href="https://enkolesnikov.github.io/AnOOPlan/"><img alt="Сайт" src="https://img.shields.io/badge/сайт-открыть-122936"></a>
   <a href="docs/HANDOFF.md"><img alt="Документация" src="https://img.shields.io/badge/документация-HANDOFF-6e7781"></a>
 </p>
 
-<p align="center"><b>Версия 2.10.0 · APK 1 620 771 Б (1,6 МБ) · Android 7.0+</b></p>
+<p align="center"><b>Версия 2.10.1 · APK 1 624 867 Б (1,6 МБ) · Android 7.0+</b></p>
 
 <p align="center"><img src="docs/store/screenshots/01-plan.png" width="240" alt="План этажа с кабельными трассами и длинами сегментов"></p>
 
 ## Скачать и установить
 
 - **APK:** [последний релиз](https://github.com/enkolesnikov/AnOOPlan/releases/latest) —
-  `AnOOPlan-2.10.0.apk`, около **1,6 МБ** (1 620 771 Б), Android 7.0+ (minSdk 24, targetSdk 35,
+  `AnOOPlan-2.10.1.apk`, около **1,6 МБ** (1 624 867 Б), Android 7.0+ (minSdk 24, targetSdk 35,
   WebView 98+), без интернета и аналитики. SHA-256:
-  `bfbdb88418f7284851017d3163935b4f13bbd6dee0ac69ea53fef9b338180f7c`.
+  `70838efcc7166b43ff7b344c338a308fd3b05392e79ac768f0a8dda306ebfd37`.
 - **Сайт:** [enkolesnikov.github.io/AnOOPlan](https://enkolesnikov.github.io/AnOOPlan/) —
   возможности, скриншоты и загрузка.
 - **Веб-версия:** [enkolesnikov.github.io/AnOOPlan/app/](https://enkolesnikov.github.io/AnOOPlan/app/) —
@@ -127,13 +127,13 @@ PDF-план здания, расставьте оборудование (кам
 
 | Показатель | Значение |
 |---|---|
-| Юнит-тесты | **476** (`npm test`, ~2,7 с) |
+| Юнит-тесты | **538** (`npm test`, ~5 с) |
 | Смоук | **241** проверок (`npm run smoke`) |
 | E2E / визуальные | **11** / **4** (`npm run test:ui`, `npm run test:visual`) |
-| Покрытие | 94,0 / 87,7 / 94,4 % по тестируемым модулям (пороги 93/85/92); 67,2 % по всем `src/` |
-| Стартовый бандл | **483,5 КБ JS** + **42,5 КБ CSS** (бюджеты 600/60) |
-| APK | **1 620 771 Б**, versionCode 47, minSdk 24, targetSdk 35; SHA-256 `53a9c64f…3f01f1` |
-| CI на push | lint → knip → tsc → покрытие → сборка/размер → смоук → E2E, 115 с (бюджет 130) |
+| Покрытие | 94,0 / 88,5 / 95,1 % по тестируемым модулям (пороги 93/85/92); 72,2 % по всем `src/` |
+| Стартовый бандл | **489,8 КБ JS** + **43,2 КБ CSS** (бюджеты 600/60) |
+| APK | **1 624 867 Б**, versionCode 48, minSdk 24, targetSdk 35; SHA-256 `70838efc…06ebfd37` |
+| CI на push | lint → knip → tsc → покрытие → сборка/размер → смоук → E2E, ~120 с (бюджет 130) |
 
 ## Запуск локально
 
@@ -164,11 +164,11 @@ Dev-сервер по умолчанию слушает `127.0.0.1`. Для до
 
 APK — нативная оболочка (WebView) вокруг той же статической сборки, без Gradle:
 
-- `com.anooplan.app`, versionCode 46, версия 2.9.1;
+- `com.anooplan.app`, versionCode 48, версия 2.10.1;
 - ассеты отдаются по origin `https://appassets.local/`, поэтому работают localStorage, IndexedDB
   и `crypto.randomUUID()`;
 - экспорт PDF/XLSX/CSV/`.anooplan` собирается на телефоне и сохраняется через MediaStore;
-- сборка: `npm run build:apk` → `build/AnOOPlan-2.9.1.apk`; инструменты — в `tools/`, без Gradle.
+- сборка: `npm run build:apk` → `build/AnOOPlan-2.10.1.apk`; инструменты — в `tools/`, без Gradle.
 
 ## Документация
 
