@@ -10,6 +10,7 @@ import { routeColor, routeKindOf } from '../route-kinds';
 import { routeAngleStats, routeLength, routeSummary } from '../engine';
 import { freshFloor } from './project-factory';
 import { matchesQuery, searchCaption } from './search';
+import { structureCounts } from './sidebar-counts';
 import { EQUIPMENT_KITS, kitEquipment } from '../kits';
 import { allIds, bulkKind, isBulkTab, pageSlice, toggleId } from './multi-select';
 import type { ObjectKind } from './types';
@@ -26,7 +27,9 @@ function SidebarTitle({ floors }: { floors: number }) {
 /** Переключатель вкладок структуры проекта. */
 function StructureTabs({ project, tab, onTab }: { project: Project; tab: Tab; onTab: (tab: Tab) => void }) {
   const tabs = [['floors', 'Этажи'], ['equipment', 'Оборуд.'], ['routes', 'Трассы'], ['cables', 'Кабели'], ['pins', 'Зам.']] as const;
-  return <div className="structure-tabs">{tabs.map(([id, name]) => <button className={tab === id ? 'active' : ''} key={id} aria-pressed={tab === id} onClick={() => onTab(id)}>{name}<span>{project[id].length}</span></button>)}</div>;
+  // Счётчики — полные, а не по видимому списку: журнал и вкладка не расходятся.
+  const counts = structureCounts(project);
+  return <div className="structure-tabs">{tabs.map(([id, name]) => <button className={tab === id ? 'active' : ''} key={id} aria-pressed={tab === id} onClick={() => onTab(id)}>{name}<span>{counts[id]}</span></button>)}</div>;
 }
 
 /** Сводка метража по типам КНС — видна только на вкладке «Трассы». */
@@ -147,7 +150,8 @@ function ObjectList({ ui }: { ui: AppUi }) {
   const pins = project.pins.filter(item => matchesQuery(search, [item.number, item.comment]));
   const cables = project.cables.filter(item => matchesQuery(search, [item.number, item.brand, item.name, item.purpose, item.note]));
   const found = tab === 'floors' ? floors.length : tab === 'equipment' ? equipment.length : tab === 'routes' ? routes.length : tab === 'pins' ? pins.length : cables.length;
-  const total = project[tab].length;
+  // Фильтр поиска не меняет счётчик вкладки: показываем полное число объектов.
+  const total = structureCounts(project)[tab];
   const caption = searchCaption(search, found, total);
   const emptyText = search.trim() ? `Ничего не найдено по «${search.trim()}».` : 'Объектов пока нет.';
   const rows = tab === 'floors' ? pageSlice(floors, limit).map((item, index) => <FloorRow key={item.id} ui={ui} floor={item} index={index} />)
