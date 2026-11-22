@@ -5,7 +5,8 @@ import { buildPlanSvg } from './plan-svg';
 import { decodeImage } from './compat';
 import { logDiagnostic } from './diagnostics';
 import { idbGet } from './idb';
-import { MAX_PLAN_PAGES, planOverlayWarning, planPageTitle, planPagesToCapture } from './plan-pages';
+import type { PlanSheet } from './plan-pages';
+import { groupFloorsByPdf, planFloors, planSheetsForPdf } from './plan-pages';
 import { planRasterWidth } from './plan-raster';
 
 type PdfjsModule = typeof import('pdfjs-dist/legacy/build/pdf.mjs');
@@ -31,6 +32,14 @@ function canvasContext(width: number, height: number): { canvas: HTMLCanvasEleme
   canvas.height = Math.max(1, Math.round(height));
   const context = canvas.getContext('2d');
   return context ? { canvas, context } : null;
+}
+
+/** Освобождает растр канваса сразу после сборки PNG, чтобы не держать страницы в памяти. */
+function releaseCanvas(canvas: HTMLCanvasElement | null): void {
+  if (canvas) {
+    canvas.width = 0;
+    canvas.height = 0;
+  }
 }
 
 async function loadPdfDocument(pdfId: string): Promise<{ document: PdfDocument; destroy: () => void }> {
@@ -73,16 +82,18 @@ async function fallbackPlan(project: Project, floor: Floor): Promise<CapturedPla
   surface.context.fillStyle = '#ffffff';
   surface.context.fillRect(0, 0, width, height);
   await drawOverlay(surface.canvas, project, floor);
-  return canvasToPlan(surface.canvas, planPageTitle(floor.name, 1, 1));
+  const plan = await canvasToPlan(surface.canvas, floor.name);
+  releaseCanvas(surface.canvas);
+  return plan;
 }
 
-/** Один лист: PDF-страница + оверлей только для откалиброванной страницы этажа. */
-async function capturePage(project: Project, floor: Floor, document: PdfDocument, pageNumber: number): Promise<CapturedPlan | null> {
-  const page = await document.getPage(pageNumber);
+/** Один лист: PDF-страница и оверлей этажа, если он назначен раскладкой. */
+async function captureSheet(project: Project, document: PdfDocument, sheet: PlanSheet): Promise<CapturedPlan | null> {
+  const page = await document.getPage(sheet.page);
   const viewport = page.getViewport({ scale: 1 });
-  const active = pageNumber === floor.page;
-  const width = planRasterWidth(active ? floor.width : viewport.width, active ? floor.height : viewport.height);
-  const height = Math.max(1, Math.round(active
+  const floor = sheet.floor;
+  const width = planRasterWidth(floor ? floor.width : viewport.width, floor ? floor.height : viewport.height);
+  const height = Math.max(1, Math.round(floor
     ? width * floor.height / Math.max(1, floor.width)
     : width * viewport.height / Math.max(1, viewport.width)));
   const surface = canvasContext(width, height);
@@ -99,9 +110,79 @@ async function capturePage(project: Project, floor: Floor, document: PdfDocument
     });
     await renderTask.promise;
     surface.context.drawImage(layer.canvas, 0, 0, width, height);
+    releaseCanvas(layer.canvas);
   }
-  if (active) await drawOverlay(surface.canvas, project, floor);
-  return canvasToPlan(surface.canvas, planPageTitle(floor.name, pageNumber, document.numPages));
+  if (floor) await drawOverlay(surface.canvas, project, floor);
+  const plan = await canvasToPlan(surface.canvas, sheet.title);
+  if (plan && sheet.note) plan.note = sheet.note;
+  releaseCanvas(surface.canvas);
+  return plan;
+}
+
+function mergeWarnings(target: string[], items: readonly string[]): void {
+  for (const item of items) {
+    if (!target.includes(item)) target.push(item);
+  }
+}
+
+/**
+ * Листы одной группы этажей с общим PDF: документ читается один раз,
+ * каждая страница рендерится один раз (раскладка `planSheetsForPdf` даёт
+ * не больше одной записи на страницу), оверлей наносится на нужной странице.
+ */
+async function captureFloorGroup(project: Project, pdfId: string, floors: Floor[]): Promise<PlanCaptureResult> {
+  let pdf: { document: PdfDocument; destroy: () => void } | null = null;
+  try {
+    pdf = await loadPdfDocument(pdfId);
+    const layout = planSheetsForPdf(floors, pdf.document.numPages);
+    const plans: CapturedPlan[] = [];
+    const warnings: string[] = [];
+    mergeWarnings(warnings, layout.warnings);
+    // Страховка от повторной отрисовки: раскладка уникальна по страницам.
+    const renderedPages = new Set<number>();
+    for (const sheet of layout.sheets) {
+      if (renderedPages.has(sheet.page)) continue;
+      renderedPages.add(sheet.page);
+      try {
+        const plan = await captureSheet(project, pdf.document, sheet);
+        if (plan) {
+          plans.push(plan);
+          continue;
+        }
+      } catch (error) {
+        logDiagnostic('error', error, `capturePlan:page:${sheet.page}`);
+      }
+      const failure = sheet.floor
+        ? `Этаж «${sheet.floor.name}»: не удалось отрисовать страницу ${sheet.page}.`
+        : `Лист ${sheet.page}: не удалось отрисовать страницу PDF.`;
+      mergeWarnings(warnings, [failure]);
+      // Оверлей этажа не должен потеряться: печатаем белый лист с ним.
+      if (sheet.floor) {
+        const fallback = await fallbackPlan(project, sheet.floor);
+        if (fallback) plans.push(fallback);
+      }
+    }
+    if (!plans.length) {
+      for (const floor of floors) {
+        const fallback = await fallbackPlan(project, floor);
+        if (fallback) plans.push(fallback);
+        mergeWarnings(warnings, [`Этаж «${floor.name}»: PDF не удалось отрисовать, выгружен лист без подложки.`]);
+      }
+    }
+    return { plans, warnings };
+  } catch (error) {
+    logDiagnostic('error', error, 'capturePlan:pdf');
+    const plans: CapturedPlan[] = [];
+    const warnings: string[] = [];
+    for (const floor of floors) {
+      const fallback = await fallbackPlan(project, floor);
+      if (fallback) plans.push(fallback);
+      mergeWarnings(warnings, [`Этаж «${floor.name}»: PDF не удалось прочитать, выгружен лист без подложки.`]);
+    }
+    return { plans, warnings };
+  } finally {
+    pdf?.destroy();
+  }
 }
 
 /**
@@ -113,57 +194,34 @@ export async function capturePlanPages(project: Project, floor: Floor): Promise<
     const plan = await fallbackPlan(project, floor);
     return { plans: plan ? [plan] : [], warnings: [] };
   }
-  const warnings: string[] = [];
-  let pdf: { document: PdfDocument; destroy: () => void } | null = null;
-  try {
-    pdf = await loadPdfDocument(floor.pdfId);
-    const pageCount = pdf.document.numPages;
-    const total = planPagesToCapture(pageCount);
-    if (pageCount > MAX_PLAN_PAGES) {
-      warnings.push(`Этаж «${floor.name}»: показаны первые ${MAX_PLAN_PAGES} страниц из ${pageCount}.`);
-    }
-    const overlayWarning = planOverlayWarning(floor.name, floor.page, pageCount, total);
-    if (overlayWarning) warnings.push(overlayWarning);
-    const plans: CapturedPlan[] = [];
-    for (let pageNumber = 1; pageNumber <= total; pageNumber += 1) {
-      try {
-        const plan = await capturePage(project, floor, pdf.document, pageNumber);
-        if (plan) {
-          if (overlayWarning) plan.note = overlayWarning;
-          plans.push(plan);
-        }
-      } catch (error) {
-        logDiagnostic('error', error, `capturePlan:page:${pageNumber}`);
-        warnings.push(`Этаж «${floor.name}»: не удалось отрисовать страницу ${pageNumber}.`);
-      }
-    }
-    if (!plans.length) {
-      const fallback = await fallbackPlan(project, floor);
-      if (fallback) plans.push(fallback);
-      warnings.push(`Этаж «${floor.name}»: PDF не удалось отрисовать, выгружен лист без подложки.`);
-    }
-    return { plans, warnings };
-  } catch (error) {
-    logDiagnostic('error', error, 'capturePlan:pdf');
-    const fallback = await fallbackPlan(project, floor);
-    return { plans: fallback ? [fallback] : [], warnings: [`Этаж «${floor.name}»: PDF не удалось прочитать, выгружен лист без подложки.`] };
-  } finally {
-    pdf?.destroy();
-  }
+  return captureFloorGroup(project, floor.pdfId, [floor]);
 }
 
-/** Листы «План» только для этажей, где есть оборудование или трассы. */
+/**
+ * Листы «План» для этажей с оборудованием, трассами или пинами. Этажи с общим
+ * PDF собираются в группу: документ читается и каждая страница рендерится один раз.
+ */
 export async function collectPlans(project: Project, onProgress?: (done: number, total: number) => void): Promise<PlanCaptureResult> {
-  const floors = project.floors.filter(floorItem =>
-    project.equipment.some(item => item.floorId === floorItem.id)
-    || project.routes.some(route => route.segments.some(segment => segment.a.floorId === floorItem.id || segment.b.floorId === floorItem.id)));
+  const floors = planFloors(project);
   const plans: CapturedPlan[] = [];
   const warnings: string[] = [];
-  for (let index = 0; index < floors.length; index += 1) {
-    onProgress?.(index, floors.length);
-    const result = await capturePlanPages(project, floors[index]);
+  let done = 0;
+  for (const group of groupFloorsByPdf(floors)) {
+    onProgress?.(done, floors.length);
+    if (group.pdfId === null) {
+      for (const floor of group.floors) {
+        const plan = await fallbackPlan(project, floor);
+        if (plan) plans.push(plan);
+        done += 1;
+        onProgress?.(done, floors.length);
+      }
+      continue;
+    }
+    const result = await captureFloorGroup(project, group.pdfId, group.floors);
     plans.push(...result.plans);
-    warnings.push(...result.warnings);
+    mergeWarnings(warnings, result.warnings);
+    done += group.floors.length;
+    onProgress?.(done, floors.length);
   }
   onProgress?.(floors.length, floors.length);
   return { plans, warnings };
