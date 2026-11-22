@@ -451,7 +451,8 @@ class Renderer {
     this.y -= 14;
   }
 
-  totals(project: Project): void {
+  /** Текст итоговой плашки журнала (метраж и стоимость) для листа итогов и подписей. */
+  private journalSummary(project: Project): string {
     let meters = 0;
     let metersComplete = true;
     let cost = 0;
@@ -470,9 +471,14 @@ class Renderer {
       metersComplete ? `Итого кабеля по журналу: ${formatNumber(meters)} м` : 'Итого кабеля по журналу: рассчитано не полностью',
       costComplete && project.cables.length ? `стоимость: ${formatMoney(cost)} ₽` : 'стоимость: цены заданы не для всех кабелей',
     ];
+    return parts.join(' · ');
+  }
+
+  totals(project: Project): void {
+    const summary = this.journalSummary(project);
     this.ensure(40);
     this.page.drawRectangle({ x: this.margin, y: this.y - 22, width: this.content, height: 22, color: ZEBRA });
-    this.page.drawText(parts.join(' · '), { x: this.margin + 8, y: this.y - 15, size: 8.6, font: this.bold, color: BRAND });
+    this.page.drawText(summary, { x: this.margin + 8, y: this.y - 15, size: 8.6, font: this.bold, color: BRAND });
     this.y -= 30;
   }
 
@@ -487,6 +493,11 @@ class Renderer {
       this.y -= 2;
       this.page.drawText('Подписи', { x: this.margin, y: this.y - 13, size: 12, font: this.bold, color: BRAND });
       this.y -= 24;
+      // Лист подписей не должен быть почти пустым: на нём итог журнала.
+      const summary = this.journalSummary(project);
+      this.page.drawRectangle({ x: this.margin, y: this.y - 22, width: this.content, height: 22, color: ZEBRA });
+      this.page.drawText(summary, { x: this.margin + 8, y: this.y - 15, size: 8.6, font: this.bold, color: BRAND });
+      this.y -= 30;
     }
     this.y -= 6;
     this.page.drawLine({ start: { x: this.margin, y: this.y }, end: { x: this.margin + this.content, y: this.y }, thickness: 0.8, color: BORDER });
@@ -555,8 +566,10 @@ class Renderer {
     // Один масштаб на все листы планов: иначе последний лист (с резервом под подписи)
     // печатался мельче остальных, и этажи выглядели в разных масштабах.
     const noteLinesOf = (item: JournalPlan) => (item.note ? wrapText(item.note, this.regular, 8.6, this.content).length : 0);
+    // Резерв под подписи в масштаб НЕ входит: иначе все листы планов уменьшались,
+    // а план — главное на листе. Блок подписей при нехватке места уйдёт на свой лист.
     const sharedMaxHeight = Math.max(160, Math.min(380,
-      this.contentHeight - 110 - Math.max(0, ...items.map(noteLinesOf)) * 13 - reserveBottom));
+      this.contentHeight - 110 - Math.max(0, ...items.map(noteLinesOf)) * 13));
     for (let index = 0; index < items.length; index += 1) {
       const item = items[index];
       const reserve = index === items.length - 1 ? reserveBottom : 0;

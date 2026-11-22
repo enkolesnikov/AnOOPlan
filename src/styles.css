@@ -538,7 +538,7 @@ td small { display: block; color: var(--muted); font-size: 12px; }
   .app-shell.view-journal .props-fab,
   .app-shell.view-specs .props-fab { display: none; }
 }
-@media (max-width: 1023px) {
+@media (max-width: 1279px) {
   .menu-toggle {
     display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0;
     min-width: 44px; min-height: 44px; padding: 6px 8px;

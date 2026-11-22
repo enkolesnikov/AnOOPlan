@@ -176,8 +176,10 @@ export function exportSheets(project: Project): ExportSheet[] {
     ['Трасса', 'Тип КНС', 'Сечения', 'Длина, м', 'Сегментов', 'Углы'],
     ...routeRows,
     [],
+    // В итогах по типам колонка «Сегментов» остаётся пустой: число трасс группы —
+    // это не сегменты, и «2» рядом с длиной 68 м читалось как ошибка метража.
     ['Итого по типам', '', '', '', '', ''],
-    ...specs.routeSummary.groups.map(g => [g.group, '', '', g.length, g.routes, g.group === 'Кабель-канал' ? g.angles.total : null]),
+    ...specs.routeSummary.groups.map(g => [g.group, '', '', roundCell(g.length), null, g.group === 'Кабель-канал' ? g.angles.total : null]),
   ];
   const infrastructureRows: Cell[][] = [['Тип', 'Длина, м', 'Сегментов', 'Кабелей', 'Макс. заполнение, %', 'Сегментов с превышением'], ...specs.infrastructure.map(r => [r.type, roundCell(r.length), r.segments, r.cables, roundCell(r.maxFillPercent), r.overSegments])];
   const fillRows: Cell[][] = [['Трасса', 'Сегмент', 'Тип трассы', 'КНС, мм', 'Площадь КНС, мм²', 'Линий', 'Площадь кабелей, мм²', 'Заполнение, %', 'Статус'], ...specs.trayFill.map(r => [r.route, r.segment, r.routeType, r.tray, roundCell(r.trayAreaMm2), r.lines, roundCell(r.areaMm2), roundCell(r.fillPercent), r.status])];
