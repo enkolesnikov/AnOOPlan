@@ -62,10 +62,12 @@ test('ширины колонок, автофильтр и высота шапк
     assert.ok(typeof column.wch === 'number' && column.wch > 0, `колонка ${index + 1} без ширины`);
     assert.ok(column.wch! >= 8 && column.wch! <= 48, `ширина колонки ${index + 1} вне диапазона: ${column.wch}`);
   }
-  // Деньги и метры — числа: ширина не растягивается заголовком сверх 16.
+  // Деньги и метры — числа: ширина не растягивается значениями свыше 24,
+  // но и шапка не обрезается.
   for (const index of [3, 4, 9, 10, 14, 16, 17]) {
-    assert.ok(cols[index].wch! <= 16, `числовая колонка ${index + 1} шире 16: ${cols[index].wch}`);
+    assert.ok(cols[index].wch! <= 24, `числовая колонка ${index + 1} шире 24: ${cols[index].wch}`);
   }
+  assert.ok(cols[15].wch! >= 'Итог с количеством, м'.length, 'длинная шапка числовой колонки обрезана');
 
   const rows = journal['!rows'] as XLSX.RowInfo[];
   assert.ok(Array.isArray(rows), 'у журнала нет !rows');
@@ -83,7 +85,7 @@ test('ширины колонок, автофильтр и высота шапк
   assert.match(raw, /<row r="1"[^>]*ht="30"/, 'в XML нет высоты строки шапки');
 });
 
-test('freezeHeaderRows закрепляет первую строку и сохраняет данные книги', async () => {
+test('freezeHeaderRows закрепляет шапку и сохраняет данные книги', async () => {
   const project = createDemoProject();
   const sheets = exportSheets(project);
   const original = buildWorkbook(sheets);
@@ -93,7 +95,9 @@ test('freezeHeaderRows закрепляет первую строку и сох�
   for (let index = 1; index <= sheets.length; index += 1) {
     const xml = await readZipEntry(frozen, `xl/worksheets/sheet${index}.xml`);
     assert.ok(xml, `нет XML листа ${index}`);
-    assert.ok(xml!.includes('<pane ySplit="1" topLeftCell="A2" activePane="bottomLeft" state="frozen"/>'), `лист ${index} без закреплённой шапки`);
+    // Количество закреплённых строк — шапка таблицы: fromRow + 1.
+    const frozenRows = (sheets[index - 1].table?.fromRow ?? 0) + 1;
+    assert.ok(xml!.includes(`<pane ySplit="${frozenRows}" topLeftCell="A${frozenRows + 1}" activePane="bottomLeft" state="frozen"/>`), `лист ${index} без закреплённой шапки (${frozenRows} строк)`);
     assert.equal((xml!.match(/<pane\b/g) ?? []).length, 1, `на листе ${index} несколько pane`);
   }
 
@@ -107,6 +111,76 @@ test('freezeHeaderRows закрепляет первую строку и сох�
 
   const smeta = workbookSheet(frozen, 'Смета');
   assert.equal(smeta['A2']?.v, sheets.find(sheet => sheet.name === 'Смета')!.rows[1][0]);
+});
+
+test('автофильтр не накрывает итоги и служебные строки, числа остаются числами', async () => {
+  const project = createDemoProject();
+  project.cables[0].quantity = 1000;
+  const sheets = exportSheets(project);
+  const bytes = buildWorkbook(sheets);
+  const workbook = XLSX.read(bytes, { type: 'array', cellNF: true, cellStyles: true });
+
+  // «Смета» и «Спецификация КНС»: итоги стоят среди данных — автофильтра нет,
+  // но закрепление и ширины остаются.
+  for (const name of ['Смета', 'Спецификация КНС']) {
+    const sheet = workbook.Sheets[name];
+    assert.equal(sheet['!autofilter'], undefined, `у листа «${name}» не должно быть автофильтра`);
+    const cols = sheet['!cols'] as XLSX.ColInfo[];
+    assert.ok(Array.isArray(cols) && cols.length > 0, `у листа «${name}» нет ширин колонок`);
+  }
+
+  // «Коммерческое предложение»: фильтр начинается со строки шапки, а не с A1,
+  // и заканчивается перед пустой строкой и примечанием о НДС.
+  const commercialRows = sheets.find(sheet => sheet.name === 'Коммерческое предложение')!.rows;
+  const headerRow = commercialRows.findIndex(row => row[0] === 'Раздел' && row[1] === 'Сумма, ₽');
+  const totalRow = commercialRows.findIndex(row => row[0] === 'Итого' || row[0] === 'Итого с НДС');
+  assert.ok(headerRow > 0, 'шапка КП должна быть не в первой строке');
+  assert.ok(totalRow > headerRow, 'в КП должны быть итоговые строки');
+  const commercial = workbook.Sheets['Коммерческое предложение'];
+  assert.equal((commercial['!autofilter'] as XLSX.AutoFilterInfo).ref, `A${headerRow + 1}:B${totalRow + 1}`);
+  assert.equal(commercialRows[totalRow + 1].length, 0, 'перед примечанием о НДС должна быть пустая строка');
+
+  // «Схема трасс»: фильтр заканчивается на последней трассе, «Итого по типам» — вне его.
+  const scheme = workbook.Sheets['Схема трасс'];
+  assert.equal((scheme['!autofilter'] as XLSX.AutoFilterInfo).ref, `A1:F${project.routes.length + 1}`);
+
+  // «Кабельный журнал»: внутри диапазона фильтра нет ни одной строки «Итого».
+  const journal = workbook.Sheets['Кабельный журнал'];
+  const range = XLSX.utils.decode_range((journal['!autofilter'] as XLSX.AutoFilterInfo).ref);
+  for (let row = range.s.r; row <= range.e.r; row += 1) {
+    for (let column = range.s.c; column <= range.e.c; column += 1) {
+      const value = journal[XLSX.utils.encode_cell({ r: row, c: column })]?.v;
+      assert.ok(!(typeof value === 'string' && value.startsWith('Итого')), `строка «Итого» попала в фильтр журнала (строка ${row + 1})`);
+    }
+  }
+
+  // Количества и деньги — числа, деньги — с форматом «#,##0.00».
+  const quantity = journal['J2'];
+  assert.equal(quantity.t, 'n', 'количество должно быть числом');
+  assert.equal(typeof quantity.v, 'number');
+  assert.equal(quantity.v, 1000);
+  for (const address of ['Q2', 'R2']) {
+    const cell = journal[address];
+    assert.equal(cell.t, 'n', `${address}: деньги должны быть числом`);
+    assert.equal(typeof cell.v, 'number');
+    assert.equal(cell.z, '#,##0.00', `${address}: нет денежного формата`);
+  }
+  const smeta = workbook.Sheets['Смета'];
+  assert.equal(smeta['E2'].t, 'n', 'цена в смете должна быть числом');
+  assert.equal(smeta['E2'].z, '#,##0.00', 'цена в смете без денежного формата');
+
+  // Денежная колонка не растянута до 48, но шапка влезает.
+  const journalCols = journal['!cols'] as XLSX.ColInfo[];
+  assert.ok(journalCols[16].wch! >= 'Цена, ₽/м'.length);
+  assert.ok(journalCols[16].wch! <= 24);
+  assert.ok(journalCols[15].wch! >= 'Итог с количеством, м'.length, 'шапка числовой колонки обрезана');
+
+  // Закрепление: у КП закреплены реквизиты и шапка (5 строк), данные — с A6.
+  const frozen = await freezeHeaderRows(bytes);
+  const kpXml = await readZipEntry(frozen, 'xl/worksheets/sheet9.xml');
+  assert.ok(kpXml?.includes('<pane ySplit="5" topLeftCell="A6"'), 'у КП должно быть закреплено 5 строк');
+  const smetaXml = await readZipEntry(frozen, 'xl/worksheets/sheet8.xml');
+  assert.ok(smetaXml?.includes('<pane ySplit="1" topLeftCell="A2"'), 'у сметы закреплена первая строка');
 });
 
 test('закрепление идемпотентно и не ломает нестандартный sheetView', () => {
