@@ -757,9 +757,12 @@ function buildSections(project: Project, estimateResult: EstimateResult): Sectio
   const journal = project.cables.map(cable => {
     const result = calculateCable(project, cable);
     const section = cableSection(cable);
+    // Примечание кабеля печатается второй строкой в ячейке «Кабель / марка»:
+    // отдельной колонки в журнале нет, а терять текст нельзя (в XLSX/CSV он есть).
+    const note = (cable.note ?? '').trim();
     return [
       cable.number,
-      [cable.name, cable.brand].filter(Boolean).join(' · ') || '—',
+      (([cable.name, cable.brand].filter(Boolean).join(' · ') || '—') + (note ? `\n${note}` : '')),
       formatNumber(cableDiameter(cable)),
       formatNumber(section.areaMm2),
       `${equipmentNumber(cable.fromId)} - ${equipmentNumber(cable.toId)}`,

@@ -375,3 +375,34 @@ test('2.10.1: formatMoney — до копейки, formatDateRu — ДД.ММ.Г
   assert.equal(formatDateRu(''), '—');
   assert.equal(formatDateRu('2026-10-01T00:00:00Z'), '2026-10-01T00:00:00Z');
 });
+
+test('2.10.1: при «НДС в цене» строка «Итого до НДС» показывает нетто и подписана', async () => {
+  const project = createDemoProject();
+  project.estimate = { ...(project.estimate ?? { laborPercent: null }), laborPercent: 25, vatRate: 20, vatIncluded: true };
+  const result = estimate(project);
+  assert.ok(result.net !== null && result.vat !== null && result.total !== null, 'нетто и НДС должны быть известны');
+  assert.ok(result.net < result.total, 'нетто должно быть меньше суммы с налогом');
+  const flat = squash((await pdfInfo(await buildJournalPdf(project, fonts))).text);
+  const plain = (value: string) => value.replace(/\u00a0/g, ' ');
+  // «Итого с НДС» при налоге в цене равно total, поэтому проверяем не наличие
+  // суммы в документе, а то, что рядом со строкой стоит именно нетто.
+  assert.ok(flat.includes(`Итого до НДС (без НДС) ${plain(formatMoney(result.net))}`),
+    `в строке «до НДС» нет нетто ${plain(formatMoney(result.net))}`);
+  assert.ok(!flat.includes(`Итого до НДС (без НДС) ${plain(formatMoney(result.total))}`),
+    'в строке «до НДС» напечатана сумма с налогом');
+});
+
+test('2.10.1: примечание кабеля печатается в журнале', async () => {
+  const project = createDemoProject();
+  const note = 'ПРОКЛАДЫВАТЬ В ГОФРЕ Ø20, ЗАПАС НА КАМЕРУ 0,5 М';
+  project.cables[0].note = note;
+  const flat = squash((await pdfInfo(await buildJournalPdf(project, fonts))).text);
+  assert.ok(flat.includes(note), 'примечание кабеля не попало в PDF-журнал');
+});
+
+test('2.10.1: примечание кабеля печатается в журнале', async () => {
+  const project = createDemoProject();
+  project.cables[0].note = 'Прокладка в гофре по лотку, запас 2 м у камеры.';
+  const info = await pdfInfo(await buildJournalPdf(project, fonts));
+  assert.ok(squash(info.text).includes('Прокладка в гофре по лотку'), 'примечание кабеля потеряно в PDF');
+});
