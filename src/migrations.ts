@@ -1,6 +1,6 @@
 import type { ChangeEntry, Dimension, Project, Segment } from './model';
 import { normalizeEquipmentColor } from './equipment-icons';
-import { isCatalogDate, normalizeCatalog } from './estimate';
+import { isCatalogDate, normalizeCatalog, normalizeRounding, normalizeWorks } from './estimate';
 import { SECTION_DIM_KEYS, normalizeRouteColor } from './route-kinds';
 
 /**
@@ -238,6 +238,33 @@ const normalizeDocument = (value: unknown): Project['document'] => {
   return document;
 };
 
+/**
+ * Смета: процент работ и примечание нормализуются как раньше; новые поля (работы
+ * по видам, НДС, округление) необязательны — их отсутствие не добавляет ключи,
+ * чтобы старые копии оставались прежними, а явный мусор становится null, а не 0.
+ */
+function normalizeEstimate(value: unknown): Project['estimate'] {
+  if (!isRecord(value)) return undefined;
+  const estimate: NonNullable<Project['estimate']> = {
+    laborPercent: typeof value.laborPercent === 'number' && Number.isFinite(value.laborPercent) && value.laborPercent >= 0
+      ? value.laborPercent
+      : null,
+    note: typeof value.note === 'string' ? value.note : '',
+  };
+  // Битые строки работ отбрасываются; пустой список не храним — «работ по видам нет».
+  const works = normalizeWorks(value.works);
+  if (works.length) estimate.works = works;
+  if (value.vatRate !== undefined) {
+    estimate.vatRate = typeof value.vatRate === 'number' && Number.isFinite(value.vatRate) && value.vatRate >= 0 && value.vatRate <= 100
+      ? value.vatRate
+      : null;
+  }
+  // false — значение по умолчанию («НДС сверху»), поэтому храним только true.
+  if (value.vatIncluded === true) estimate.vatIncluded = true;
+  if (value.rounding !== undefined) estimate.rounding = normalizeRounding(value.rounding);
+  return estimate;
+}
+
 function normalizeCable(value: unknown): Project['cables'][number] {
   if (!isRecord(value)) throw new ProjectSchemaError('В проекте повреждён список кабелей.');
   return {
@@ -317,14 +344,6 @@ export function migrateProject(input: unknown): Project {
   if (isCatalogDate(raw.catalogDate)) project.catalogDate = raw.catalogDate;
   const document = normalizeDocument(raw.document);
   if (document) project.document = document;
-  if (isRecord(raw.estimate)) {
-    const source = raw.estimate;
-    project.estimate = {
-      laborPercent: typeof source.laborPercent === 'number' && Number.isFinite(source.laborPercent) && source.laborPercent >= 0
-        ? source.laborPercent
-        : null,
-      note: typeof source.note === 'string' ? source.note : '',
-    };
-  }
+  if (isRecord(raw.estimate)) project.estimate = normalizeEstimate(raw.estimate);
   return project;
 }

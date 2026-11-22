@@ -196,6 +196,22 @@ function assertCatalogField(value: unknown): void {
   }
 }
 
+/** Работы по видам: массив строк с валидными количеством и ценой (null — неизвестно). */
+function assertWorksField(value: unknown): void {
+  for (const raw of array(value, 'project.estimate.works')) {
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) fail('project.estimate.works: некорректная строка работ');
+    const line = raw as Record<string, unknown>;
+    const amountOk = (amount: unknown): boolean => amount === null
+      || (typeof amount === 'number' && Number.isFinite(amount) && amount >= 0);
+    const valid = typeof line.id === 'string' && line.id.trim() !== ''
+      && typeof line.name === 'string'
+      && typeof line.unit === 'string'
+      && amountOk(line.quantity)
+      && amountOk(line.price);
+    if (!valid) fail('project.estimate.works: некорректная строка работ');
+  }
+}
+
 function assertEstimateField(value: unknown): void {
   if (!value || typeof value !== 'object' || Array.isArray(value)) fail('project.estimate: некорректный процент работ');
   const estimate = value as Record<string, unknown>;
@@ -204,6 +220,19 @@ function assertEstimateField(value: unknown): void {
     fail('project.estimate: некорректный процент работ');
   }
   if (estimate.note !== undefined && typeof estimate.note !== 'string') fail('project.estimate: некорректное примечание');
+  if (estimate.works !== undefined) assertWorksField(estimate.works);
+  if (estimate.vatRate !== undefined && estimate.vatRate !== null) {
+    const rate = estimate.vatRate;
+    if (typeof rate !== 'number' || !Number.isFinite(rate) || rate < 0 || rate > 100) {
+      fail('project.estimate.vatRate: ожидается число от 0 до 100');
+    }
+  }
+  if (estimate.vatIncluded !== undefined && typeof estimate.vatIncluded !== 'boolean') {
+    fail('project.estimate.vatIncluded: ожидается boolean');
+  }
+  if (estimate.rounding !== undefined && estimate.rounding !== null && ![0.01, 1, 10, 100].includes(estimate.rounding as number)) {
+    fail('project.estimate.rounding: ожидается 0.01, 1, 10 или 100');
+  }
 }
 
 function assertChangeLogField(value: unknown): void {
