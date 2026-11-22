@@ -372,6 +372,119 @@ if (catalogImportInput && catalogDateInput) {
     check(restoredNames === exportedCatalog.catalog.length, `корректный импорт восстанавливает позиции: ${restoredNames}/${exportedCatalog.catalog.length}`);
   }
 }
+
+console.log('\n6d. Смета: работы по видам, НДС и округление');
+const parseMoneyText = text => {
+  const cleaned = String(text || '').replace(/[^\d,.-]/g, '').replace(',', '.');
+  return cleaned === '' ? Number.NaN : Number(cleaned);
+};
+const totalsCard = label => Array.from(document.querySelectorAll('.estimate-totals > div')).find(node => (node.querySelector('span')?.textContent || '').trim() === label);
+const totalsCardByPrefix = prefix => Array.from(document.querySelectorAll('.estimate-totals > div')).find(node => (node.querySelector('span')?.textContent || '').trim().startsWith(prefix));
+const moneyOf = node => parseMoneyText(node?.querySelector('strong')?.textContent);
+const workSectionEl = () => Array.from(document.querySelectorAll('.estimate-section')).find(node => (node.querySelector('h2')?.textContent || '').trim() === 'Работы');
+const modeRadio = value => document.querySelector(`input[name="works-mode"][value="${value}"]`);
+const worksDetailsEl = document.querySelector('details.works-editor');
+const workRows = () => document.querySelectorAll('.works-table tbody tr[data-work-row]');
+const setInput = (input, value) => {
+  const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
+  setter.call(input, value);
+  input.dispatchEvent(new window.Event('input', { bubbles: true }));
+};
+const baselineTotal = totalNumber();
+if (modeRadio('items')) {
+  modeRadio('items').click();
+  await sleep(250);
+  if (worksDetailsEl) worksDetailsEl.open = true;
+  await sleep(150);
+}
+const modeNote = document.querySelector('.estimate-mode-note')?.textContent || '';
+check(
+  Boolean(modeRadio('percent')) && Boolean(modeRadio('items')) && Boolean(worksDetailsEl)
+    && modeRadio('percent')?.disabled === true && modeRadio('items')?.checked === true
+    && workRows().length === 1 && Boolean(workSectionEl()?.querySelector('table.estimate-table'))
+    && /работы по видам/i.test(modeNote),
+  `режим «по видам» включается: строк ${workRows().length}, в шапке «${modeNote.slice(0, 60)}», процент заблокирован ${modeRadio('percent')?.disabled === true}`,
+);
+const workNameInput = document.querySelector('input[aria-label="Наименование работы 1"]');
+const workQuantityInput = document.querySelector('input[aria-label="Количество работы 1"]');
+const workPriceInput = document.querySelector('input[aria-label="Цена работы 1"]');
+if (workNameInput && workQuantityInput && workPriceInput) {
+  setInput(workNameInput, 'Прокладка лотка');
+  setInput(workQuantityInput, '3');
+  setInput(workPriceInput, '100,5');
+  await sleep(450);
+}
+const workLineSum = parseMoneyText(document.querySelector('.works-table tbody tr[data-work-row] .works-sum')?.textContent);
+const workSectionTotal = parseMoneyText(workSectionEl()?.querySelector('.estimate-section-total strong')?.textContent);
+const materialsTotal = moneyOf(totalsCard('Материалы'));
+check(
+  Math.abs(workLineSum - 301.5) < 0.01 && Math.abs(workSectionTotal - 301.5) < 0.01
+    && Math.abs(totalNumber() - (materialsTotal + 301.5)) < 0.01,
+  `заполнение строки работы меняет итог раздела: строка ${workLineSum}, раздел ${workSectionTotal}, ИТОГО ${totalNumber()} (материалы ${materialsTotal} + 301,5)`,
+);
+const vatInput = document.querySelector('input[aria-label="НДС, %"]');
+const subtotalBeforeVat = moneyOf(totalsCard('Итого до НДС'));
+const totalBeforeVat = totalNumber();
+if (vatInput) {
+  setInput(vatInput, '20');
+  await sleep(400);
+}
+const vatCard = totalsCardByPrefix('НДС');
+const vatLabel = (vatCard?.querySelector('span')?.textContent || '').trim();
+const vatValue = moneyOf(vatCard);
+check(
+  Math.abs(vatValue - subtotalBeforeVat * 0.2) < 0.02 && totalNumber() > totalBeforeVat && /сверху/.test(vatLabel),
+  `НДС 20 % сверху увеличивает ИТОГО: ${totalBeforeVat} → ${totalNumber()}, НДС ${vatValue} (${vatLabel})`,
+);
+const vatIncludedBox = document.querySelector('input[aria-label="Цены включают НДС"]');
+const subtotalForIncluded = moneyOf(totalsCard('Итого до НДС'));
+if (vatIncludedBox && !vatIncludedBox.disabled && !vatIncludedBox.checked) {
+  vatIncludedBox.click();
+  await sleep(400);
+}
+const includedLabel = (totalsCardByPrefix('НДС')?.querySelector('span')?.textContent || '').trim();
+check(
+  Boolean(vatIncludedBox) && vatIncludedBox.disabled === false
+    && Math.abs(totalNumber() - subtotalForIncluded) < 0.01 && /в т\.ч\./.test(includedLabel),
+  `чекбокс «включено» оставляет ИТОГО равным сумме до НДС: ${totalNumber()} = ${subtotalForIncluded} (${includedLabel})`,
+);
+const roundingSelect = document.querySelector('select[aria-label="Округление"]');
+if (roundingSelect) {
+  roundingSelect.value = '1';
+  roundingSelect.dispatchEvent(new window.Event('change', { bubbles: true }));
+  await sleep(400);
+}
+const roundedSubtotal = moneyOf(totalsCard('Итого до НДС'));
+const roundedVat = moneyOf(totalsCardByPrefix('НДС'));
+const roundedTotal = totalNumber();
+check(
+  roundingSelect?.value === '1' && Number.isInteger(roundedSubtotal) && Number.isInteger(roundedVat) && Number.isInteger(roundedTotal),
+  `округление до рубля даёт целые значения: до НДС ${roundedSubtotal}, НДС ${roundedVat}, ИТОГО ${roundedTotal}`,
+);
+const removeWorkButton = document.querySelector('.works-table tbody button[aria-label^="Удалить работу"]');
+if (removeWorkButton) {
+  removeWorkButton.click();
+  await sleep(350);
+}
+const emptyWorksText = (document.querySelector('.works-table tbody')?.textContent || '').trim();
+if (vatIncludedBox && !vatIncludedBox.disabled && vatIncludedBox.checked) {
+  vatIncludedBox.click();
+  await sleep(250);
+}
+if (vatInput) {
+  setInput(vatInput, '');
+  await sleep(250);
+}
+if (roundingSelect) {
+  roundingSelect.value = '';
+  roundingSelect.dispatchEvent(new window.Event('change', { bubbles: true }));
+  await sleep(300);
+}
+check(
+  workRows().length === 0 && modeRadio('items')?.checked === false && /Работ по видам нет/.test(emptyWorksText)
+    && Boolean(workSectionEl()?.querySelector('.estimate-work-summary')) && Math.abs(totalNumber() - baselineTotal) < 0.01,
+  `пустой список работ не ломает смету и возвращает процент: ИТОГО ${totalNumber()} (было ${baselineTotal})`,
+);
 const planTabBack = Array.from(document.querySelectorAll('.view-tabs button')).find(button => (button.textContent || '').trim() === 'План');
 if (planTabBack) planTabBack.click();
 await sleep(200);

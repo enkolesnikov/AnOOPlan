@@ -1,6 +1,6 @@
 import { useMemo, useRef, useState } from 'react';
-import type { PriceItem, PriceKind, Project } from '../model';
-import { estimate, isCatalogDate, normalizeCatalog } from '../estimate';
+import type { PriceItem, PriceKind, Project, ProjectEstimate, WorkLine } from '../model';
+import { estimate, isCatalogDate, normalizeCatalog, normalizeRounding, roundMoney } from '../estimate';
 import { parseCatalogRows, mergeCatalog, type CatalogImportResult } from '../catalog-import';
 import { readCatalogFile } from '../catalog-file';
 import type { EstimateResult, EstimateSection as EstimateSectionData } from '../estimate';
@@ -16,27 +16,89 @@ const PRICE_SOURCE_LABELS: Record<'manual' | 'catalog', string> = { manual: 'в�
 const moneyText = (value: number | null | undefined): string => (typeof value === 'number' && Number.isFinite(value) ? `${number(value)} ₽` : '—');
 const quantityText = (value: number | null | undefined): string => (typeof value === 'number' && Number.isFinite(value) ? number(value) : '—');
 /** Неотрицательное конечное число из строки, иначе null (пусто/мусор/минус не сохраняются). */
-const nonNegativeOrNull = (raw: string): number | null => {
+export const nonNegativeOrNull = (raw: string): number | null => {
   if (raw.trim() === '') return null;
   const value = Number(raw.replace(',', '.'));
   return Number.isFinite(value) && value >= 0 ? value : null;
 };
 
-/** Статус сметы и дата прайса в шапке экрана. */
-function EstimateStatus({ complete, catalogDateText }: { complete: boolean; catalogDateText: string }) {
+/** Сумма строки работ (количество × цена) с округлением сметы; null — значение неизвестно. */
+export function workLineTotal(work: Pick<WorkLine, 'quantity' | 'price'>, rounding: number | null): number | null {
+  if (work.quantity === null || work.price === null) return null;
+  if (!Number.isFinite(work.quantity) || !Number.isFinite(work.price)) return null;
+  return roundMoney(work.quantity * work.price, rounding);
+}
+
+/** Склонение «строка» по числу: 1 строка, 2 строки, 5 строк. */
+export function workLinesWord(count: number): string {
+  const mod10 = count % 10;
+  const mod100 = count % 100;
+  if (mod10 === 1 && mod100 !== 11) return 'строка';
+  if (mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14)) return 'строки';
+  return 'строк';
+}
+
+/** Статус сметы, режим работ, НДС и дата прайса в шапке экрана. */
+function EstimateStatus({ result, catalogDateText }: { result: EstimateResult; catalogDateText: string }) {
+  const modeText = result.worksMode === 'items'
+    ? `работы по видам: ${result.works.length} ${workLinesWord(result.works.length)}`
+    : result.laborPercent === null
+      ? 'работы: процент не задан'
+      : `работы: ${number(result.laborPercent)} % от материалов`;
+  const vatRate = result.vatRate;
+  const vatText = vatRate === null || vatRate === 0
+    ? 'без НДС'
+    : `НДС ${number(vatRate)} % ${result.vatIncluded ? 'в т.ч.' : 'сверху'}`;
   return <div className="estimate-status">
-    <span className={`badge ${complete ? 'good' : 'warn'}`}>{complete ? 'Смета рассчитана' : 'Смета неполная'}</span>
+    <span className={`badge ${result.complete ? 'good' : 'warn'}`}>{result.complete ? 'Смета рассчитана' : 'Смета неполная'}</span>
     <small>Дата прайса: <strong>{catalogDateText}</strong></small>
+    <small className="estimate-mode-note">{modeText} · {vatText}</small>
   </div>;
 }
 
-/** Процент работ и примечание к смете. */
+/** Режим работ, процент, НДС, округление и примечание к смете. */
 function EstimateControls({ project, onChange }: { project: Project; onChange: (recipe: (project: Project) => void) => void }) {
-  const setEstimate = (patch: { laborPercent?: number | null; note?: string }): void => {
+  const setEstimate = (patch: Partial<ProjectEstimate>): void => {
     onChange(p => { p.estimate = { ...(p.estimate ?? { laborPercent: null }), ...patch }; });
   };
+  const works = project.estimate?.works ?? [];
+  const itemsMode = works.length > 0;
+  const vatRate = project.estimate?.vatRate ?? null;
+  const vatApplies = vatRate !== null && vatRate > 0;
+  const rounding = normalizeRounding(project.estimate?.rounding);
+  // «По видам» без строк создаёт одну пустую: режим включается сразу и явно.
+  const enableItems = (): void => {
+    if (itemsMode) return;
+    setEstimate({ works: [{ id: uid(), name: '', unit: 'шт', quantity: null, price: null }] });
+  };
   return <div className="estimate-controls">
-    <label className="field estimate-labor">Работы, %<NumberField value={project.estimate?.laborPercent ?? null} ariaLabel="Работы, %" placeholder="Не задано" onCommit={raw => setEstimate({ laborPercent: raw === '' ? null : nonNegativeOrNull(raw) })} /></label>
+    <fieldset className="estimate-mode">
+      <legend>Режим работ</legend>
+      <label className="estimate-mode-option">
+        <input type="radio" name="works-mode" value="percent" aria-label="Режим работ: процент от материалов" checked={!itemsMode} disabled={itemsMode} onChange={() => { /* работы не удаляются молча: вернуться к проценту можно, удалив строки */ }} />
+        Процент от материалов
+      </label>
+      <label className="estimate-mode-option">
+        <input type="radio" name="works-mode" value="items" aria-label="Режим работ: по видам работ" checked={itemsMode} onChange={enableItems} />
+        По видам работ
+      </label>
+      <small className="help">{itemsMode ? `Работы по видам: ${works.length} ${workLinesWord(works.length)} — чтобы вернуться к проценту, удалите строки в редакторе ниже.` : 'Процент применяется к стоимости материалов.'}</small>
+    </fieldset>
+    <label className="field estimate-labor" title={itemsMode ? 'В режиме по видам процент работ не применяется' : undefined}>Работы, %<NumberField value={project.estimate?.laborPercent ?? null} ariaLabel="Работы, %" placeholder="Не задано" onCommit={raw => setEstimate({ laborPercent: raw === '' ? null : nonNegativeOrNull(raw) })} /></label>
+    <label className="field estimate-vat">НДС, %<NumberField value={vatRate} ariaLabel="НДС, %" placeholder="Не начисляется" onCommit={raw => setEstimate({ vatRate: raw === '' ? null : nonNegativeOrNull(raw) })} /></label>
+    <label className={`estimate-vat-included${vatApplies ? '' : ' is-disabled'}`}>
+      <input type="checkbox" aria-label="Цены включают НДС" checked={project.estimate?.vatIncluded === true} disabled={!vatApplies} onChange={event => setEstimate({ vatIncluded: event.target.checked })} />
+      Цены включают НДС
+    </label>
+    <label className="field estimate-rounding">Округление
+      <select aria-label="Округление" value={rounding === null ? '' : String(rounding)} onChange={event => setEstimate({ rounding: normalizeRounding(event.target.value === '' ? null : Number(event.target.value)) })}>
+        <option value="">Без округления</option>
+        <option value="0.01">До копейки</option>
+        <option value="1">До рубля</option>
+        <option value="10">До 10 ₽</option>
+        <option value="100">До 100 ₽</option>
+      </select>
+    </label>
     <label className="field estimate-note-field">Примечание к смете<input type="text" value={project.estimate?.note ?? ''} placeholder="Например: Цены действительны 30 дней" onChange={event => setEstimate({ note: event.target.value })} /></label>
   </div>;
 }
@@ -78,23 +140,91 @@ function WorkSection({ section, laborPercent }: { section: EstimateSectionData; 
 }
 
 /** Один раздел сметы: заголовок и строки материалов либо блок работ. */
-function EstimateSection({ section, laborPercent }: { section: EstimateSectionData; laborPercent: number | null }) {
+function EstimateSection({ section, result }: { section: EstimateSectionData; result: EstimateResult }) {
   return <section className="estimate-section">
     <div className="estimate-section-head">
       <h2>{section.title}</h2>
       <span className={`badge ${section.complete ? 'good' : 'warn'}`}>{section.complete ? 'раздел рассчитан' : 'неполный раздел'}</span>
     </div>
-    {section.kind === 'work' ? <WorkSection section={section} laborPercent={laborPercent} /> : <SectionTable section={section} />}
+    {section.kind !== 'work'
+      ? <SectionTable section={section} />
+      : result.worksMode === 'items'
+        ? <SectionTable section={section} />
+        : <WorkSection section={section} laborPercent={result.laborPercent} />}
   </section>;
 }
 
-/** Итоги сметы: материалы, работы и общий итог. */
+/** Итоги сметы: материалы, работы, итог до НДС, НДС и итог с НДС. */
 function EstimateTotals({ result }: { result: EstimateResult }) {
+  const vatRate = result.vatRate;
+  const worksLabel = result.worksMode === 'items' ? ' (по видам)' : result.laborPercent === null ? '' : ` (${number(result.laborPercent)} %)`;
   return <div className="estimate-totals">
     <div><span>Материалы</span><strong>{result.materials === null ? 'не рассчитано' : moneyText(result.materials)}</strong></div>
-    <div><span>Работы{result.laborPercent === null ? '' : ` (${number(result.laborPercent)} %)`}</span><strong>{result.labor === null ? 'не рассчитано' : moneyText(result.labor)}</strong></div>
-    <div className="estimate-grand"><span>ИТОГО</span><strong className="estimate-total-value">{result.total === null ? 'Смета не рассчитана' : moneyText(result.total)}</strong></div>
+    <div><span>Работы{worksLabel}</span><strong>{result.labor === null ? 'не рассчитано' : moneyText(result.labor)}</strong></div>
+    <div className="estimate-subtotal"><span>Итого до НДС</span><strong>{result.total === null ? 'не рассчитано' : moneyText(result.total)}</strong></div>
+    {vatRate !== null && vatRate > 0 && <div className="estimate-vat-line">
+      <span>НДС {number(vatRate)} % {result.vatIncluded ? '(в т.ч.)' : '(сверху)'}</span>
+      <strong>{result.vat === null ? 'не рассчитано' : moneyText(result.vat)}</strong>
+    </div>}
+    <div className="estimate-grand"><span>ИТОГО</span><strong className="estimate-total-value">{result.gross === null ? 'не рассчитано' : moneyText(result.gross)}</strong></div>
   </div>;
+}
+
+/** Строка редактора работ по видам; сумма — только для чтения. */
+function WorksRow({ work, index, rounding, onUpdate, onRemove }: {
+  work: WorkLine;
+  index: number;
+  rounding: number | null;
+  onUpdate: (work: WorkLine, patch: Partial<WorkLine>) => void;
+  onRemove: (work: WorkLine) => void;
+}) {
+  const total = workLineTotal(work, rounding);
+  return <tr data-work-row={work.id}>
+    <td className="works-name"><input type="text" value={work.name} aria-label={`Наименование работы ${index + 1}`} onChange={event => onUpdate(work, { name: event.target.value })} /></td>
+    <td className="works-unit"><input type="text" value={work.unit} aria-label={`Единица работы ${index + 1}`} onChange={event => onUpdate(work, { unit: event.target.value })} /></td>
+    <td className="works-quantity"><NumberField value={work.quantity} placeholder="—" ariaLabel={`Количество работы ${index + 1}`} onCommit={raw => onUpdate(work, { quantity: raw === '' ? null : nonNegativeOrNull(raw) })} /></td>
+    <td className="works-price"><NumberField value={work.price} placeholder="—" ariaLabel={`Цена работы ${index + 1}`} onCommit={raw => onUpdate(work, { price: raw === '' ? null : nonNegativeOrNull(raw) })} /></td>
+    <td className="works-sum">{total === null ? '—' : moneyText(total)}</td>
+    <td className="works-remove"><button type="button" aria-label={`Удалить работу ${index + 1}`} title="Удалить работу" onClick={() => onRemove(work)}>×</button></td>
+  </tr>;
+}
+
+/** Редактор работ по видам: строки «наименование, единица, количество, цена» и сумма без редактирования. */
+function WorksEditor({ project, onChange }: { project: Project; onChange: (recipe: (project: Project) => void) => void }) {
+  const works = project.estimate?.works ?? [];
+  const rounding = normalizeRounding(project.estimate?.rounding);
+  const updateWork = (target: WorkLine, patch: Partial<WorkLine>): void => {
+    onChange(p => {
+      const items = (p.estimate?.works ?? []).map(item => item.id === target.id ? { ...item, ...patch } : item);
+      p.estimate = { ...(p.estimate ?? { laborPercent: null }), works: items };
+    });
+  };
+  const addWork = (): void => {
+    onChange(p => {
+      const items = [...(p.estimate?.works ?? []), { id: uid(), name: '', unit: 'шт', quantity: null, price: null }];
+      p.estimate = { ...(p.estimate ?? { laborPercent: null }), works: items };
+    });
+  };
+  const removeWork = (target: WorkLine): void => {
+    onChange(p => {
+      const items = (p.estimate?.works ?? []).filter(item => item.id !== target.id);
+      p.estimate = { ...(p.estimate ?? { laborPercent: null }), works: items };
+    });
+  };
+  return <details className="works-editor">
+    <summary>Работы по видам <span>{works.length}</span></summary>
+    <div className="works-controls">
+      <button type="button" className="works-add" onClick={addWork}>＋ Работа</button>
+      <p className="help">Непустой список работ заменяет процент от материалов. Пустые количество или цена — «неизвестно», а не 0.</p>
+    </div>
+    <div className="table-scroll"><table className="works-table">
+      <thead><tr><th>Наименование</th><th>Ед.</th><th>Количество</th><th>Цена, ₽</th><th>Сумма, ₽</th><th><span className="sr-only">Действия</span></th></tr></thead>
+      <tbody>
+        {works.map((work, index) => <WorksRow key={work.id} work={work} index={index} rounding={rounding} onUpdate={updateWork} onRemove={removeWork} />)}
+        {!works.length && <tr><td colSpan={6}>Работ по видам нет. Добавьте строку — смета перейдёт в режим «по видам».</td></tr>}
+      </tbody>
+    </table></div>
+  </details>;
 }
 
 /** Строка редактора справочника цен. */
@@ -250,15 +380,16 @@ export function EstimateScreen({ project, onChange, onMessage, onError }: {
       <div>
         <span className="eyebrow">ДОКУМЕНТАЦИЯ</span>
         <h1>Смета и коммерческое предложение</h1>
-        <p>Стоимость материалов по справочнику цен и работы процентом от материалов. Неизвестные цены не подменяются нулём.</p>
+        <p>Стоимость материалов по справочнику цен, работы процентом от материалов или по видам, НДС и округление. Неизвестные цены не подменяются нулём.</p>
       </div>
-      <EstimateStatus complete={result.complete} catalogDateText={catalogDateText} />
+      <EstimateStatus result={result} catalogDateText={catalogDateText} />
     </div>
     <EstimateControls project={project} onChange={onChange} />
     {!result.complete && <EstimateWarnings warnings={result.warnings} />}
-    {result.sections.map(section => <EstimateSection key={section.kind} section={section} laborPercent={result.laborPercent} />)}
+    {result.sections.map(section => <EstimateSection key={section.kind} section={section} result={result} />)}
     <EstimateTotals result={result} />
     <p className="document-note">Смета считается по справочнику цен проекта; ручная цена кабеля приоритетнее справочника. Дата прайса: {catalogDateText}.{project.estimate?.note ? ` Примечание: ${project.estimate.note}.` : ''} Пустые цены не подменяются нулём — они помечены «—» и делают смету неполной.</p>
+    <WorksEditor project={project} onChange={onChange} />
     <CatalogEditor project={project} onChange={onChange} onMessage={onMessage} onError={onError} />
   </section>;
 }

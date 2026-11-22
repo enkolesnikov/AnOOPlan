@@ -324,7 +324,7 @@ td small { display: block; color: var(--muted); font-size: 12px; }
 /* ── Смета и справочник цен ──────────────────────────────────────────── */
 .estimate-status { display: flex; flex-direction: column; align-items: flex-end; gap: 6px; font-size: 12px; color: var(--muted); overflow-wrap: anywhere; }
 .estimate-status strong { color: var(--text); }
-.estimate-controls { display: flex; flex-wrap: wrap; gap: 12px; margin-bottom: 16px; }
+.estimate-controls { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 12px; margin-bottom: 16px; }
 .estimate-labor { width: 140px; flex: 0 0 auto; }
 .estimate-note-field { flex: 1; min-width: 220px; }
 .estimate-warnings { border: 1px solid #f2d3ab; background: #fdf6ec; border-radius: 10px; padding: 10px 12px; margin-bottom: 16px; font-size: 13px; }
@@ -344,6 +344,18 @@ td small { display: block; color: var(--muted); font-size: 12px; }
 .estimate-totals strong { font-size: 18px; color: var(--text); }
 .estimate-totals > .estimate-grand { border-color: var(--accent); background: var(--accent-soft); }
 .estimate-grand strong { font-size: 22px; color: var(--accent-2); }
+.estimate-totals > .estimate-subtotal { border-color: var(--border); }
+.estimate-totals > .estimate-vat-line { border-style: dashed; }
+.estimate-mode { flex: 1 0 100%; border: none; margin: 0; padding: 0; }
+.estimate-mode legend { padding: 0; margin-bottom: 6px; font-size: 11px; letter-spacing: .08em; text-transform: uppercase; font-weight: 700; color: var(--muted); }
+.estimate-mode-option { display: inline-flex; align-items: center; gap: 6px; margin-right: 16px; font-size: 13px; }
+.estimate-mode-option input { margin: 0; padding: 0; accent-color: var(--accent); }
+.estimate-mode .help { display: block; margin-top: 6px; }
+.estimate-vat { width: 130px; flex: 0 0 auto; }
+.estimate-vat-included { display: flex; align-items: center; gap: 8px; padding-bottom: 8px; font-size: 13px; }
+.estimate-vat-included input { margin: 0; padding: 0; accent-color: var(--accent); }
+.estimate-vat-included.is-disabled { opacity: .55; }
+.estimate-rounding { width: 160px; flex: 0 0 auto; }
 .catalog-editor { margin-top: 18px; border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; }
 .catalog-editor summary { cursor: pointer; font-weight: 600; display: flex; gap: 8px; }
 .catalog-editor summary span { color: var(--muted); font-weight: 400; }
@@ -355,6 +367,19 @@ td small { display: block; color: var(--muted); font-size: 12px; }
 .catalog-table .catalog-name { min-width: 180px; }
 .catalog-table .catalog-remove { width: 44px; }
 .catalog-table .catalog-remove button { min-width: 30px; min-height: 30px; padding: 4px; }
+.works-editor { margin-top: 18px; border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; }
+.works-editor summary { cursor: pointer; font-weight: 600; display: flex; gap: 8px; }
+.works-editor summary span { color: var(--muted); font-weight: 400; }
+.works-controls { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin: 10px 0; }
+.works-controls .help { margin: 0; }
+.works-table td { white-space: normal; vertical-align: middle; }
+.works-table input { width: 100%; min-width: 70px; }
+.works-table .works-name { min-width: 180px; }
+.works-table .works-unit { width: 90px; }
+.works-table .works-quantity, .works-table .works-price { width: 120px; }
+.works-table .works-sum { white-space: nowrap; font-variant-numeric: tabular-nums; }
+.works-table .works-remove { width: 44px; }
+.works-table .works-remove button { min-width: 30px; min-height: 30px; padding: 4px; }
 
 /* ---------- properties panel ---------- */
 .properties {
@@ -980,7 +1005,7 @@ button, input, select, textarea, summary,
   :root { --shadow: none; }
   button, input, select, textarea, summary, .badge, .chip, .dot, .object-row, .tray-fill-row,
   .project-health, .estimate-totals > div, .calculation-card, .plan-badge, .plan-legend,
-  .segment-editor, .catalog-editor { border: 1px solid CanvasText; }
+  .segment-editor, .catalog-editor, .works-editor { border: 1px solid CanvasText; }
   /* Кнопки без рамки в обычной теме тоже получают видимый контур. */
   .view-tabs button, .structure-tabs button, .tool-group button, .sheet-head button,
   .properties-close, .menu-toggle, .photo-card button, .project-delete { border: 1px solid CanvasText; }
