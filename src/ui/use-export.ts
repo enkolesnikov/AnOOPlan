@@ -15,7 +15,7 @@ import type { WorkspaceState } from './use-workspace-state';
 
 /** Экспорт, печать, публикация и резервные копии проекта. */
 export function useExport(s: WorkspaceState, io: ProjectIo) {
-  const { projectRef, staticMode, printSections, setMessage } = s;
+  const { projectRef, staticMode, printSections, printFormat, printScale, setMessage } = s;
   const { saveProject } = io;
   async function printJournal() {
     const current = projectRef.current;
@@ -35,7 +35,7 @@ export function useExport(s: WorkspaceState, io: ProjectIo) {
     const plans = include.includes('plans')
       ? await collectPlans(current, (done, total) => { if (total > 1) setMessage(`Планы: ${done} из ${total}…`); })
       : { plans: [], warnings: [] };
-    const bytes = await buildJournalPdf(current, await loadJournalFonts(), { include, photos, pinPhotos, plans: plans.plans });
+    const bytes = await buildJournalPdf(current, await loadJournalFonts(), { include, photos, pinPhotos, plans: plans.plans, format: printFormat, scale: printScale });
     bridge.printPdf(current.name, bytesToBase64(bytes));
     setMessage(`Открыт системный диалог печати: разделов ${include.length} из ${JOURNAL_SECTIONS.length}.${plans.warnings.length ? ` ${plans.warnings.join(' ')}` : ''}`);
   }
@@ -97,7 +97,7 @@ export function useExport(s: WorkspaceState, io: ProjectIo) {
     if (kind === 'pdf') {
       const [{ buildJournalPdf }, { loadJournalFonts }] = await Promise.all([import('../export-pdf'), import('../export-fonts')]);
       const plans = await collectPlans(current, (done, total) => { if (total > 1) setMessage(`Планы: ${done} из ${total}…`); });
-      const bytes = await buildJournalPdf(current, await loadJournalFonts(), { photos: await collectPhotos(current), pinPhotos: await collectPinPhotos(current), plans: plans.plans });
+      const bytes = await buildJournalPdf(current, await loadJournalFonts(), { photos: await collectPhotos(current), pinPhotos: await collectPinPhotos(current), plans: plans.plans, format: printFormat, scale: printScale });
       return { blob: new Blob([bytes as unknown as BlobPart], { type: 'application/pdf' }), fileName: `${base}.pdf`, warning: plans.warnings.join(' ') };
     }
     if (kind === 'backup') {

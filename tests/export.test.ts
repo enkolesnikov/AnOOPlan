@@ -646,6 +646,16 @@ test('PDF: спецификация КНС с подсистемами, угла
   assert.ok(text.includes('DKC') && text.includes('KK-25'), 'нет артикула/производителя');
 });
 
+test('PDF: формат листа по умолчанию A4 landscape, A3 — явная опция', async () => {
+  const [{ PDFDocument }, { JOURNAL_FORMATS }] = await Promise.all([import('pdf-lib'), import('../src/export-pdf')]);
+  assert.deepEqual(JOURNAL_FORMATS, [{ id: 'a4l', label: 'A4, горизонт' }, { id: 'a3l', label: 'A3, горизонт' }]);
+  const project = createDemoProject();
+  const a4 = await PDFDocument.load(await buildJournalPdf(project, fonts));
+  for (const page of a4.getPages()) assert.deepEqual(page.getSize(), { width: 842, height: 595 });
+  const a3 = await PDFDocument.load(await buildJournalPdf(project, fonts, { format: 'a3l' }));
+  for (const page of a3.getPages()) assert.deepEqual(page.getSize(), { width: 1191, height: 842 });
+});
+
 test('сегментные размеры КНС: своё сечение видно в схеме трасс, заполнении, спецификации и PDF', async () => {
   const project = createDemoProject();
   const route = project.routes[0];

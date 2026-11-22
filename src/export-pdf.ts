@@ -1,5 +1,6 @@
 // Офлайн-сборка PDF кабельного журнала: pdf-lib + встроенный PT Sans (кириллица).
-// Документ A4 landscape, повторяющиеся заголовки таблиц, колонтитулы и отметка неполного расчёта.
+// Документ A4/A3 landscape, повторяющиеся заголовки таблиц, полный штамп ГОСТ 2.104
+// (форма 2) и отметка неполного расчёта.
 import { PDFDocument, rgb, type PDFFont, type PDFPage } from 'pdf-lib';
 import fontkit from '@pdf-lib/fontkit';
 import type { Cable, Project } from './model';
@@ -47,17 +48,39 @@ export const DEFAULT_JOURNAL_SECTIONS: JournalSectionId[] = [
   'warnings',
 ];
 
+/**
+ * Формат листа печати. Портрет не поддерживается осознанно: широкие таблицы
+ * (15 колонок журнала) в него не влезают, а горизонт A4/A3 — рабочий стандарт.
+ */
+export type JournalFormat = 'a4l' | 'a3l';
+
+/** Доступные форматы листа: данные живут рядом с JOURNAL_SECTIONS, API — здесь. */
+export { JOURNAL_FORMATS } from './ui/constants';
+
 export interface JournalOptions {
   photos?: JournalPhoto[];
   pinPhotos?: JournalPhoto[];
   plans?: JournalPlan[];
   /** Какие разделы печатать; `undefined` — все ({@link DEFAULT_JOURNAL_SECTIONS}). */
   include?: JournalSectionId[];
+  /** Формат листа; по умолчанию A4 landscape (842×595). */
+  format?: JournalFormat;
+  /** Масштаб кегля и высоты строк таблиц, 0.85…1.15; вне диапазона — 1. */
+  scale?: number;
 }
 
-const PAGE = { width: 842, height: 595 };
-const MARGIN = 34;
-const CONTENT = PAGE.width - MARGIN * 2;
+const PAGE_SIZES: Record<JournalFormat, { width: number; height: number }> = {
+  a4l: { width: 842, height: 595 },
+  a3l: { width: 1191, height: 842 },
+};
+
+/** Пунктов в миллиметре: 185×40 мм основной надписи ГОСТ 2.104 — 524,4×113,4 pt. */
+const MM = 2.83465;
+const STAMP_WIDTH = 185 * MM;
+const STAMP_HEIGHT = 40 * MM;
+const SCALE_MIN = 0.85;
+const SCALE_MAX = 1.15;
+
 const BRAND = rgb(0.07, 0.16, 0.21);
 const MUTED = rgb(0.39, 0.46, 0.5);
 const BORDER = rgb(0.83, 0.87, 0.88);
@@ -65,14 +88,13 @@ const ZEBRA = rgb(0.965, 0.973, 0.976);
 const DANGER = rgb(0.86, 0.31, 0.44);
 const WHITE = rgb(1, 1, 1);
 
-/**
- * Упрощённая основная надпись по ГОСТ 2.104 внизу справа. Контент на страницах
- * со штампом заканчивается выше него, чтобы таблицы и текст не накладывались.
- */
-const STAMP = { width: 330, height: 84, bottom: 24 };
-const STAMP_LEFT = PAGE.width - MARGIN - STAMP.width;
-const STAMP_TOP = STAMP.bottom + STAMP.height;
-const CONTENT_BOTTOM = STAMP_TOP + 8;
+/** Формат листа из внешних данных: неизвестный — A4 landscape, а не ошибка. */
+const normalizeFormat = (format: JournalFormat | undefined): JournalFormat =>
+  format === 'a3l' ? 'a3l' : 'a4l';
+
+/** Масштаб таблиц: только 0.85…1.15, иначе 1 (не «примерно 1», а ровно). */
+const normalizeScale = (scale: number | undefined): number =>
+  typeof scale === 'number' && Number.isFinite(scale) && scale >= SCALE_MIN && scale <= SCALE_MAX ? scale : 1;
 
 
 export const formatNumber = (value: number | null): string => {
@@ -87,7 +109,9 @@ const cableDiameter = (cable: Cable): number | null => {
 };
 
 interface Column { title: string; width: number; align?: 'left' | 'right' }
-interface Section { id: JournalSectionId; title: string; note?: string; columns: Column[]; rows: string[][]; emptyText?: string; footer?: string }
+/** Строка таблицы: обычная или выделенная (подытог: полужирная первая ячейка и фон ZEBRA). */
+export type TableRow = string[] | { cells: string[]; bold?: boolean; zebra?: boolean };
+interface Section { id: JournalSectionId; title: string; note?: string; columns: Column[]; rows: TableRow[]; emptyText?: string; footer?: string }
 interface TocEntry { title: string; page: number }
 
 function wrapText(text: string, font: PDFFont, size: number, maxWidth: number): string[] {
@@ -123,24 +147,64 @@ function fitText(text: string, font: PDFFont, size: number, maxWidth: number): s
   return `${result}…`;
 }
 
+/** Разбор строки таблицы: обычный массив или объект с оформлением подытога. */
+const rowCells = (row: TableRow): string[] => (Array.isArray(row) ? row : row.cells);
+const rowBold = (row: TableRow): boolean => !Array.isArray(row) && row.bold === true;
+const rowZebra = (row: TableRow): boolean => !Array.isArray(row) && row.zebra === true;
+
 class Renderer {
   page!: PDFPage;
   y = 0;
   readonly pages: PDFPage[] = [];
+  /** Размеры листа конкретного формата: ничего не остаётся глобальной константой. */
+  readonly width: number;
+  readonly height: number;
+  /** Ширина контентной области между полями. */
+  readonly content: number;
+  /** Поля листа и отступ внутренней рамки — поля экземпляра, а не глобальные константы. */
+  readonly margin = 34;
+  readonly frame = 18;
+  /** Основная надпись прижата к правому нижнему углу внутренней рамки. */
+  readonly stamp: { width: number; height: number; left: number; bottom: number; top: number };
+  /** Левая часть штампа (5 строк подписей) — 65 мм, правая — 120 мм. */
+  readonly stampLeftWidth: number;
+  /** Нижняя граница контента: всё, что ниже, занято штампом или выходом за рамку. */
+  readonly contentBottom: number;
 
-  constructor(private readonly document: PDFDocument, private readonly regular: PDFFont, private readonly bold: PDFFont) {
+  constructor(
+    private readonly document: PDFDocument,
+    private readonly regular: PDFFont,
+    private readonly bold: PDFFont,
+    format: JournalFormat,
+    private readonly scale: number,
+  ) {
+    const size = PAGE_SIZES[format];
+    this.width = size.width;
+    this.height = size.height;
+    this.content = this.width - this.margin * 2;
+    const bottom = this.frame;
+    const left = this.width - this.frame - STAMP_WIDTH;
+    this.stamp = { width: STAMP_WIDTH, height: STAMP_HEIGHT, left, bottom, top: bottom + STAMP_HEIGHT };
+    this.stampLeftWidth = this.stamp.width * (65 / 185);
+    // Небольшой зазор между последней строкой контента и верхней линией штампа.
+    this.contentBottom = this.stamp.top + 8;
     this.addPage();
   }
 
+  /** Высота контентной области на листе без штампа. */
+  get contentHeight(): number {
+    return this.height - this.margin - this.contentBottom;
+  }
+
   addPage(): PDFPage {
-    this.page = this.document.addPage([PAGE.width, PAGE.height]);
+    this.page = this.document.addPage([this.width, this.height]);
     this.pages.push(this.page);
-    this.y = PAGE.height - MARGIN;
+    this.y = this.height - this.margin;
     return this.page;
   }
 
   ensure(height: number): void {
-    if (this.y - height < CONTENT_BOTTOM) this.addPage();
+    if (this.y - height < this.contentBottom) this.addPage();
   }
 
   /** Титульный лист (страница 1): рамку и колонтитул дорисует finish(). */
@@ -149,7 +213,7 @@ class Renderer {
     const page = this.page;
     const center = (content: string, y: number, size: number, font: PDFFont, color = BRAND): void => {
       const width = font.widthOfTextAtSize(content, size);
-      page.drawText(content, { x: Math.max(MARGIN, (PAGE.width - width) / 2), y, size, font, color });
+      page.drawText(content, { x: Math.max(this.margin, (this.width - width) / 2), y, size, font, color });
     };
     const documentTitle = (document.title ?? '').trim() || 'Кабельный журнал и смета';
     const organization = (document.organization ?? '').trim();
@@ -160,25 +224,25 @@ class Renderer {
     const compiledBy = (document.compiledBy ?? '').trim();
     const checkedBy = (document.checkedBy ?? '').trim();
 
-    if (organization) center(organization, PAGE.height - 92, 13, this.bold);
-    center(`Проект: ${project.name || 'Без названия'}`, PAGE.height - 118, 9.5, this.regular, MUTED);
+    if (organization) center(organization, this.height - 92, 13, this.bold);
+    center(`Проект: ${project.name || 'Без названия'}`, this.height - 118, 9.5, this.regular, MUTED);
 
-    const titleLines = wrapText(documentTitle, this.bold, 24, CONTENT);
-    titleLines.forEach((line, index) => center(line, PAGE.height - 250 - index * 30, 24, this.bold));
-    let y = PAGE.height - 250 - titleLines.length * 30 - 10;
+    const titleLines = wrapText(documentTitle, this.bold, 24, this.content);
+    titleLines.forEach((line, index) => center(line, this.height - 250 - index * 30, 24, this.bold));
+    let y = this.height - 250 - titleLines.length * 30 - 10;
     if (object) {
-      for (const line of wrapText(`Объект: ${object}`, this.regular, 11.5, CONTENT)) {
+      for (const line of wrapText(`Объект: ${object}`, this.regular, 11.5, this.content)) {
         center(line, y, 11.5, this.regular);
         y -= 16;
       }
     }
-    if (code) center(`Шифр: ${code}`, Math.min(y - 6, PAGE.height - 330), 11, this.bold);
-    y = Math.min(y - 28, PAGE.height - 360);
+    if (code) center(`Шифр: ${code}`, Math.min(y - 6, this.height - 330), 11, this.bold);
+    y = Math.min(y - 28, this.height - 360);
 
     const signature = (label: string, value: string, lineY: number): void => {
-      page.drawText(`${label}:`, { x: MARGIN + 110, y: lineY, size: 10.5, font: this.bold, color: BRAND });
-      const lineStart = MARGIN + 190;
-      const lineEnd = PAGE.width - MARGIN - 150;
+      page.drawText(`${label}:`, { x: this.margin + 110, y: lineY, size: 10.5, font: this.bold, color: BRAND });
+      const lineStart = this.margin + 190;
+      const lineEnd = this.width - this.margin - 150;
       page.drawLine({ start: { x: lineStart, y: lineY - 2 }, end: { x: lineEnd, y: lineY - 2 }, thickness: 0.6, color: MUTED });
       if (value) page.drawText(value, { x: lineStart + 6, y: lineY, size: 10, font: this.regular, color: BRAND });
       page.drawText('подпись', { x: lineEnd + 8, y: lineY - 1, size: 7.5, font: this.regular, color: MUTED });
@@ -187,81 +251,169 @@ class Renderer {
     signature('Проверил', checkedBy, y - 28);
     if (date) center(`Дата: ${date}`, y - 68, 10, this.regular);
     const year = /^\d{4}/.test(date) ? date.slice(0, 4) : String(new Date().getFullYear());
-    center(city ? `${city} · ${year}` : year, PAGE.height - 500, 11, this.regular);
+    center(city ? `${city} · ${year}` : year, this.height - 500, 11, this.regular);
   }
 
   /** Заголовок раздела; возвращает фактический номер страницы, где он начинается. */
   heading(title: string, note?: string): number {
     this.ensure(56);
     const page = this.pages.length;
-    this.page.drawText(title, { x: MARGIN, y: this.y - 16, size: 13.5, font: this.bold, color: BRAND });
+    this.page.drawText(title, { x: this.margin, y: this.y - 16, size: 13.5, font: this.bold, color: BRAND });
     this.y -= 22;
     if (note) {
-      const lines = wrapText(note, this.regular, 8.2, CONTENT);
-      lines.forEach((line, index) => this.page.drawText(line, { x: MARGIN, y: this.y - 8 - index * 10.5, size: 8.2, font: this.regular, color: MUTED }));
-      this.y -= lines.length * 10.5 + 4;
+      const size = 8.2;
+      const lineHeight = 10.5;
+      // Длинное примечание переносится построчно: страница не должна переполняться.
+      for (const line of wrapText(note, this.regular, size, this.content)) {
+        if (this.y - lineHeight < this.contentBottom) this.addPage();
+        this.page.drawText(line, { x: this.margin, y: this.y - 8, size, font: this.regular, color: MUTED });
+        this.y -= lineHeight;
+      }
+      this.y -= 4;
     }
     this.y -= 4;
     return page;
   }
 
+  /** Абзац с построчным переносом: длинный текст не съезжает за нижнюю границу. */
   paragraph(text: string, color = BRAND): void {
     const size = 8.6;
-    const lines = wrapText(text, this.regular, size, CONTENT);
-    this.ensure(lines.length * (size + 3) + 8);
-    lines.forEach((line, index) => this.page.drawText(line, { x: MARGIN, y: this.y - size - index * (size + 3), size, font: this.regular, color }));
-    this.y -= lines.length * (size + 3) + 6;
+    const lineHeight = size + 3;
+    for (const line of wrapText(text, this.regular, size, this.content)) {
+      if (this.y - lineHeight < this.contentBottom) this.addPage();
+      this.page.drawText(line, { x: this.margin, y: this.y - size, size, font: this.regular, color });
+      this.y -= lineHeight;
+    }
+    this.y -= 6;
   }
 
   list(items: string[]): void {
     for (const item of items) this.paragraph(`• ${item}`, DANGER);
   }
 
-  table(columns: Column[], rows: string[][]): void {
-    const scale = CONTENT / columns.reduce((sum, column) => sum + column.width, 0);
-    const widths = columns.map(column => column.width * scale);
-    const size = 7.6;
-    const lineHeight = size + 2.6;
-    const padding = 4;
-    const headerHeight = 18;
+  /**
+   * Таблица с переносом строк между листами.
+   *
+   * Строка, не влезающая на текущую страницу, но влезающая на пустую, переносится
+   * целиком. Строка выше страницы делится по строкам текста: каждая часть повторяет
+   * шапку, продолжение помечается «(продолж.)», над шапкой печатается название
+   * раздела. Ни один фрагмент текста не теряется.
+   */
+  table(columns: Column[], rows: TableRow[], sectionTitle?: string): void {
+    const totalWidth = columns.reduce((sum, column) => sum + column.width, 0);
+    const widthScale = this.content / (totalWidth || 1);
+    const widths = columns.map(column => column.width * widthScale);
+    const size = 7.6 * this.scale;
+    const headerSize = 7.4 * this.scale;
+    const lineHeight = size + 2.6 * this.scale;
+    const padding = 4 * this.scale;
+    const headerHeight = 18 * this.scale;
+    const rowPadding = padding * 1.4;
 
-    const drawHeader = () => {
-      this.page.drawRectangle({ x: MARGIN, y: this.y - headerHeight, width: CONTENT, height: headerHeight, color: BRAND });
-      let x = MARGIN;
+    const drawHeader = (): void => {
+      this.page.drawRectangle({ x: this.margin, y: this.y - headerHeight, width: this.content, height: headerHeight, color: BRAND });
+      let x = this.margin;
       columns.forEach((column, index) => {
-        this.page.drawText(column.title, { x: x + padding, y: this.y - headerHeight + 6, size: 7.4, font: this.bold, color: WHITE });
+        this.page.drawText(fitText(column.title, this.bold, headerSize, Math.max(1, widths[index] - padding * 2)), {
+          x: x + padding, y: this.y - headerHeight + 6, size: headerSize, font: this.bold, color: WHITE,
+        });
         x += widths[index];
       });
       this.y -= headerHeight;
     };
 
-    this.ensure(headerHeight + 30);
-    drawHeader();
+    /** Шапка новой страницы с подписью продолжения раздела. */
+    const beginPage = (continuation: boolean): void => {
+      if (continuation && sectionTitle) {
+        const captionSize = 7.4;
+        this.page.drawText(`Продолжение: ${sectionTitle}`, {
+          x: this.margin, y: this.y - captionSize, size: captionSize, font: this.regular, color: MUTED,
+        });
+        this.y -= captionSize + 5;
+      }
+      drawHeader();
+    };
 
-    rows.forEach((row, rowIndex) => {
-      const cells = row.map((value, index) => wrapText(value, this.regular, size, widths[index] - padding * 2));
-      const lineCount = Math.max(1, ...cells.map(lines => lines.length));
-      const height = lineCount * lineHeight + padding * 1.4;
-      if (this.y - height < CONTENT_BOTTOM) {
-        this.addPage();
-        drawHeader();
-      }
-      if (rowIndex % 2 === 1) {
-        this.page.drawRectangle({ x: MARGIN, y: this.y - height, width: CONTENT, height, color: ZEBRA });
-      }
-      let x = MARGIN;
-      cells.forEach((lines, index) => {
-        const column = columns[index];
-        const color = String(row[index]).toLowerCase().includes('неполный') ? DANGER : BRAND;
+    const fitLines = (): number => Math.max(0, Math.floor((this.y - this.contentBottom - rowPadding) / lineHeight));
+
+    const drawRow = (parts: string[][], height: number, bold: boolean, zebra: boolean, danger: boolean): void => {
+      if (zebra) this.page.drawRectangle({ x: this.margin, y: this.y - height, width: this.content, height, color: ZEBRA });
+      let x = this.margin;
+      parts.forEach((lines, index) => {
+        const column = columns[index] ?? { title: '', width: 0 };
+        const font = bold && index === 0 ? this.bold : this.regular;
+        const color = danger ? DANGER : BRAND;
         lines.forEach((line, lineIndex) => {
-          const textWidth = this.regular.widthOfTextAtSize(line, size);
+          const textWidth = font.widthOfTextAtSize(line, size);
           const drawX = column.align === 'right' ? x + widths[index] - padding - textWidth : x + padding;
-          this.page.drawText(line, { x: drawX, y: this.y - padding - size - lineIndex * lineHeight + 2, size, font: this.regular, color });
+          this.page.drawText(line, { x: drawX, y: this.y - padding - size - lineIndex * lineHeight + 2, size, font, color });
         });
         x += widths[index];
       });
-      this.page.drawLine({ start: { x: MARGIN, y: this.y - height }, end: { x: MARGIN + CONTENT, y: this.y - height }, thickness: 0.5, color: BORDER });
+      this.page.drawLine({ start: { x: this.margin, y: this.y - height }, end: { x: this.margin + this.content, y: this.y - height }, thickness: 0.5, color: BORDER });
       this.y -= height;
+    };
+
+    this.ensure(headerHeight + lineHeight * 2 + 8);
+    beginPage(false);
+
+    rows.forEach((row, rowIndex) => {
+      const cells = rowCells(row);
+      const bold = rowBold(row);
+      const zebra = rowZebra(row) || rowIndex % 2 === 1;
+      const danger = cells.some(value => String(value).toLowerCase().includes('неполный'));
+      const wrapped = cells.map((value, index) => wrapText(value, this.regular, size, Math.max(1, widths[index] - padding * 2)));
+      const lineCount = Math.max(1, ...wrapped.map(lines => lines.length));
+      const height = lineCount * lineHeight + rowPadding;
+
+      if (height <= this.y - this.contentBottom) {
+        drawRow(wrapped, height, bold, zebra, danger);
+        return;
+      }
+      // Строка целиком влезает на пустой лист — переносим её, как раньше.
+      if (height <= this.contentHeight) {
+        this.addPage();
+        beginPage(true);
+        drawRow(wrapped, height, bold, zebra, danger);
+        return;
+      }
+      // Строка выше листа: делим по строкам текста между страницами.
+      let offset = 0;
+      let continuation = false;
+      while (offset < lineCount) {
+        let available = fitLines();
+        if (continuation && available < 2) {
+          this.addPage();
+          beginPage(true);
+          available = fitLines();
+        } else if (available < 1) {
+          this.addPage();
+          beginPage(true);
+          available = fitLines();
+        }
+        if (available < 1) {
+          // Защита от вырожденного листа: один шаг обязан продвинуть разбиение.
+          this.addPage();
+          beginPage(true);
+          available = Math.max(1, fitLines());
+        }
+        const parts: string[][] = [];
+        let chunkLines = 0;
+        let consumed = 0;
+        wrapped.forEach((lines, index) => {
+          // В первой ячейке части-продолжения маркер занимает отдельную строку.
+          const limit = continuation && index === 0 ? Math.max(0, available - 1) : available;
+          const slice = lines.slice(offset, offset + limit);
+          const part = continuation && index === 0 ? ['(продолж.)', ...slice] : slice;
+          parts.push(part);
+          chunkLines = Math.max(chunkLines, part.length);
+          consumed = Math.max(consumed, slice.length);
+        });
+        if (chunkLines === 0 || consumed === 0) break;
+        drawRow(parts, chunkLines * lineHeight + rowPadding, bold, zebra, danger);
+        offset += consumed;
+        continuation = true;
+      }
     });
     this.y -= 14;
   }
@@ -283,8 +435,8 @@ class Renderer {
       costComplete && project.cables.length ? `стоимость: ${formatNumber(cost)} ₽` : 'стоимость: цены заданы не для всех кабелей',
     ];
     this.ensure(40);
-    this.page.drawRectangle({ x: MARGIN, y: this.y - 22, width: CONTENT, height: 22, color: ZEBRA });
-    this.page.drawText(parts.join(' · '), { x: MARGIN + 8, y: this.y - 15, size: 8.6, font: this.bold, color: BRAND });
+    this.page.drawRectangle({ x: this.margin, y: this.y - 22, width: this.content, height: 22, color: ZEBRA });
+    this.page.drawText(parts.join(' · '), { x: this.margin + 8, y: this.y - 15, size: 8.6, font: this.bold, color: BRAND });
     this.y -= 30;
   }
 
@@ -294,23 +446,23 @@ class Renderer {
     const date = (project.document?.date || '').trim() || new Date().toLocaleDateString('ru-RU');
     this.ensure(96);
     this.y -= 6;
-    this.page.drawLine({ start: { x: MARGIN, y: this.y }, end: { x: MARGIN + CONTENT, y: this.y }, thickness: 0.8, color: BORDER });
+    this.page.drawLine({ start: { x: this.margin, y: this.y }, end: { x: this.margin + this.content, y: this.y }, thickness: 0.8, color: BORDER });
     this.y -= 22;
     const rows: { label: string; value: string }[] = [
       { label: 'Составил', value: compiledBy },
       { label: 'Проверил', value: checkedBy },
     ];
     for (const row of rows) {
-      this.page.drawText(`${row.label}:`, { x: MARGIN, y: this.y, size: 9, font: this.bold, color: BRAND });
-      const lineStart = MARGIN + 70;
-      const lineEnd = MARGIN + CONTENT - 160;
+      this.page.drawText(`${row.label}:`, { x: this.margin, y: this.y, size: 9, font: this.bold, color: BRAND });
+      const lineStart = this.margin + 70;
+      const lineEnd = this.margin + this.content - 160;
       this.page.drawLine({ start: { x: lineStart, y: this.y - 2 }, end: { x: lineEnd, y: this.y - 2 }, thickness: 0.6, color: MUTED });
       if (row.value) this.page.drawText(row.value, { x: lineStart + 6, y: this.y, size: 9, font: this.regular, color: BRAND });
       this.page.drawText('подпись', { x: lineEnd + 6, y: this.y, size: 7.5, font: this.regular, color: MUTED });
       this.y -= 26;
     }
-    this.page.drawText(`Дата: ${date}`, { x: MARGIN, y: this.y, size: 9, font: this.regular, color: BRAND });
-    this.page.drawText('Документ сформирован в AnOOPlan', { x: MARGIN + CONTENT - 170, y: this.y, size: 7.5, font: this.regular, color: MUTED });
+    this.page.drawText(`Дата: ${date}`, { x: this.margin, y: this.y, size: 9, font: this.regular, color: BRAND });
+    this.page.drawText('Документ сформирован в AnOOPlan', { x: this.margin + this.content - 170, y: this.y, size: 7.5, font: this.regular, color: MUTED });
     this.y -= 18;
   }
 
@@ -319,7 +471,7 @@ class Renderer {
     if (!items.length) return null;
     const page = this.heading(title, `Снимков в проекте: ${items.length}. Форматы: JPEG и PNG.`);
     const gap = 16;
-    const cellWidth = (CONTENT - gap) / 2;
+    const cellWidth = (this.content - gap) / 2;
     const imageHeight = 200;
     const captionHeight = 22;
     for (let index = 0; index < items.length; index += 2) {
@@ -327,7 +479,7 @@ class Renderer {
       this.ensure(imageHeight + captionHeight + 12);
       for (let column = 0; column < row.length; column += 1) {
         const item = row[column];
-        const x = MARGIN + column * (cellWidth + gap);
+        const x = this.margin + column * (cellWidth + gap);
         const top = this.y;
         try {
           const bytes = new Uint8Array(item.data);
@@ -358,21 +510,23 @@ class Renderer {
       // страницу, а заголовок остаётся сиротой внизу предыдущей.
       // Учитываем высоту примечания заранее: иначе заголовок остаётся на одном
       // листе, а картинка уезжает на следующий (регрессия 2.3.0).
-      const noteLines = item.note ? wrapText(item.note, this.regular, 8.6, CONTENT).length : 0;
-      this.ensure(440 + noteLines * 13);
+      const noteLines = item.note ? wrapText(item.note, this.regular, 8.6, this.content).length : 0;
+      const reserve = Math.min(this.contentHeight, 56 + noteLines * 13 + 20);
+      this.ensure(reserve);
       const title = `План: ${item.title}`;
       const page = this.heading(title, 'Подложка этажа и нанесённые трассы с оборудованием — лист для подписи.');
       entries.push({ title, page });
       if (item.note) this.paragraph(item.note, DANGER);
       try {
         const image = await this.document.embedPng(item.png);
-        const maxHeight = 380;
-        const scale = Math.min(CONTENT / image.width, maxHeight / image.height);
+        // Картинка занимает остаток листа: на A4 со штампом меньше, на A3 больше.
+        const maxHeight = Math.max(160, Math.min(380, this.contentHeight - reserve));
+        const scale = Math.min(this.content / image.width, maxHeight / image.height);
         const width = image.width * scale;
         const height = image.height * scale;
         this.ensure(height + 16);
-        this.page.drawImage(image, { x: MARGIN + (CONTENT - width) / 2, y: this.y - height, width, height });
-        this.page.drawRectangle({ x: MARGIN, y: this.y - height, width: CONTENT, height, borderColor: BORDER, borderWidth: 0.6 });
+        this.page.drawImage(image, { x: this.margin + (this.content - width) / 2, y: this.y - height, width, height });
+        this.page.drawRectangle({ x: this.margin, y: this.y - height, width: this.content, height, borderColor: BORDER, borderWidth: 0.6 });
         this.y -= height + 18;
       } catch {
         this.paragraph('План не встроен: не удалось подготовить изображение.', DANGER);
@@ -384,48 +538,53 @@ class Renderer {
   /** Оглавление: рисуется в конце, когда известны фактические страницы разделов. */
   drawContents(pages: PDFPage[], entries: TocEntry[]): void {
     const size = 10.5;
+    const step = 23;
     let pageIndex = 0;
     let page = pages[0];
     const header = (target: PDFPage, continued: boolean): number => {
-      target.drawText(continued ? 'Оглавление (продолжение)' : 'Оглавление', { x: MARGIN, y: PAGE.height - MARGIN - 22, size: 16, font: this.bold, color: BRAND });
-      target.drawLine({ start: { x: MARGIN, y: PAGE.height - MARGIN - 34 }, end: { x: PAGE.width - MARGIN, y: PAGE.height - MARGIN - 34 }, thickness: 0.8, color: BORDER });
-      return PAGE.height - MARGIN - 64;
+      target.drawText(continued ? 'Оглавление (продолжение)' : 'Оглавление', { x: this.margin, y: this.height - this.margin - 22, size: 16, font: this.bold, color: BRAND });
+      target.drawLine({ start: { x: this.margin, y: this.height - this.margin - 34 }, end: { x: this.width - this.margin, y: this.height - this.margin - 34 }, thickness: 0.8, color: BORDER });
+      return this.height - this.margin - 64;
     };
     let y = header(page, false);
     for (const entry of entries) {
-      if (y < CONTENT_BOTTOM + 20) {
+      if (y < this.contentBottom + 20) {
         pageIndex += 1;
         if (pageIndex >= pages.length) break;
         page = pages[pageIndex];
         y = header(page, true);
       }
-      page.drawText(entry.title, { x: MARGIN, y, size, font: this.regular, color: BRAND });
+      page.drawText(entry.title, { x: this.margin, y, size, font: this.regular, color: BRAND });
       const numberText = String(entry.page);
       const numberWidth = this.regular.widthOfTextAtSize(numberText, size);
-      page.drawText(numberText, { x: PAGE.width - MARGIN - numberWidth, y, size, font: this.regular, color: BRAND });
+      page.drawText(numberText, { x: this.width - this.margin - numberWidth, y, size, font: this.regular, color: BRAND });
       const titleWidth = this.regular.widthOfTextAtSize(entry.title, size);
-      page.drawLine({ start: { x: MARGIN + titleWidth + 8, y: y + 3 }, end: { x: PAGE.width - MARGIN - numberWidth - 8, y: y + 3 }, thickness: 0.4, color: BORDER });
-      y -= 23;
+      page.drawLine({ start: { x: this.margin + titleWidth + 8, y: y + 3 }, end: { x: this.width - this.margin - numberWidth - 8, y: y + 3 }, thickness: 0.4, color: BORDER });
+      y -= step;
     }
-    if (!entries.length) page.drawText('Разделы не выбраны.', { x: MARGIN, y, size, font: this.regular, color: MUTED });
+    if (!entries.length) page.drawText('Разделы не выбраны.', { x: this.margin, y, size, font: this.regular, color: MUTED });
   }
 
   /**
-   * Упрощённая основная надпись по ГОСТ 2.104: подписи, название/шифр/организация,
-   * «Лист N» и «Листов M». Рисуется на всех листах, кроме титульного.
+   * Полная основная надпись по ГОСТ 2.104 (форма 2 для текстовых документов):
+   * левая часть 65 мм — 5 строк подписей (фамилия/подпись/дата), правая 120 мм —
+   * изменение/лист/документ/подпись/дата, обозначение, заголовок, организация и
+   * «Лит. | Лист | Листов». Рисуется на всех листах, кроме титульного.
    */
-  private stamp(page: PDFPage, project: Project, sheet: number, sheets: number): void {
+  private drawStamp(page: PDFPage, project: Project, sheet: number, sheets: number): void {
     const document = project.document ?? {};
-    const x0 = STAMP_LEFT;
-    const x1 = PAGE.width - MARGIN;
-    const y0 = STAMP.bottom;
-    const y1 = STAMP_TOP;
-    const middleX = x0 + 165;
+    const x0 = this.stamp.left;
+    const x1 = x0 + this.stamp.width;
+    const y0 = this.stamp.bottom;
+    const y1 = this.stamp.top;
+    const middleX = x0 + this.stampLeftWidth;
+    const rightWidth = x1 - middleX;
     const line = (start: { x: number; y: number }, end: { x: number; y: number }, thickness = 0.4): void =>
       page.drawLine({ start, end, thickness, color: BRAND });
-    page.drawRectangle({ x: x0, y: y0, width: STAMP.width, height: STAMP.height, borderColor: BRAND, borderWidth: 0.6 });
+    page.drawRectangle({ x: x0, y: y0, width: this.stamp.width, height: this.stamp.height, borderColor: BRAND, borderWidth: 0.8 });
     line({ x: middleX, y: y0 }, { x: middleX, y: y1 });
 
+    // Левая часть: 5 подписных строк, колонки «фамилия / подпись / дата».
     const signatureRows: [string, string][] = [
       ['Разраб.', (document.compiledBy ?? '').trim() || '—'],
       ['Пров.', (document.checkedBy ?? '').trim() || '—'],
@@ -433,43 +592,73 @@ class Renderer {
       ['Н.контр.', '—'],
       ['Утв.', '—'],
     ];
-    const rowHeight = STAMP.height / signatureRows.length;
+    const rowHeight = this.stamp.height / signatureRows.length;
+    const labelWidth = 42;
+    const nameWidth = 62;
+    const signWidth = 42;
+    [x0 + labelWidth, x0 + labelWidth + nameWidth, x0 + labelWidth + nameWidth + signWidth]
+      .forEach(x => line({ x, y: y0 }, { x, y: y1 }));
     signatureRows.forEach(([label, value], index) => {
       const top = y1 - index * rowHeight;
-      const baseline = top - rowHeight + 5;
       if (index > 0) line({ x: x0, y: top }, { x: middleX, y: top });
-      page.drawText(label, { x: x0 + 3, y: baseline, size: 6.5, font: this.bold, color: BRAND });
-      page.drawText(fitText(value, this.regular, 6.5, middleX - x0 - 78), { x: x0 + 74, y: baseline, size: 6.5, font: this.regular, color: BRAND });
+      const baseline = top - rowHeight + 7;
+      page.drawText(label, { x: x0 + 3, y: baseline, size: 6.2, font: this.bold, color: BRAND });
+      page.drawText(fitText(value, this.regular, 6.2, nameWidth - 6), { x: x0 + labelWidth + 3, y: baseline, size: 6.2, font: this.regular, color: BRAND });
     });
 
-    // Шапка правой части: «Изм.», «Лист», «№ докум.», «Подп.», «Дата».
-    const headerLabels = ['Изм.', 'Лист', '№ докум.', 'Подп.', 'Дата'];
-    const headerWidths = [25, 25, 52, 30, 33];
-    const headerBottom = y1 - 14;
-    line({ x: middleX, y: headerBottom }, { x: x1, y: headerBottom });
-    let cursor = middleX;
-    headerLabels.forEach((label, index) => {
-      if (index > 0) line({ x: cursor, y: headerBottom }, { x: cursor, y: y1 });
-      page.drawText(label, { x: cursor + 2, y: headerBottom + 4.5, size: 5.8, font: this.regular, color: BRAND });
-      cursor += headerWidths[index];
-    });
-
-    const rightRowHeight = (headerBottom - y0) / 4;
-    const rightRows: { text: string; bold: boolean }[] = [
-      { text: fitText((document.title ?? '').trim() || 'Кабельный журнал и смета', this.bold, 7, x1 - middleX - 8), bold: true },
-      { text: fitText((document.documentCode ?? '').trim() || '—', this.regular, 6.5, x1 - middleX - 8), bold: false },
-      { text: fitText((document.organization ?? '').trim() || '—', this.regular, 6.5, x1 - middleX - 8), bold: false },
+    // Правая часть, верхняя строка «Изм. | Лист | № докум. | Подп. | Дата».
+    const topHeight = 16;
+    const bottomHeight = 16;
+    const topBottom = y1 - topHeight;
+    line({ x: middleX, y: topBottom }, { x: x1, y: topBottom });
+    const lastChange = (document.changeLog ?? []).slice(-1)[0];
+    const headerCells: [string, string][] = [
+      ['Изм.', (lastChange?.version ?? '').trim() || '—'],
+      ['Лист', String(sheet)],
+      ['№ докум.', (document.documentCode ?? '').trim() || '—'],
+      ['Подп.', '—'],
+      ['Дата', (lastChange?.date ?? '').trim() || '—'],
     ];
-    rightRows.forEach((row, index) => {
-      const top = headerBottom - index * rightRowHeight;
-      line({ x: middleX, y: top }, { x: x1, y: top });
-      page.drawText(row.text, { x: middleX + 4, y: top - rightRowHeight + 5.5, size: row.bold ? 7 : 6.5, font: row.bold ? this.bold : this.regular, color: BRAND });
+    const headerFractions = [0.08, 0.1, 0.34, 0.24, 0.24];
+    let cursor = middleX;
+    headerCells.forEach(([label, value], index) => {
+      if (index > 0) line({ x: cursor, y: topBottom }, { x: cursor, y: y1 });
+      const cellWidth = rightWidth * headerFractions[index];
+      page.drawText(label, { x: cursor + 2, y: y1 - 7, size: 5.2, font: this.regular, color: MUTED });
+      page.drawText(fitText(value, this.bold, 6, Math.max(1, cellWidth - 4)), { x: cursor + 2, y: topBottom + 4, size: 6, font: this.bold, color: BRAND });
+      cursor += cellWidth;
     });
-    const sheetTop = headerBottom - rightRows.length * rightRowHeight;
-    line({ x: middleX, y: sheetTop }, { x: x1, y: sheetTop });
-    line({ x: middleX + 82, y: y0 }, { x: middleX + 82, y: sheetTop });
-    page.drawText(`Лист ${sheet}`, { x: middleX + 4, y: y0 + 4.5, size: 6.5, font: this.bold, color: BRAND });
-    page.drawText(`Листов ${sheets}`, { x: middleX + 90, y: y0 + 4.5, size: 6.5, font: this.regular, color: BRAND });
+
+    // Три строки правой части: обозначение документа, заголовок, организация.
+    const bodyTop = topBottom;
+    const bodyBottom = y0 + bottomHeight;
+    const bodyHeight = (bodyTop - bodyBottom) / 3;
+    const bodyRows: { text: string; size: number; bold: boolean }[] = [
+      { text: (document.documentCode ?? '').trim() || '—', size: 6.6, bold: false },
+      { text: (document.title ?? '').trim() || 'Кабельный журнал и смета', size: 7.6, bold: true },
+      { text: (document.organization ?? '').trim() || '—', size: 6.6, bold: false },
+    ];
+    bodyRows.forEach((row, index) => {
+      const top = bodyTop - index * bodyHeight;
+      if (index > 0) line({ x: middleX, y: top }, { x: x1, y: top });
+      page.drawText(fitText(row.text, row.bold ? this.bold : this.regular, row.size, rightWidth - 8), {
+        x: middleX + 4, y: top - bodyHeight + 6, size: row.size, font: row.bold ? this.bold : this.regular, color: BRAND,
+      });
+    });
+
+    // Нижняя строка «Лит. | Лист | Листов»: лист N и листов M — словами рядом с числом.
+    line({ x: middleX, y: bodyBottom }, { x: x1, y: bodyBottom });
+    const bottomCells: [string, string][] = [['Лит.', '—'], ['Лист', String(sheet)], ['Листов', String(sheets)]];
+    const bottomFractions = [0.16, 0.42, 0.42];
+    let bottomX = middleX;
+    bottomCells.forEach(([label, value], index) => {
+      if (index > 0) line({ x: bottomX, y: y0 }, { x: bottomX, y: bodyBottom });
+      const cellWidth = rightWidth * bottomFractions[index];
+      page.drawText(fitText(`${label} ${value}`, index === 0 ? this.regular : this.bold, 6.4, Math.max(1, cellWidth - 6)), {
+        x: bottomX + 3, y: y0 + 5, size: 6.4, font: index === 0 ? this.regular : this.bold, color: BRAND,
+      });
+      bottomX += cellWidth;
+    });
   }
 
   finish(project?: Project): void {
@@ -478,20 +667,20 @@ class Renderer {
     this.pages.forEach((page, index) => {
       const titlePage = index === 0;
       // Рамка листа и колонтитул с названием проекта — документ можно подписывать постранично.
-      page.drawRectangle({ x: 18, y: 18, width: PAGE.width - 36, height: PAGE.height - 36, borderColor: BRAND, borderWidth: 0.8 });
-      const footerEnd = titlePage ? PAGE.width - MARGIN : STAMP_LEFT - 8;
-      page.drawLine({ start: { x: MARGIN, y: MARGIN + 18 }, end: { x: footerEnd, y: MARGIN + 18 }, thickness: 0.5, color: BORDER });
-      const title = fitText(project ? `AnOOPlan · ${project.name}` : 'AnOOPlan · кабельный план', this.regular, 7.5, 240);
-      page.drawText(title, { x: MARGIN, y: MARGIN + 6, size: 7.5, font: this.regular, color: MUTED });
-      const middle = `Кабельный журнал · ${today}`;
-      const middleWidth = this.regular.widthOfTextAtSize(middle, 7.5);
-      page.drawText(middle, { x: titlePage ? (PAGE.width - middleWidth) / 2 : MARGIN + 250, y: MARGIN + 6, size: 7.5, font: this.regular, color: MUTED });
+      page.drawRectangle({ x: this.frame, y: this.frame, width: this.width - this.frame * 2, height: this.height - this.frame * 2, borderColor: BRAND, borderWidth: 0.8 });
+      const footerEnd = titlePage ? this.width - this.margin : this.stamp.left - 8;
+      page.drawLine({ start: { x: this.margin, y: this.margin + 18 }, end: { x: footerEnd, y: this.margin + 18 }, thickness: 0.5, color: BORDER });
+      const title = fitText(project ? `AnOOPlan · ${project.name}` : 'AnOOPlan · кабельный план', this.regular, 7.5, Math.max(80, Math.min(260, footerEnd - this.margin)));
+      page.drawText(title, { x: this.margin, y: this.margin + 6, size: 7.5, font: this.regular, color: MUTED });
       if (titlePage) {
+        const middle = `Кабельный журнал · ${today}`;
+        const middleWidth = this.regular.widthOfTextAtSize(middle, 7.5);
+        page.drawText(middle, { x: (this.width - middleWidth) / 2, y: this.margin + 6, size: 7.5, font: this.regular, color: MUTED });
         const label = `Лист ${index + 1} из ${total}`;
         const width = this.regular.widthOfTextAtSize(label, 7.5);
-        page.drawText(label, { x: PAGE.width - MARGIN - width, y: MARGIN + 6, size: 7.5, font: this.regular, color: MUTED });
+        page.drawText(label, { x: this.width - this.margin - width, y: this.margin + 6, size: 7.5, font: this.regular, color: MUTED });
       } else if (project) {
-        this.stamp(page, project, index + 1, total);
+        this.drawStamp(page, project, index + 1, total);
       }
     });
   }
@@ -501,6 +690,17 @@ type EstimateResult = ReturnType<typeof estimate>;
 
 /** Подпись строки работ: «Работы (25 %)»; без заданного процента — «Работы (не задан)», а не 0. */
 const laborLabel = (percent: number | null): string => (percent === null ? 'Работы (не задан)' : `Работы (${formatNumber(percent)} %)`);
+
+/** Подпись работ: процент от материалов либо режим работ по видам. */
+const laborSummaryLabel = (result: EstimateResult): string =>
+  result.worksMode === 'items' ? 'Работы (по видам работ)' : laborLabel(result.laborPercent);
+
+/** Начисляется ли НДС: нулевая или отсутствующая ставка — не начисляется. */
+const vatCharged = (result: EstimateResult): boolean => result.vatRate !== null && result.vatRate > 0;
+
+/** Строка НДС: «НДС 20 %» или «НДС 20 % (в т.ч.)», если цены уже включают налог. */
+const vatLabel = (result: EstimateResult): string =>
+  `НДС ${formatNumber(result.vatRate)} %${result.vatIncluded ? ' (в т.ч.)' : ''}`;
 
 function buildSections(project: Project, estimateResult: EstimateResult): Section[] {
   const specs = specifications(project);
@@ -528,6 +728,107 @@ function buildSections(project: Project, estimateResult: EstimateResult): Sectio
       result.complete ? 'полный' : 'неполный',
     ];
   });
+
+  // Смета: строки работ по видам — только в режиме 'items'; итоги — с НДС и округлением.
+  const estimateRows: TableRow[] = [];
+  for (const section of estimateResult.sections.filter(item => item.kind !== 'work')) {
+    for (const line of section.lines) {
+      estimateRows.push([
+        section.title,
+        line.name || '—',
+        line.unit || '—',
+        formatNumber(line.quantity),
+        formatNumber(line.price),
+        formatNumber(line.total),
+      ]);
+    }
+    estimateRows.push(['', `Итого: ${section.title}`, '', '', '', formatNumber(section.total)]);
+  }
+  if (estimateResult.worksMode === 'items') {
+    const worksSection = estimateResult.sections.find(item => item.kind === 'work');
+    for (const line of worksSection?.lines ?? []) {
+      estimateRows.push([
+        worksSection?.title ?? 'Работы',
+        line.name || '—',
+        line.unit || '—',
+        formatNumber(line.quantity),
+        formatNumber(line.price),
+        formatNumber(line.total),
+      ]);
+    }
+  }
+  estimateRows.push(['', 'Итого материалы', '', '', '', formatNumber(estimateResult.materials)]);
+  estimateRows.push(['', laborSummaryLabel(estimateResult), '', '', '', formatNumber(estimateResult.labor)]);
+  estimateRows.push(['', vatCharged(estimateResult) ? 'Итого до НДС' : 'Итого по смете', '', '', '', formatNumber(estimateResult.total)]);
+  if (vatCharged(estimateResult)) {
+    estimateRows.push(['', vatLabel(estimateResult), '', '', '', formatNumber(estimateResult.vat)]);
+    estimateRows.push(['', 'Итого с НДС', '', '', '', formatNumber(estimateResult.gross)]);
+  }
+
+  // Коммерческое предложение: те же итоги с НДС, примечание о ценах с налогом/без.
+  const commercialRows: TableRow[] = [
+    ...estimateResult.sections.filter(section => section.kind !== 'work').map(section => [section.title, formatNumber(section.total)]),
+    ['Итого материалы', formatNumber(estimateResult.materials)],
+    [laborSummaryLabel(estimateResult), formatNumber(estimateResult.labor)],
+    [vatCharged(estimateResult) ? 'Итого до НДС' : 'Итого', formatNumber(estimateResult.total)],
+  ];
+  if (vatCharged(estimateResult)) {
+    commercialRows.push([vatLabel(estimateResult), formatNumber(estimateResult.vat)]);
+    commercialRows.push(['Итого с НДС', formatNumber(estimateResult.gross)]);
+  }
+
+  // Спецификация КНС: строки идут блоками по подсистемам, после блока — подытог.
+  const knsRows: TableRow[] = [];
+  let knsOffset = 0;
+  for (const group of specKnS.subsystems) {
+    const groupLines = specKnS.lines.slice(knsOffset, knsOffset + group.lines);
+    knsOffset += group.lines;
+    for (const line of groupLines) {
+      knsRows.push([
+        line.name,
+        line.section || '—',
+        line.subsystem,
+        line.unit,
+        formatNumber(line.quantity),
+        line.angles ? String(line.angles) : '—',
+        [line.article, line.manufacturer].filter(Boolean).join(' / ') || '—',
+        formatNumber(line.cost),
+      ]);
+    }
+    knsRows.push({
+      cells: [
+        `Итого по подсистеме: ${group.subsystem}`,
+        '',
+        '',
+        'м',
+        formatNumber(group.length),
+        group.angles ? String(group.angles) : '—',
+        '',
+        formatNumber(group.cost),
+      ],
+      bold: true,
+      zebra: true,
+    });
+  }
+  // Страховка на случай несовпадения группировки: ни одна строка не должна потеряться.
+  for (const line of specKnS.lines.slice(knsOffset)) {
+    knsRows.push([
+      line.name,
+      line.section || '—',
+      line.subsystem,
+      line.unit,
+      formatNumber(line.quantity),
+      line.angles ? String(line.angles) : '—',
+      [line.article, line.manufacturer].filter(Boolean).join(' / ') || '—',
+      formatNumber(line.cost),
+    ]);
+  }
+
+  const estimateNote = [
+    `Дата прайса: ${estimateResult.catalogDate ?? '—'}`,
+    estimateResult.rounding !== null ? `Округление: до ${formatNumber(estimateResult.rounding)} ₽` : '',
+    'Неизвестные значения показаны как «—» и не заменяются нулём.',
+  ].filter(Boolean).join(' · ');
 
   return [
     {
@@ -614,20 +915,13 @@ function buildSections(project: Project, estimateResult: EstimateResult): Sectio
         { title: 'Артикул / производитель', width: 160 },
         { title: 'Сумма, ₽', width: 70, align: 'right' },
       ],
-      rows: specKnS.lines.map(line => [
-        line.name,
-        line.section || '—',
-        line.subsystem,
-        line.unit,
-        formatNumber(line.quantity),
-        line.angles ? String(line.angles) : '—',
-        [line.article, line.manufacturer].filter(Boolean).join(' / ') || '—',
-        formatNumber(line.cost),
-      ]),
+      rows: knsRows,
       emptyText: 'Трасс для спецификации нет.',
       footer: [
-        specKnS.totals.length ? `Итого по типам: ${specKnS.totals.map(item => `${item.group} — ${formatNumber(item.length)} м${item.angles ? `, углов ${item.angles}` : ''}`).join('; ')}.` : '',
-        specKnS.totalCost !== null ? `Стоимость КНС: ${formatNumber(specKnS.totalCost)} ₽.` : '',
+        specKnS.totals.length
+          ? `Итого по типам: ${specKnS.totals.map(item => `${item.group} — ${formatNumber(item.length)} м${item.angles ? `, углов ${item.angles}` : ''}, ${formatNumber(item.cost)} ₽`).join('; ')}.`
+          : '',
+        `Всего КНС: ${formatNumber(specKnS.totalLength)} м, ${formatNumber(specKnS.totalCost)} ₽.`,
         ...specKnS.warnings,
       ].filter(Boolean).join(' '),
     },
@@ -672,7 +966,7 @@ function buildSections(project: Project, estimateResult: EstimateResult): Sectio
     {
       id: 'estimate',
       title: 'Смета',
-      note: `Дата прайса: ${estimateResult.catalogDate ?? '—'}. Неизвестные значения показаны как «—» и не заменяются нулём.`,
+      note: estimateNote,
       columns: [
         { title: 'Раздел', width: 110 },
         { title: 'Позиция', width: 190 },
@@ -681,22 +975,7 @@ function buildSections(project: Project, estimateResult: EstimateResult): Sectio
         { title: 'Цена, ₽', width: 70, align: 'right' },
         { title: 'Сумма, ₽', width: 80, align: 'right' },
       ],
-      rows: [
-        ...estimateResult.sections.filter(section => section.kind !== 'work').flatMap(section => [
-          ...section.lines.map(line => [
-            section.title,
-            line.name || '—',
-            line.unit || '—',
-            formatNumber(line.quantity),
-            formatNumber(line.price),
-            formatNumber(line.total),
-          ]),
-          ['', `Итого: ${section.title}`, '', '', '', formatNumber(section.total)],
-        ]),
-        ['', 'Итого материалы', '', '', '', formatNumber(estimateResult.materials)],
-        ['', laborLabel(estimateResult.laborPercent), '', '', '', formatNumber(estimateResult.labor)],
-        ['', 'Итого по смете', '', '', '', formatNumber(estimateResult.total)],
-      ],
+      rows: estimateRows,
     },
     {
       id: 'commercial',
@@ -704,18 +983,14 @@ function buildSections(project: Project, estimateResult: EstimateResult): Sectio
       note: [
         `Дата прайса: ${estimateResult.catalogDate ?? '—'}`,
         project.estimate?.note ? `Примечание: ${project.estimate.note}` : '',
-        'Цены без НДС. Неизвестные значения не заменяются нулём.',
+        estimateResult.vatIncluded ? 'Цены с НДС.' : 'Цены без НДС.',
+        'Неизвестные значения не заменяются нулём.',
       ].filter(Boolean).join(' · '),
       columns: [
         { title: 'Раздел', width: 220 },
         { title: 'Сумма, ₽', width: 120, align: 'right' },
       ],
-      rows: [
-        ...estimateResult.sections.filter(section => section.kind !== 'work').map(section => [section.title, formatNumber(section.total)]),
-        ['Итого материалы', formatNumber(estimateResult.materials)],
-        [laborLabel(estimateResult.laborPercent), formatNumber(estimateResult.labor)],
-        ['Итого', formatNumber(estimateResult.total)],
-      ],
+      rows: commercialRows,
     },
     {
       id: 'pins',
@@ -771,7 +1046,7 @@ export async function buildJournalPdf(project: Project, fonts: JournalFonts, opt
   document.setCreator('AnOOPlan');
   document.setProducer('AnOOPlan');
 
-  const renderer = new Renderer(document, regular, bold);
+  const renderer = new Renderer(document, regular, bold, normalizeFormat(options.format), normalizeScale(options.scale));
   // Титульный лист (страница 1) и оглавление выводятся всегда. Оглавление может
   // занять несколько листов: резервируем их заранее, пока номера разделов ещё не посчитаны.
   renderer.titlePage(project);
@@ -783,9 +1058,11 @@ export async function buildJournalPdf(project: Project, fonts: JournalFonts, opt
     + (include.has('photos') && options.photos?.length ? 1 : 0)
     + (include.has('pinPhotos') && options.pinPhotos?.length ? 1 : 0)
     + 1;
-  // На лист при шаге 23 pt влезает 16 строк: старт ниже заголовка и нижняя
-  // граница рамки не дают 18. Занижать нельзя — последние строки исчезнут.
-  const tocPageCount = Math.max(1, Math.ceil(expectedEntries / 16));
+  // Ёмкость листа оглавления считается по фактической нижней границе контента:
+  // со штампом ГОСТ она выше, чем раньше, поэтому шаг 23 pt даёт меньше строк.
+  const tocTop = renderer.height - renderer.margin - 64;
+  const tocCapacity = Math.max(1, Math.floor((tocTop - (renderer.contentBottom + 20)) / 23) + 1);
+  const tocPageCount = Math.max(1, Math.ceil(expectedEntries / tocCapacity));
   const tocPages = Array.from({ length: tocPageCount }, () => renderer.addPage());
   renderer.addPage();
   const toc: TocEntry[] = [];
@@ -796,7 +1073,7 @@ export async function buildJournalPdf(project: Project, fonts: JournalFonts, opt
     if (section.rows.length) renderer.ensure(120);
     const page = renderer.heading(section.title, section.note);
     toc.push({ title: section.title, page });
-    if (section.rows.length) renderer.table(section.columns, section.rows);
+    if (section.rows.length) renderer.table(section.columns, section.rows, section.title);
     else renderer.paragraph(section.emptyText ?? 'Нет записей.', MUTED);
     if (section.footer) renderer.paragraph(section.footer, MUTED);
   }
@@ -826,4 +1103,3 @@ export async function buildJournalPdf(project: Project, fonts: JournalFonts, opt
   renderer.finish(project);
   return document.save();
 }
-

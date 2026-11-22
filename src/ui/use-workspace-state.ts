@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { Point, Project } from '../model';
-import type { JournalSectionId } from '../export-pdf';
+import type { JournalFormat, JournalSectionId } from '../export-pdf';
 import type { DiagnosticEntry } from '../diagnostics';
 import { logDiagnostic } from '../diagnostics';
 import { cableSection, calculateCable, domainWarnings, trayFill, validateProject } from '../engine';
@@ -70,6 +70,9 @@ export function useWorkspaceState() {
   const [sheet, setSheet] = useState<SheetTarget>(null);
   // Выбранные для печати разделы; по умолчанию — все.
   const [printSections, setPrintSections] = useState<JournalSectionId[]>(() => JOURNAL_SECTIONS.map(section => section.id));
+  // Формат листа и масштаб таблиц печати: широкие таблицы в портрет не влезают.
+  const [printFormat, setPrintFormat] = useState<JournalFormat>('a4l');
+  const [printScale, setPrintScale] = useState(1);
   const canvas = useRef<HTMLCanvasElement>(null);
   const stage = useRef<HTMLDivElement>(null);
   const upload = useRef<HTMLInputElement>(null);
@@ -177,7 +180,7 @@ export function useWorkspaceState() {
     message, setMessage, error, setError, busy, setBusy, saved, setSaved, persisted, setPersisted,
     projects, setProjects, templatesOpen, setTemplatesOpen, onboardingOpen, setOnboardingOpen,
     pointer, setPointer, dragging, setDragging, staticMode, setStaticMode, exportOpen, setExportOpen,
-    sheet, setSheet, printSections, setPrintSections,
+    sheet, setSheet, printSections, setPrintSections, printFormat, setPrintFormat, printScale, setPrintScale,
     canvas, stage, upload, restoreInput, photoInput, cameraInput,
     drag, pointers, snapVibe, tap, pinching, pressStart, longPressTimer,
     projectRef, floor, dirty, dirtyRef, equipment, route, cable, pin, dimension, photoOwner,
