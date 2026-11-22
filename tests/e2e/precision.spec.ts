@@ -14,10 +14,10 @@ test('2.9.1 C-07: смета оценивает каждое сечение КН
   await expect(stojak).toHaveCount(1);
   await expect(trays.getByRole('cell', { name: 'Лоток', exact: true })).toHaveCount(0);
 
-  // Демо: 55 м лотка по 480 ₽ и 4 м стояка по 620 ₽ — цена берётся по сечению.
-  expect(await cellText(lotok, 2)).toBe('55');
+  // Демо: 68 м лотка по 480 ₽ и 4 м стояка по 620 ₽ — цена берётся по сечению.
+  expect(await cellText(lotok, 2)).toBe('68');
   expect(await cellText(lotok, 3)).toBe('480₽');
-  expect(await cellText(lotok, 4)).toBe('26400₽');
+  expect(await cellText(lotok, 4)).toBe('32640₽');
   expect(await cellText(lotok, 5)).toBe('справочник');
   expect(await cellText(stojak, 2)).toBe('4');
   expect(await cellText(stojak, 3)).toBe('620₽');
@@ -61,7 +61,7 @@ test('2.9.1 C-07: чужое сечение не подменяется перв
   // Второе сечение с точной ценой не затронуто.
   const lotok = trays.getByRole('row').filter({ has: page.getByRole('cell', { name: 'Лоток · 100×50', exact: true }) });
   expect(await cellText(lotok, 3)).toBe('480₽');
-  expect(await cellText(lotok, 4)).toBe('26400₽');
+  expect(await cellText(lotok, 4)).toBe('32640₽');
 });
 
 test('2.9.1 C-04: углы Кабель-канала видны и после split не теряются и не задваиваются', async ({ page }) => {
@@ -103,7 +103,8 @@ test('2.9.1 C-04: углы Кабель-канала видны и после sp
   expect(await lastCellText(routeRow('Т3'))).toBe('1');
   const groupTotal = scheme.getByRole('row').filter({ hasText: 'Итого: Кабель-канал' });
   await expect(groupTotal).toHaveCount(1);
-  expect(await lastCellText(groupTotal)).toBe('2');
+  // В демо уже есть Т4 «Кабель-канал» с двумя углами; после смены типа Т1 и Т3 — 4.
+  expect(await lastCellText(groupTotal)).toBe('4');
 
   // Разделяем Т1 по вершине поворота (X 700 · Y 350): угол теперь на стыке трасс.
   await openView(page, 'План');
@@ -122,6 +123,6 @@ test('2.9.1 C-04: углы Кабель-канала видны и после sp
   ];
   // Угол на стыке считается один раз: Т1 0, продолжение Т1-2 1, отдельная Т3 1.
   expect(angles).toEqual([0, 1, 1]);
-  expect(await lastCellText(groupTotal)).toBe('2');
+  expect(await lastCellText(groupTotal)).toBe('4');
   expect(angles.reduce((sum, value) => sum + value, 0)).toBe(2);
 });

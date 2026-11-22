@@ -93,7 +93,7 @@ test('листы выгрузки совпадают по набору с сер
   assert.equal(fill.name, 'Заполнение КНС');
   assert.deepEqual(fill.rows[0], FILL_HEADER);
   const segments = createDemoProject().routes.reduce((sum, route) => sum + route.segments.length, 0);
-  assert.equal(segments, 7, 'демо-проект должен содержать 7 сегментов');
+  assert.equal(segments, 11, 'демо-проект должен содержать 11 сегментов');
   assert.equal(fill.rows.length, segments + 1);
   const [, , , , , , , smeta, commercial, catalog] = sheets;
   assert.deepEqual(smeta.rows[0], ESTIMATE_HEADER);
@@ -137,10 +137,10 @@ test('XLSX собирается в приложении и читается об
   const worksLabel = `Работы (${project.estimate!.laborPercent} %)`;
   const smeta = XLSX.utils.sheet_to_json<unknown[]>(workbook.Sheets['Смета'], { header: 1, defval: '' });
   assert.deepEqual(smeta[0], ESTIMATE_HEADER);
-  const expectedRows = 1 + materialSections.reduce((sum, section) => sum + section.lines.length, 0) + materialSections.length + 3;
-  assert.equal(smeta.length, expectedRows, 'в смете по строке на позицию материального раздела, на его итог и три итоговые строки');
+  const expectedRows = 1 + materialSections.reduce((sum, section) => sum + section.lines.length, 0) + materialSections.length + 6;
+  assert.equal(smeta.length, expectedRows, 'в смете по строке на позицию материального раздела, на его итог и пять итоговых строк');
   const rowByLabel = (label: string) => smeta.find(row => row[1] === label);
-  assert.equal(rowByLabel('Итого по смете')?.[5], estimateResult.total, 'итог сметы в XLSX равен estimate().total');
+  assert.equal(rowByLabel('Итого до НДС')?.[5], estimateResult.total, 'итог до НДС в XLSX равен estimate().total');
   assert.equal(rowByLabel('Итого материалы')?.[5], estimateResult.materials);
   assert.equal(rowByLabel('Итого материалы')?.[6], '', 'у материалов нет источника цены');
   const laborRow = rowByLabel(worksLabel);
@@ -149,7 +149,8 @@ test('XLSX собирается в приложении и читается об
   assert.equal(laborRow![5], estimateResult.labor, 'стоимость работ — в колонке «Сумма, ₽»');
   assert.equal(laborRow![6], '', 'у работ колонка «Источник цены» пустая');
   assert.ok(!smeta.some(row => row[1] === 'Итого: Работы'), 'раздел работ не дублируется строкой «Итого: Работы»');
-  const equipmentLine = smeta.find(row => row[1] === 'Камера входа')!;
+  const cameraModel = project.equipment.find(item => item.number === 'К1')!.properties.model;
+  const equipmentLine = smeta.find(row => row[1] === cameraModel)!;
   assert.equal(equipmentLine[0], 'Оборудование');
   assert.equal(equipmentLine[2], 'шт');
   assert.equal(equipmentLine[4], 6500, 'цена камеры входа из демо-справочника');
@@ -174,7 +175,7 @@ test('XLSX собирается в приложении и читается об
   const commercialHeaderIndex = commercial.findIndex(row => row[0] === 'Раздел' && row[1] === 'Сумма, ₽');
   assert.ok(commercialHeaderIndex > 0, 'нет шапки коммерческого предложения');
   const commercialRow = (label: string) => commercial.find(row => row[0] === label);
-  assert.equal(commercialRow('Итого')?.[1], estimateResult.total);
+  assert.equal(commercialRow('Итого до НДС')?.[1], estimateResult.total);
   assert.equal(commercialRow('Итого материалы')?.[1], estimateResult.materials);
   assert.equal(commercialRow(worksLabel)?.[1], estimateResult.labor);
   const commercialSections = commercial.slice(commercialHeaderIndex + 1, commercial.indexOf(commercialRow('Итого материалы')!)).map(row => row[0]);
@@ -185,9 +186,9 @@ test('XLSX собирается в приложении и читается об
   const catalog = XLSX.utils.sheet_to_json<unknown[]>(workbook.Sheets['Справочник цен'], { header: 1, defval: '' });
   assert.deepEqual(catalog[0], CATALOG_HEADER);
   assert.equal(catalog.length, project.catalog!.length + 1);
-  const camera = catalog.find(row => row[1] === 'Камера входа')!;
-  assert.deepEqual(camera, ['Оборудование', 'Камера входа', 'шт', 6500, '']);
-  assert.deepEqual(catalog.find(row => row[1] === 'КВК-П 2×0.75'), ['Кабель', 'КВК-П 2×0.75', 'м', 38, '']);
+  const camera = catalog.find(row => row[1] === cameraModel)!;
+  assert.deepEqual(camera, ['Оборудование', cameraModel, 'шт', 6500, '']);
+  assert.deepEqual(catalog.find(row => row[1] === 'КВК-П 2×0,75'), ['Кабель', 'КВК-П 2×0,75', 'м', 38, '']);
   assert.deepEqual(catalog.find(row => row[1] === 'Стояк'), ['КНС', 'Стояк', 'м', 620, '']);
   for (const row of catalog.slice(1)) {
     assert.ok(['Оборудование', 'Кабель', 'КНС'].includes(String(row[0])), `неизвестный вид позиции: ${String(row[0])}`);
@@ -259,16 +260,15 @@ test('смета считается по цене за метр и не подм
   assert.ok(calc.total !== null);
   assert.ok(Math.abs((calc.cost ?? 0) - calc.total! * cable.quantity * 50) < 1e-6);
 
-  // Учебный проект уже со стоимостью: у всех демо-кабелей цена 38 ₽/м,
-  // поэтому и цена, и стоимость попадают в журнал числом.
+  // Учебный проект уже со стоимостью: у каждой марки своя цена, и она попадает в журнал.
   const demo = createDemoProject();
-  assert.ok(demo.cables.every(item => item.pricePerMeter === 38), 'в демо у всех кабелей цена 38 ₽/м');
+  assert.ok(demo.cables.every(item => typeof item.pricePerMeter === 'number' && item.pricePerMeter > 0), 'в демо у всех кабелей задана цена');
   assert.ok(demo.cables.every(item => calculateCable(demo, item).cost !== null), 'в демо стоимость считается');
   const demoJournal = exportSheets(demo)[0];
-  for (const row of demoJournal.rows.slice(1)) {
-    assert.equal(row[16], 38, 'колонка «Цена, ₽/м» = 38');
+  demoJournal.rows.slice(1).forEach((row, index) => {
+    assert.equal(row[16], demo.cables[index].pricePerMeter, 'колонка «Цена, ₽/м» равна цене кабеля');
     assert.ok(typeof row[17] === 'number' && Number.isFinite(row[17]), 'колонка «Стоимость, ₽» — число');
-  }
+  });
 
   const noPrice = createDemoProject();
   for (const item of noPrice.cables) delete item.pricePerMeter;
@@ -326,11 +326,12 @@ test('CSV содержит диаметр, сечение и раздел зап
   const estimateResult = estimate(project);
   const smetaStart = lines.indexOf('"Смета"');
   assert.equal(lines[smetaStart + 1], '"Раздел";"Позиция";"Ед.";"Количество";"Цена, ₽";"Сумма, ₽";"Источник цены";"Примечание"');
-  const smetaTotal = lines.find(line => line.startsWith('"";"Итого по смете"'));
-  assert.ok(smetaTotal, 'в CSV нет итога по смете');
+  const smetaTotal = lines.find(line => line.startsWith('"";"Итого до НДС"'));
+  assert.ok(smetaTotal, 'в CSV нет итога до НДС');
   assert.equal(Number(smetaTotal!.split(';')[5].slice(1, -1).replace(',', '.')), Number(estimateResult.total!.toFixed(3)), 'итог сметы в CSV равен estimate().total');
   assert.equal(smetaTotal!.split(';')[4], '""', 'неизвестное количество в CSV пустое, а не 0');
-  assert.ok(lines.some(line => line.startsWith('"Оборудование";"Камера входа";"шт";"6500";')), 'в CSV-смете нет позиции из справочника');
+  const cameraModel = project.equipment.find(item => item.number === 'К1')!.properties.model;
+  assert.ok(lines.some(line => line.startsWith(`"Оборудование";"${cameraModel}";"шт";"6500";`)), 'в CSV-смете нет позиции из справочника');
   const worksLine = lines.find(line => line.startsWith('"";"Работы (25 %)"'));
   assert.ok(worksLine, 'в CSV-смете нет строки работ «Работы (25 %)»');
   const worksCells = worksLine!.split(';');
@@ -341,7 +342,7 @@ test('CSV содержит диаметр, сечение и раздел зап
   const commercialStart = lines.indexOf('"Коммерческое предложение"');
   assert.equal(lines[commercialStart + 1], `"Проект";"${project.name}"`);
   assert.equal(lines[commercialStart + 2], `"Дата прайса";"${project.catalogDate}"`);
-  assert.ok(lines.includes(`"Итого";"${Number(estimateResult.total!.toFixed(3)).toString().replace('.', ',')}"`), 'в CSV-КП нет итога');
+  assert.ok(lines.includes(`"Итого до НДС";"${Number(estimateResult.total!.toFixed(3)).toString().replace('.', ',')}"`), 'в CSV-КП нет итога до НДС');
   const kpHeaderIndex = lines.findIndex((line, index) => index > commercialStart && line === '"Раздел";"Сумма, ₽"');
   assert.ok(!lines.some(line => line === `"Работы";"${Number(estimateResult.labor!.toFixed(3)).toString().replace('.', ',')}"`), 'раздел «Работы» не дублируется в КП');
   const kpMaterialsIndex = lines.findIndex((line, index) => index > kpHeaderIndex && line.startsWith('"Итого материалы";'));
@@ -350,7 +351,7 @@ test('CSV содержит диаметр, сечение и раздел зап
   assert.ok(!lines.some(line => line === `"Работы";"${estimateResult.labor}"`), 'раздел «Работы» не дублируется в КП');
   const catalogStart = lines.indexOf('"Справочник цен"');
   assert.equal(lines[catalogStart + 1], '"Вид";"Наименование";"Ед.";"Цена, ₽";"Примечание"');
-  assert.ok(lines.slice(catalogStart + 2).includes('"Оборудование";"Камера входа";"шт";"6500";""'), 'в CSV-справочнике нет позиции демо');
+  assert.ok(lines.slice(catalogStart + 2).includes(`"Оборудование";"${cameraModel}";"шт";"6500";""`), 'в CSV-справочнике нет позиции демо');
 });
 
 test('незаданные размеры выгружаются как null/пусто, а не как 0', () => {
@@ -453,14 +454,18 @@ test('смета демо сходится: материалы + работы = 
   const warnings = sheets.find(sheet => sheet.name === 'Предупреждения')!;
   assert.deepEqual(warnings.rows, [['Предупреждение']], 'лист предупреждений пуст: нет цен-заглушек и ошибок');
   const smeta = sheets.find(sheet => sheet.name === 'Смета')!;
+  const rowByLabel = (label: string) => smeta.rows.find(row => row[1] === label);
   assert.ok(!smeta.rows.some(row => row[1] === 'Итого: Работы'), 'нет дублирующей строки «Итого: Работы»');
   const worksRow = smeta.rows.find(row => row[1] === `Работы (${project.estimate!.laborPercent} %)`)!;
   assert.equal(worksRow[4], '', 'цена работ пустая');
   assert.equal(worksRow[5], result.labor, 'стоимость работ в «Сумма, ₽»');
   assert.equal(worksRow[6], '', 'источник цены пустой');
-  assert.equal(smeta.rows.at(-3)![1], 'Итого материалы');
-  assert.equal(smeta.rows.at(-2)![1], `Работы (${project.estimate!.laborPercent} %)`);
-  assert.equal(smeta.rows.at(-1)![1], 'Итого по смете');
+  assert.equal(rowByLabel('Итого материалы')?.[5], result.materials);
+  assert.equal(rowByLabel(`Работы (${project.estimate!.laborPercent} %)`)?.[5], result.labor);
+  assert.equal(rowByLabel('Итого до НДС')?.[5], result.total);
+  assert.equal(rowByLabel('НДС 20 %')?.[5], result.vat);
+  assert.equal(rowByLabel('Итого с НДС')?.[5], result.gross);
+  assert.equal(smeta.rows.at(-1)![1], 'Округление: до 1 ₽');
 });
 
 test('без справочника цен и процента работ смета неполная: «—» и предупреждение, а не 0', async () => {
@@ -488,7 +493,8 @@ test('без справочника цен и процента работ сме
   assert.equal(laborRow[5], null, 'работы не рассчитаны — null, не 0');
   assert.equal(laborRow[6], '', 'у работ колонка «Источник цены» пустая');
   assert.ok(!smeta.rows.some(row => row[1] === 'Итого: Работы'), 'раздел работ не дублируется');
-  const equipmentRow = smeta.rows.find(row => row[1] === 'Камера входа')!;
+  const equipmentModel = project.equipment.find(item => item.number === 'К1')!.properties.model;
+  const equipmentRow = smeta.rows.find(row => row[1] === equipmentModel)!;
   assert.equal(equipmentRow[4], null, 'неизвестная цена — null, не 0');
   assert.equal(equipmentRow[5], null);
   assert.equal(equipmentRow[6], null, 'источник цены неизвестен');
@@ -496,7 +502,7 @@ test('без справочника цен и процента работ сме
   const warningsSheet = sheets.find(sheet => sheet.name === 'Предупреждения')!;
   const warnings = warningsSheet.rows.slice(1).map(row => String(row[0]));
   for (const warning of result.warnings) assert.ok(warnings.includes(warning), `нет предупреждения: ${warning}`);
-  assert.ok(warnings.some(warning => warning.includes('Камера входа')), 'предупреждение об отсутствии цены должно называть позицию');
+  assert.ok(warnings.some(warning => warning.includes(equipmentModel)), 'предупреждение об отсутствии цены должно называть позицию');
 
   const commercial = sheets.find(sheet => sheet.name === 'Коммерческое предложение')!;
   assert.deepEqual(commercial.rows[1], ['Дата прайса', '—'], 'без даты прайса — «—», не 0');
@@ -636,8 +642,8 @@ test('PDF: схема трасс показывает метраж гофры и
   project.routes[2].type = 'Кабель-канал';
   const { text } = await pdfText(await buildJournalPdf(project, fonts));
   assert.ok(text.includes('Схема трасс'), 'нет раздела «Схема трасс»');
-  assert.ok(text.includes('Гофра — 37,5 м'), 'нет суммарной длины гофры');
-  assert.ok(text.includes('Кабель-канал — 17,5 м, углов 1'), 'нет углов кабельного канала');
+  assert.ok(text.includes('Гофра — 39 м'), 'нет суммарной длины гофры');
+  assert.ok(text.includes('Кабель-канал — 44 м, углов 3'), 'нет углов кабельного канала');
 });
 
 
