@@ -284,7 +284,7 @@ export function createDemoProject(): Project {
     },
     document: {
       organization: 'ООО «Проект-Монтаж»',
-      object: 'Учебный объект: офис на 2 этажа',
+      object: 'Офис на 2 этажа',
       documentCode: 'АП-2026-01',
       city: 'Екатеринбург',
       title: 'Кабельный журнал и смета',

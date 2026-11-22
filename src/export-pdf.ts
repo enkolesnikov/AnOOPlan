@@ -5,7 +5,7 @@ import { PDFDocument, rgb, type PDFFont, type PDFImage, type PDFPage } from 'pdf
 import fontkit from '@pdf-lib/fontkit';
 import type { Cable, Project } from './model';
 import { cableSection, calculateCable, domainWarnings, routeSectionsText, specificationKnS, specifications, validateProject } from './engine';
-import { estimate } from './estimate';
+import { estimate, normalizeRounding, roundMoney } from './estimate';
 import { netLabel } from './sheets';
 import type { JournalFonts } from './export-fonts';
 
@@ -456,12 +456,15 @@ class Renderer {
     let metersComplete = true;
     let cost = 0;
     let costComplete = true;
+    // Та же стоимость, что в смете: строка округляется правилом проекта, а не
+    // сырая цена × метраж — иначе в одном PDF два разных итога кабелей.
+    const rounding = normalizeRounding(project.estimate?.rounding) ?? 0.01;
     for (const cable of project.cables) {
       const result = calculateCable(project, cable);
       if (result.total === null) metersComplete = false;
       else meters += result.total * cable.quantity;
       if (result.cost === null) costComplete = false;
-      else cost += result.cost;
+      else cost += roundMoney(result.cost, rounding);
     }
     const parts = [
       metersComplete ? `Итого кабеля по журналу: ${formatNumber(meters)} м` : 'Итого кабеля по журналу: рассчитано не полностью',
@@ -549,18 +552,22 @@ class Renderer {
    * почти пустой страницей с одними подписями). */
   async plans(items: JournalPlan[], reserveBottom = 0): Promise<TocEntry[]> {
     const entries: TocEntry[] = [];
+    // Один масштаб на все листы планов: иначе последний лист (с резервом под подписи)
+    // печатался мельче остальных, и этажи выглядели в разных масштабах.
+    const noteLinesOf = (item: JournalPlan) => (item.note ? wrapText(item.note, this.regular, 8.6, this.content).length : 0);
+    const sharedMaxHeight = Math.max(160, Math.min(380,
+      this.contentHeight - 110 - Math.max(0, ...items.map(noteLinesOf)) * 13 - reserveBottom));
     for (let index = 0; index < items.length; index += 1) {
       const item = items[index];
       const reserve = index === items.length - 1 ? reserveBottom : 0;
       // Заголовок и изображение должны попасть на один лист: резервируем место сразу
       // под заголовок, примечание и фактическую высоту картинки. Иначе заголовок
       // остаётся сиротой внизу листа, а план уезжает на следующий (регрессия 2.3.0).
-      const noteLines = item.note ? wrapText(item.note, this.regular, 8.6, this.content).length : 0;
+      const noteLines = noteLinesOf(item);
       let rendered: { image: PDFImage; width: number; height: number } | null;
       try {
         const image = await this.document.embedPng(item.png);
-        const maxHeight = Math.max(160, Math.min(380, this.contentHeight - 110 - noteLines * 13 - reserve));
-        const scale = Math.min(this.content / image.width, maxHeight / image.height);
+        const scale = Math.min(this.content / image.width, sharedMaxHeight / image.height);
         rendered = { image, width: image.width * scale, height: image.height * scale };
       } catch {
         rendered = null;
@@ -710,7 +717,9 @@ class Renderer {
 
   finish(project?: Project): void {
     const total = this.pages.length;
-    const today = new Date().toLocaleDateString('ru-RU');
+    // Колонтитул подписывает документ, а не момент экспорта: дата генерации в нём
+    // расходилась с датой документа на титуле и в штампе.
+    const today = formatDateRu((project?.document?.date ?? '').trim()) || new Date().toLocaleDateString('ru-RU');
     this.pages.forEach((page, index) => {
       const titlePage = index === 0;
       // Рамка листа и колонтитул с названием проекта — документ можно подписывать постранично.
@@ -754,7 +763,13 @@ function buildSections(project: Project, estimateResult: EstimateResult): Sectio
   const specKnS = specificationKnS(project);
   const equipmentNumber = (id: string) => project.equipment.find(item => item.id === id)?.number || '—';
 
-  const journal = project.cables.map(cable => {
+  // Итог журнала — последней строкой таблицы, а не только плашкой на листе плана:
+  // документ читают по разделу, и «Итого» должно стоять под данными.
+  let journalMeters = 0;
+  let journalCost = 0;
+  let journalComplete = true;
+  const journalRounding = normalizeRounding(project.estimate?.rounding) ?? 0.01;
+  const journal: TableRow[] = project.cables.map(cable => {
     const result = calculateCable(project, cable);
     const section = cableSection(cable);
     // Примечание кабеля печатается второй строкой в ячейке «Кабель / марка»:
@@ -778,6 +793,36 @@ function buildSections(project: Project, estimateResult: EstimateResult): Sectio
       result.complete ? 'полный' : 'неполный',
     ];
   });
+  for (const cable of project.cables) {
+    const result = calculateCable(project, cable);
+    if (result.total === null || !Number.isFinite(cable.quantity)) journalComplete = false;
+    else journalMeters += result.total * cable.quantity;
+    if (result.cost === null) journalComplete = false;
+    else journalCost += roundMoney(result.cost, journalRounding);
+  }
+  if (journal.length) {
+    journal.push({
+      cells: [
+        'Итого',
+        '',
+        '',
+        '',
+        '',
+        '',
+        '',
+        '',
+        '',
+        '',
+        '',
+        journalComplete ? formatNumber(journalMeters) : '—',
+        '',
+        journalComplete ? formatMoney(journalCost) : '—',
+        journalComplete ? '' : 'неполный',
+      ],
+      bold: true,
+      zebra: true,
+    });
+  }
 
   // Смета: строки работ по видам — только в режиме 'items'; итоги — с НДС и округлением.
   const estimateRows: TableRow[] = [];
@@ -847,9 +892,9 @@ function buildSections(project: Project, estimateResult: EstimateResult): Sectio
     }
     knsRows.push({
       cells: [
-        `Итого по подсистеме: ${group.subsystem}`,
+        'Итого по подсистеме',
         '',
-        '',
+        group.subsystem,
         'м',
         formatNumber(group.length),
         group.angles ? String(group.angles) : '—',

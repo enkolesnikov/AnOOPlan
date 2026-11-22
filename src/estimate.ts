@@ -505,10 +505,12 @@ export function estimate(project: Project): EstimateResult {
   // База без НДС. При «НДС в цене» total — уже сумма с налогом, поэтому строка
   // «Итого до НДС» должна показывать net, а не total.
   let net: number | null;
-  if (vatRateInvalid || total === null) net = null;
-  else if (vatIncluded) net = vatRate !== null && vatRate > 0
-    ? (vat === null ? null : roundMoney(total - vat, moneyRounding))
-    : total;
+  // Нетто известно и при мусорной ставке, если цены даны без НДС: налог на итог
+  // не влияет, и «Итого до НДС» не должно пропадать из-за ошибки в ставке.
+  if (total === null) net = null;
+  else if (!vatIncluded) net = total;
+  else if (vatRateInvalid) net = null;
+  else if (vatRate !== null && vatRate > 0) net = vat === null ? null : roundMoney(total - vat, moneyRounding);
   else net = total;
   const sections = [equipmentSection, cableSection, traySection, worksSection];
   const vatKnown = !vatRateInvalid && (vatRate === null || vatRate === 0 || vat !== null);

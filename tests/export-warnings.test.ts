@@ -68,8 +68,8 @@ test('повреждённое количество не попадает в ж�
   const project = longTwistedPairProject();
   project.cables[0].quantity = Number.NaN;
   const journal = exportSheets(project).find(sheet => sheet.name === 'Кабельный журнал')!;
-  assert.equal(journal.rows[1][9], null, 'количество в XLSX-листе — пусто, а не NaN');
-  assert.equal(journal.rows[1][15], null, 'итог с количеством — пусто, а не NaN');
+  assert.equal(journal.rows[1][8], null, 'количество в XLSX-листе — пусто, а не NaN');
+  assert.equal(journal.rows[1][14], null, 'итог с количеством — пусто, а не NaN');
   const csv = clientCsv(project);
   assert.doesNotMatch(csv, /NaN|Infinity/, 'CSV не должен содержать NaN/Infinity');
 });

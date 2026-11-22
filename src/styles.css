@@ -1058,3 +1058,26 @@ button, input, select, textarea, summary,
 /* Иконки инструментов — локальный SVG, а не emoji/символы системного шрифта. */
 .tool-group button svg, .tool-sheet button svg { flex: 0 0 auto; width: 18px; height: 18px; }
 @media (max-width: 1023px) { .tool-group button svg, .tool-sheet button svg { width: 22px; height: 22px; } }
+
+/* 2.10.1: телефоны и планшеты — меньше наложений и обрезанных подписей. */
+@media (max-width: 1023px) {
+  /* На документных экранах undo/redo висят поверх таблиц и перехватывают тапы. */
+  .app-shell.view-estimate .history-fab,
+  .app-shell.view-journal .history-fab,
+  .app-shell.view-specs .history-fab { display: none; }
+  /* Тач-цели: кнопки и поля не ниже 44 px (Android-рекомендация). */
+  .top-actions button, .sidebar-project button, .document-title button.primary,
+  .estimate-controls .field input, .estimate-controls .field select, .sheet button { min-height: 44px; }
+  /* «＋ Кабель» больше не сжимается в столбик по буквам. */
+  .document-title .primary { flex: 0 0 auto; white-space: nowrap; }
+  .document-title { flex-wrap: wrap; gap: 8px; }
+  /* Имя проекта в шапке: эллипсис вместо обрезки посреди слова. */
+  .project-heading { min-width: 0; }
+  .project-heading input { text-overflow: ellipsis; }
+  /* Подписи вкладок сайдбара не рвутся по слогам. */
+  .sidebar-tabs button { overflow-wrap: normal; word-break: normal; font-size: 11px; }
+}
+@media (pointer: coarse) {
+  /* Кнопка закрытия свойств доступна и на планшете: панель можно свернуть. */
+  .properties-close { display: inline-flex; }
+}

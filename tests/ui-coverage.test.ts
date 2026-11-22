@@ -406,7 +406,7 @@ test('смета: редактор справочника — дата, прав
   project.catalogDate = '2026-01-01';
   const screen = await mountScreen(project);
   try {
-    assert.match(plain(screen.container.textContent ?? ''), /Дата прайса: 2026-01-01/);
+    assert.match(plain(screen.container.textContent ?? ''), /Дата прайса: 01\.01\.2026/);
     const date = byLabel<HTMLInputElement>(screen, 'Дата прайса');
     await setInput(screen, date, '');
     assert.equal(screen.project().catalogDate, null, 'пустая дата — null');

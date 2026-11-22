@@ -33,6 +33,9 @@ const finiteCell = (value: unknown): number | null => typeof value === 'number' 
 const roundCell = (value: number | null, digits = 3): number | null =>
   value === null || !Number.isFinite(value) ? null : Number(value.toFixed(digits));
 
+/** Деньги в ячейке — ровно до копейки: «#,##0.00» не прячет хвосты 665.9499999999999 от SUM. */
+const roundMoney2 = (value: number | null): number | null => roundCell(value, 2);
+
 /** Диаметр кабеля для выгрузки: незаданное значение остаётся null, а не превращается в 0. */
 function cableDiameter(cable: Cable): number | null {
   const value = cable.outerDiameterMm;
@@ -80,12 +83,12 @@ export function exportSheets(project: Project): ExportSheet[] {
   const specs = specifications(project);
   const specKnS = specificationKnS(project);
   const estimateResult = estimate(project);
-  const journal: Cell[][] = [['Номер', 'Наименование', 'Марка', 'Диаметр, мм', 'S каб., мм²', 'Назначение', 'От', 'До', 'Трасса (ID)', 'Количество', 'Геометрия, м', 'Запас трассы, м', 'Запас кабеля, м', 'Запас концов, м', 'Итог одного, м', 'Итог с количеством, м', 'Цена, ₽/м', 'Стоимость, ₽', 'Расчёт полный', 'Предупреждения', 'Примечание']];
+  const journal: Cell[][] = [['Номер', 'Наименование', 'Марка', 'Диаметр, мм', 'S каб., мм²', 'Назначение', 'От', 'До', 'Количество', 'Геометрия, м', 'Запас трассы, м', 'Запас кабеля, м', 'Запас концов, м', 'Итог одного, м', 'Итог с количеством, м', 'Цена, ₽/м', 'Стоимость, ₽', 'Расчёт полный', 'Предупреждения', 'Примечание']];
   for (const cable of project.cables) {
     const result = calculateCable(project, cable);
     const section = cableSection(cable);
     const name = (id: string) => project.equipment.find(e => e.id === id)?.number || id;
-    journal.push([cable.number, cable.name, cable.brand, cableDiameter(cable), roundCell(section.areaMm2), cable.purpose, name(cable.fromId), name(cable.toId), cable.segmentIds.join(' → '), finiteCell(cable.quantity), roundCell(result.geometry), roundCell(result.routeReserve), roundCell(result.cableReserve), roundCell(result.endReserve), roundCell(result.total), roundCell(result.total === null || finiteCell(cable.quantity) === null ? null : result.total * cable.quantity), result.pricePerMeter, result.cost, result.complete, result.errors.join('; '), cable.note]);
+    journal.push([cable.number, cable.name, cable.brand, cableDiameter(cable), roundCell(section.areaMm2), cable.purpose, name(cable.fromId), name(cable.toId), finiteCell(cable.quantity), roundCell(result.geometry), roundCell(result.routeReserve), roundCell(result.cableReserve), roundCell(result.endReserve), roundCell(result.total), roundCell(result.total === null || finiteCell(cable.quantity) === null ? null : result.total * cable.quantity), result.pricePerMeter, result.cost, result.complete, result.errors.join('; '), cable.note]);
   }
 
   // Смета: позиции материальных разделов и их итоги; в режиме работ по видам строки работ
@@ -97,18 +100,18 @@ export function exportSheets(project: Project): ExportSheet[] {
   const estimateRows: Cell[][] = [['Раздел', 'Позиция', 'Ед.', 'Количество', 'Цена, ₽', 'Сумма, ₽', 'Источник цены', 'Примечание']];
   for (const section of materialSections) {
     for (const line of section.lines) {
-      estimateRows.push([section.title, line.name, line.unit, line.quantity, line.price, line.total, priceSourceLabel(line.priceSource), line.note]);
+      estimateRows.push([section.title, line.name, line.unit, roundCell(line.quantity), roundMoney2(line.price), roundMoney2(line.total), priceSourceLabel(line.priceSource), line.note]);
     }
-    estimateRows.push(['', `Итого: ${section.title}`, '', '', '', section.total, '', '']);
+    estimateRows.push(['', `Итого: ${section.title}`, '', '', '', roundMoney2(section.total), '', '']);
   }
   if (estimateResult.worksMode === 'items') {
     for (const line of worksSection?.lines ?? []) {
-      estimateRows.push([worksSection?.title ?? 'Работы', line.name, line.unit, line.quantity, line.price, line.total, priceSourceLabel(line.priceSource), line.note]);
+      estimateRows.push([worksSection?.title ?? 'Работы', line.name, line.unit, roundCell(line.quantity), roundMoney2(line.price), roundMoney2(line.total), priceSourceLabel(line.priceSource), line.note]);
     }
     estimateRows.push(['', `Итого: ${worksSection?.title ?? 'Работы'}`, '', '', '', estimateResult.labor, '', '']);
   }
-  estimateRows.push(['', 'Итого материалы', '', '', '', estimateResult.materials, '', '']);
-  estimateRows.push(['', laborLabel(estimateResult.laborPercent, estimateResult.worksMode), '', '', '', estimateResult.labor, '', '']);
+  estimateRows.push(['', 'Итого материалы', '', '', '', roundMoney2(estimateResult.materials), '', '']);
+  estimateRows.push(['', laborLabel(estimateResult.laborPercent, estimateResult.worksMode), '', '', '', roundMoney2(estimateResult.labor), '', '']);
   estimateRows.push(['', vatCharged(estimateResult) ? netLabel(estimateResult) : 'Итого по смете', '', '', '', estimateResult.net, '', '']);
   if (vatCharged(estimateResult)) {
     estimateRows.push(['', vatLabel(estimateResult), '', '', '', estimateResult.vat, '', '']);
@@ -130,6 +133,9 @@ export function exportSheets(project: Project): ExportSheet[] {
   const commercialFromRow = commercial.length;
   commercial.push(['Раздел', 'Сумма, ₽']);
   for (const section of materialSections) commercial.push([section.title, section.total]);
+  // Итоги идут после данных и в автофильтр не входят: у заказчика сортировка
+  // иначе перемешала бы «Итого материалы» с разделами.
+  const commercialLastDataRow = commercial.length - 1;
   commercial.push(['Итого материалы', estimateResult.materials]);
   commercial.push([laborLabel(estimateResult.laborPercent, estimateResult.worksMode), estimateResult.labor]);
   commercial.push([vatCharged(estimateResult) ? netLabel(estimateResult) : 'Итого', estimateResult.net]);
@@ -138,7 +144,7 @@ export function exportSheets(project: Project): ExportSheet[] {
     commercial.push(['Итого с НДС', estimateResult.gross]);
   }
   // Хвост «Цены с НДС» отделён пустой строкой: фильтр его не накрывает.
-  const commercialToRow = commercial.length - 1;
+  const commercialToRow = commercialLastDataRow;
   commercial.push([]);
   commercial.push([pricesVatLabel(estimateResult)]);
 
@@ -149,7 +155,7 @@ export function exportSheets(project: Project): ExportSheet[] {
     for (const line of specKnS.lines.filter(item => item.subsystem === subsystem.subsystem)) {
       knsRows.push([line.name, line.section, line.subsystem, line.unit, line.quantity, line.angles || null, line.article, line.manufacturer, line.price, line.cost]);
     }
-    knsRows.push([`Итого по подсистеме: ${subsystem.subsystem}`, '', '', 'м', subsystem.length, subsystem.angles || null, '', '', '', subsystem.cost]);
+    knsRows.push(['Итого по подсистеме', '', subsystem.subsystem, 'м', subsystem.length, subsystem.angles || null, '', '', '', subsystem.cost]);
   }
   knsRows.push([]);
   knsRows.push(['Итого по типам', '', '', '', '', '', '', '', '', '']);

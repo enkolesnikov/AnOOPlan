@@ -263,10 +263,18 @@ test('net: без НДС совпадает с total, с НДС «в цене» 
   assert.ok(includedResult.net! < includedResult.total!, 'база без НДС меньше суммы с налогом');
 });
 
-test('net: null при неверной ставке НДС и при неизвестном итоге', () => {
+test('net: при неверной ставке НДС известен, если цены без налога; null при «в цене» и неизвестном итоге', () => {
   const invalid = base();
   invalid.estimate = { laborPercent: 25, vatRate: 150 };
-  assert.equal(estimate(invalid).net, null);
+  // Ставка влияет только на НДС и итог с НДС: при ценах без налога «Итого до НДС» известно.
+  const invalidResult = estimate(invalid);
+  assert.equal(invalidResult.net, invalidResult.total);
+  assert.equal(invalidResult.vat, null);
+  assert.equal(invalidResult.gross, null);
+
+  const invalidIncluded = base();
+  invalidIncluded.estimate = { laborPercent: 25, vatRate: 150, vatIncluded: true };
+  assert.equal(estimate(invalidIncluded).net, null, 'при «НДС в цене» нетто неизвестно');
 
   const unknownTotal = base();
   unknownTotal.estimate = { laborPercent: 25, vatRate: 20, vatIncluded: true };

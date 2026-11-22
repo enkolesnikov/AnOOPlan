@@ -238,7 +238,9 @@ test('КНС: подытоги по подсистемам и «Всего КН�
 
   const flat = squash((await pdfInfo(await buildJournalPdf(project, fonts))).text);
   for (const group of spec.subsystems) {
-    assert.ok(flat.includes(`Итого по подсистеме: ${group.subsystem}`), `нет подытога «${group.subsystem}»`);
+    // Подытог идёт одной строкой: «Итого по подсистеме» в первой колонке,
+    // имя подсистемы — в своей колонке (раньше оно переносилось на строку ниже).
+    assert.ok(flat.includes(`Итого по подсистеме ${group.subsystem}`), `нет подытога «${group.subsystem}»`);
   }
   assert.ok(flat.includes('Итого по типам'), 'нет итогов по типам');
   assert.ok(flat.includes('Всего КНС:'), 'нет строки «Всего КНС»');

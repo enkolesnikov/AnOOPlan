@@ -32,7 +32,7 @@ const squash = (value: string): string => value.replace(/\s+/g, ' ');
 // Деньги в PDF печатаются до копейки (formatMoney), количества — до трёх знаков.
 /** Деньги в PDF печатаются до копейки, поэтому ищем именно денежный формат. */
 const pdfMoney = (value: number | null): string => squash(formatMoney(value));
-const JOURNAL_HEADER = ['Номер', 'Наименование', 'Марка', 'Диаметр, мм', 'S каб., мм²', 'Назначение', 'От', 'До', 'Трасса (ID)', 'Количество', 'Геометрия, м', 'Запас трассы, м', 'Запас кабеля, м', 'Запас концов, м', 'Итог одного, м', 'Итог с количеством, м', 'Цена, ₽/м', 'Стоимость, ₽', 'Расчёт полный', 'Предупреждения', 'Примечание'];
+const JOURNAL_HEADER = ['Номер', 'Наименование', 'Марка', 'Диаметр, мм', 'S каб., мм²', 'Назначение', 'От', 'До', 'Количество', 'Геометрия, м', 'Запас трассы, м', 'Запас кабеля, м', 'Запас концов, м', 'Итог одного, м', 'Итог с количеством, м', 'Цена, ₽/м', 'Стоимость, ₽', 'Расчёт полный', 'Предупреждения', 'Примечание'];
 const FILL_HEADER = ['Трасса', 'Сегмент', 'Тип трассы', 'КНС, мм', 'Площадь КНС, мм²', 'Линий', 'Площадь кабелей, мм²', 'Заполнение, %', 'Статус'];
 
 const emptyProject = (): Project => ({
@@ -81,7 +81,7 @@ test('листы выгрузки совпадают по набору с сер
   assert.deepEqual(sheets.map(sheet => sheet.name), SHEETS);
   const [journal, equipment, , routeScheme, knSSpec, infrastructure, fill] = sheets;
   assert.deepEqual(journal.rows[0], JOURNAL_HEADER);
-  assert.equal(journal.rows[0].length, 21);
+  assert.equal(journal.rows[0].length, 20);
   assert.equal(journal.rows.length, createDemoProject().cables.length + 1);
   assert.deepEqual(equipment.rows[0], ['Тип', 'Модель', 'Этаж', 'Количество']);
   assert.deepEqual(infrastructure.rows[0], ['Тип', 'Длина, м', 'Сегментов', 'Кабелей', 'Макс. заполнение, %', 'Сегментов с превышением']);
@@ -265,8 +265,9 @@ test('смета считается по цене за метр и не подм
   assert.ok(demo.cables.every(item => calculateCable(demo, item).cost !== null), 'в демо стоимость считается');
   const demoJournal = exportSheets(demo)[0];
   demoJournal.rows.slice(1).forEach((row, index) => {
-    assert.equal(row[16], demo.cables[index].pricePerMeter, 'колонка «Цена, ₽/м» равна цене кабеля');
-    assert.ok(typeof row[17] === 'number' && Number.isFinite(row[17]), 'колонка «Стоимость, ₽» — число');
+    // После удаления колонки «Трасса (ID)»: цена — 15, стоимость — 16.
+    assert.equal(row[15], demo.cables[index].pricePerMeter, 'колонка «Цена, ₽/м» равна цене кабеля');
+    assert.ok(typeof row[16] === 'number' && Number.isFinite(row[16]), 'колонка «Стоимость, ₽» — число');
   });
 
   const noPrice = createDemoProject();
@@ -279,8 +280,8 @@ test('смета считается по цене за метр и не подм
   assert.equal(calculateCable(broken, broken.cables[0]).cost, null, 'неполный расчёт не даёт стоимость');
 
   const priceRow = exportSheets(project)[0].rows[1];
-  assert.equal(priceRow[16], 50);
-  assert.ok(typeof priceRow[17] === 'number');
+  assert.equal(priceRow[15], 50);
+  assert.ok(typeof priceRow[16] === 'number');
 });
 
 test('PDF: оглавление не теряет разделы при большом числе планов', async () => {

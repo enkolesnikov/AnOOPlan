@@ -57,17 +57,18 @@ test('ширины колонок, автофильтр и высота шапк
   const journal = workbookSheet(bytes, 'Кабельный журнал');
   const cols = journal['!cols'] as XLSX.ColInfo[];
   assert.ok(Array.isArray(cols), 'у журнала нет !cols');
-  assert.equal(cols.length, 21, 'ширина задана для всех 21 колонки журнала');
+  assert.equal(cols.length, 20, 'ширина задана для всех 20 колонок журнала');
   for (const [index, column] of cols.entries()) {
     assert.ok(typeof column.wch === 'number' && column.wch > 0, `колонка ${index + 1} без ширины`);
     assert.ok(column.wch! >= 8 && column.wch! <= 48, `ширина колонки ${index + 1} вне диапазона: ${column.wch}`);
   }
   // Деньги и метры — числа: ширина не растягивается значениями свыше 24,
   // но и шапка не обрезается.
-  for (const index of [3, 4, 9, 10, 14, 16, 17]) {
+  // После удаления внутренней колонки «Трасса (ID)» числовые колонки сдвинулись на одну.
+  for (const index of [3, 4, 8, 9, 13, 15, 16]) {
     assert.ok(cols[index].wch! <= 24, `числовая колонка ${index + 1} шире 24: ${cols[index].wch}`);
   }
-  assert.ok(cols[15].wch! >= 'Итог с количеством, м'.length, 'длинная шапка числовой колонки обрезана');
+  assert.ok(cols[14].wch! >= 'Итог с количеством, м'.length, 'длинная шапка числовой колонки обрезана');
 
   const rows = journal['!rows'] as XLSX.RowInfo[];
   assert.ok(Array.isArray(rows), 'у журнала нет !rows');
@@ -75,12 +76,12 @@ test('ширины колонок, автофильтр и высота шапк
 
   const filter = journal['!autofilter'] as XLSX.AutoFilterInfo;
   assert.ok(filter, 'у журнала нет автофильтра');
-  assert.match(filter.ref, /^A1:U\d+$/, 'автофильтр должен покрывать шапку журнала');
+  assert.match(filter.ref, /^A1:T\d+$/, 'автофильтр должен покрывать шапку журнала');
 
   // Сам файл: CE пишет autoFilter в лист и _xlnm._FilterDatabase в workbook.xml.
   // Неизменённые записи архива хранятся без сжатия, поэтому текст виден в байтах.
   const raw = new TextDecoder().decode(bytes);
-  assert.match(raw, /<autoFilter ref="A1:U\d+"\/>/, 'в XML листа нет autoFilter');
+  assert.match(raw, /<autoFilter ref="A1:T\d+"\/>/, 'в XML листа нет autoFilter');
   assert.ok(raw.includes('_xlnm._FilterDatabase'), 'в workbook.xml нет определённого имени фильтра');
   assert.match(raw, /<row r="1"[^>]*ht="30"/, 'в XML нет высоты строки шапки');
 });
@@ -137,7 +138,10 @@ test('автофильтр не накрывает итоги и служебн�
   assert.ok(headerRow > 0, 'шапка КП должна быть не в первой строке');
   assert.ok(totalRow > headerRow, 'в КП должны быть итоговые строки');
   const commercial = workbook.Sheets['Коммерческое предложение'];
-  assert.equal((commercial['!autofilter'] as XLSX.AutoFilterInfo).ref, `A${headerRow + 1}:B${totalRow + 1}`);
+  // Фильтр накрывает только разделы: строки «Итого…» в него не входят.
+  const materialsRow = commercialRows.findIndex(row => row[0] === 'Итого материалы');
+  assert.ok(materialsRow > headerRow, 'в КП должен быть итог материалов');
+  assert.equal((commercial['!autofilter'] as XLSX.AutoFilterInfo).ref, `A${headerRow + 1}:B${materialsRow}`);
   assert.equal(commercialRows[totalRow + 1].length, 0, 'перед примечанием о НДС должна быть пустая строка');
 
   // «Схема трасс»: фильтр заканчивается на последней трассе, «Итого по типам» — вне его.
@@ -155,11 +159,12 @@ test('автофильтр не накрывает итоги и служебн�
   }
 
   // Количества и деньги — числа, деньги — с форматом «#,##0.00».
-  const quantity = journal['J2'];
+  // Колонки после удаления «Трасса (ID)»: количество — I, цена — P, стоимость — Q.
+  const quantity = journal['I2'];
   assert.equal(quantity.t, 'n', 'количество должно быть числом');
   assert.equal(typeof quantity.v, 'number');
   assert.equal(quantity.v, 1000);
-  for (const address of ['Q2', 'R2']) {
+  for (const address of ['P2', 'Q2']) {
     const cell = journal[address];
     assert.equal(cell.t, 'n', `${address}: деньги должны быть числом`);
     assert.equal(typeof cell.v, 'number');
@@ -171,9 +176,9 @@ test('автофильтр не накрывает итоги и служебн�
 
   // Денежная колонка не растянута до 48, но шапка влезает.
   const journalCols = journal['!cols'] as XLSX.ColInfo[];
-  assert.ok(journalCols[16].wch! >= 'Цена, ₽/м'.length);
-  assert.ok(journalCols[16].wch! <= 24);
-  assert.ok(journalCols[15].wch! >= 'Итог с количеством, м'.length, 'шапка числовой колонки обрезана');
+  assert.ok(journalCols[15].wch! >= 'Цена, ₽/м'.length);
+  assert.ok(journalCols[15].wch! <= 24);
+  assert.ok(journalCols[14].wch! >= 'Итог с количеством, м'.length, 'шапка числовой колонки обрезана');
 
   // Закрепление: у КП закреплены реквизиты и шапка (5 строк), данные — с A6.
   const frozen = await freezeHeaderRows(bytes);
@@ -223,9 +228,9 @@ test('пустой проект: книга собирается, автофил
   const journal = workbookSheet(bytes, 'Кабельный журнал');
   const filter = journal['!autofilter'] as XLSX.AutoFilterInfo;
   assert.ok(filter, 'автофильтр должен быть и без строк данных');
-  assert.equal(filter.ref, 'A1:U1', 'без данных автофильтр покрывает только шапку');
+  assert.equal(filter.ref, 'A1:T1', 'без данных автофильтр покрывает только шапку');
   const cols = journal['!cols'] as XLSX.ColInfo[];
-  assert.equal(cols.length, 21);
+  assert.equal(cols.length, 20);
 
   const frozen = await freezeHeaderRows(bytes);
   const xml = await readZipEntry(frozen, 'xl/worksheets/sheet1.xml');

@@ -353,7 +353,12 @@ export function EstimateScreen({ project, onChange, onMessage, onError }: {
   onError: (text: string) => void;
 }) {
   const result = useMemo(() => estimate(project), [project]);
-  const catalogDateText = project.catalogDate || result.catalogDate || 'не задана';
+  const rawCatalogDate = project.catalogDate || result.catalogDate;
+  // В интерфейсе та же дата, что в PDF: ДД.ММ.ГГГГ, а не ISO из модели.
+  const catalogDateText = rawCatalogDate
+    ? rawCatalogDate.replace(/^(\d{4})-(\d{2})-(\d{2})$/, '$3.$2.$1')
+    : 'не задана';
+  const noteText = (project.estimate?.note ?? '').trim().replace(/\.+$/, '');
   return <section className="document-view estimate-view">
     <div className="document-title">
       <div>
@@ -367,7 +372,7 @@ export function EstimateScreen({ project, onChange, onMessage, onError }: {
     {!result.complete && <EstimateWarnings warnings={result.warnings} />}
     {result.sections.map(section => <EstimateSection key={section.kind} section={section} result={result} />)}
     <EstimateTotals result={result} />
-    <p className="document-note">Смета считается по справочнику цен проекта; ручная цена кабеля приоритетнее справочника. Дата прайса: {catalogDateText}.{project.estimate?.note ? ` Примечание: ${project.estimate.note}.` : ''} Пустые цены не подменяются нулём — они помечены «—» и делают смету неполной.</p>
+    <p className="document-note">Смета считается по справочнику цен проекта; ручная цена кабеля приоритетнее справочника. Дата прайса: {catalogDateText}.{noteText ? ` Примечание: ${noteText}.` : ''} Пустые цены не подменяются нулём — они помечены «—» и делают смету неполной.</p>
     <WorksEditor project={project} onChange={onChange} />
     <CatalogEditor project={project} onChange={onChange} onMessage={onMessage} onError={onError} />
   </section>;

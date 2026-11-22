@@ -154,13 +154,14 @@ test('лист «Спецификация КНС»: подытоги по под
   const sheet = exportSheets(subsystemsProject()).find(item => item.name === 'Спецификация КНС')!;
   assert.deepEqual(sheet.rows[0], ['Наименование', 'Сечение', 'Подсистема', 'Ед.', 'Кол-во', 'Углы', 'Артикул', 'Производитель', 'Цена, ₽', 'Сумма, ₽']);
 
-  const rowIndex = (name: string): number => sheet.rows.findIndex(row => row[0] === name);
-  assert.deepEqual(sheet.rows[rowIndex('Итого по подсистеме: Магистральная')], ['Итого по подсистеме: Магистральная', '', '', 'м', 10, null, '', '', '', 4800]);
-  assert.deepEqual(sheet.rows[rowIndex('Итого по подсистеме: Горизонтальная')], ['Итого по подсистеме: Горизонтальная', '', '', 'м', 20, 1, '', '', '', 4200]);
-  assert.deepEqual(sheet.rows[rowIndex('Всего КНС')], ['Всего КНС', '', '', 'м', 30, null, '', '', '', 9000]);
+  // Подытог: «Итого по подсистеме» в первой колонке, имя подсистемы — в колонке «Подсистема».
+  const rowIndex = (name: string): number => sheet.rows.findIndex(row => row[0] === 'Итого по подсистеме' && row[2] === name);
+  assert.deepEqual(sheet.rows[rowIndex('Магистральная')], ['Итого по подсистеме', '', 'Магистральная', 'м', 10, null, '', '', '', 4800]);
+  assert.deepEqual(sheet.rows[rowIndex('Горизонтальная')], ['Итого по подсистеме', '', 'Горизонтальная', 'м', 20, 1, '', '', '', 4200]);
+  assert.deepEqual(sheet.rows.find(row => row[0] === 'Всего КНС'), ['Всего КНС', '', '', 'м', 30, null, '', '', '', 9000]);
 
   // Подытог идёт после строк своей подсистемы, а не впереди.
-  const horizontalSubtotal = rowIndex('Итого по подсистеме: Горизонтальная');
+  const horizontalSubtotal = rowIndex('Горизонтальная');
   const horizontalLines = sheet.rows
     .map((row, index) => ({ row, index }))
     .filter(item => item.row[2] === 'Горизонтальная' && item.row[1] !== '');
@@ -170,5 +171,6 @@ test('лист «Спецификация КНС»: подытоги по под
   // «Итого по типам»: у типа строка с единицей «м», метражом, углами и стоимостью.
   const typeTotal = sheet.rows.find(row => row[0] === 'Лоток' && row[1] === '' && row[3] === 'м')!;
   assert.deepEqual(typeTotal, ['Лоток', '', '', 'м', 15, null, '', '', '', 6300]);
-  assert.ok(rowIndex('Итого по типам') < rowIndex('Всего КНС'));
+  const indexOf = (label: string): number => sheet.rows.findIndex(row => row[0] === label);
+  assert.ok(indexOf('Итого по типам') < indexOf('Всего КНС'));
 });
