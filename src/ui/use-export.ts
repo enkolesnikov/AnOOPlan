@@ -89,8 +89,9 @@ export function useExport(s: WorkspaceState, io: ProjectIo) {
     // Один клиентский экспорт для браузера и серверного режима: серверного /export больше нет.
     if (!staticMode) await saveProject();
     if (kind === 'xlsx') {
-      const { buildWorkbook } = await import('../export-xlsx');
-      const blob = new Blob([buildWorkbook(exportSheets(current)) as unknown as BlobPart], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+      const { buildWorkbook, freezeHeaderRows } = await import('../export-xlsx');
+      const bytes = await freezeHeaderRows(buildWorkbook(exportSheets(current)));
+      const blob = new Blob([bytes as unknown as BlobPart], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
       return { blob, fileName: `${base}.xlsx`, warning: '' };
     }
     if (kind === 'pdf') {
