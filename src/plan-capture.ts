@@ -186,18 +186,6 @@ async function captureFloorGroup(project: Project, pdfId: string, floors: Floor[
 }
 
 /**
- * Все страницы PDF этажа (до MAX_PLAN_PAGES). Оверлей трасс/оборудования
- * наносится только на `floor.page`; остальные листы остаются чистой подложкой.
- */
-export async function capturePlanPages(project: Project, floor: Floor): Promise<PlanCaptureResult> {
-  if (!floor.pdfId) {
-    const plan = await fallbackPlan(project, floor);
-    return { plans: plan ? [plan] : [], warnings: [] };
-  }
-  return captureFloorGroup(project, floor.pdfId, [floor]);
-}
-
-/**
  * Листы «План» для этажей с оборудованием, трассами или пинами. Этажи с общим
  * PDF собираются в группу: документ читается и каждая страница рендерится один раз.
  */
