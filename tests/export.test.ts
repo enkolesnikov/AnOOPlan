@@ -236,7 +236,7 @@ test('PDF журнала собирается офлайн с кириллице
   const normalized = squash(text);
   assert.ok(text.includes('Смета'), 'нет секции сметы');
   assert.ok(text.includes('Коммерческое предложение'), 'нет секции коммерческого предложения');
-  assert.ok(text.includes('Итого по смете') || text.includes('Итого до НДС'), 'нет итога по смете');
+  assert.ok(text.includes('Итого до НДС'), 'нет итога до НДС');
   assert.ok(text.includes('Итого материалы'), 'нет итога по материалам');
   assert.ok(text.includes('Дата прайса: '), 'нет даты прайса в смете');
   assert.ok(normalized.includes(`Дата прайса: ${formatDateRu(project.catalogDate)}`), 'в PDF нет фактической даты прайса в виде ДД.ММ.ГГГГ');
