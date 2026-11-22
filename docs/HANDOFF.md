@@ -33,7 +33,7 @@
 - Подпись: SHA-256 сертификата `6431374cf6a7d385c4c47f0f2bf54fcb5ee5b2c7120f057b18c4062af92fe097`.
 - Текущий релиз: [v2.10.0 «Документы и смета»](https://github.com/enkolesnikov/AnOOPlan/releases/tag/v2.10.0) —
   подписанный APK `AnOOPlan-2.10.0.apk` (versionCode 47, 1 620 771 Б,
-  SHA-256 `53a9c64f89c759f4e712757a5914da0eb923d2b38781d59809a71cbf873f01f1`), заметки — [RELEASE-NOTES-2.10.0.md](RELEASE-NOTES-2.10.0.md),
+  SHA-256 `bfbdb88418f7284851017d3163935b4f13bbd6dee0ac69ea53fef9b338180f7c`), заметки — [RELEASE-NOTES-2.10.0.md](RELEASE-NOTES-2.10.0.md),
   отчёт — [REPORT-2.10.0.md](REPORT-2.10.0.md).
 - Предыдущий релиз: [v2.9.1 «Точность и скорость»](https://github.com/enkolesnikov/AnOOPlan/releases/tag/v2.9.1) —
   APK `AnOOPlan-2.9.1.apk` (versionCode 46, 1 612 488 Б, SHA-256 `926779d9…ca48d9`).

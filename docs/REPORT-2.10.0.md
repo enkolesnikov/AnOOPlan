@@ -6,8 +6,15 @@
 - **Версия:** 2.10.0, `androidVersionCode` 47 (было 46).
 - **APK:** `AnOOPlan-2.10.0.apk`, **1 620 771 Б**, сертификат `6431374c…92fe097` (не менялся),
   разрешение только `VIBRATE`, `INTERNET` нет.
-- **SHA-256 APK:** `53a9c64f89c759f4e712757a5914da0eb923d2b38781d59809a71cbf873f01f1`.
-- **GitHub Release:** <https://github.com/enkolesnikov/AnOOPlan/releases/tag/v2.10.0>.
+- **SHA-256 APK:** `bfbdb88418f7284851017d3163935b4f13bbd6dee0ac69ea53fef9b338180f7c`.
+- **GitHub Release:** <https://github.com/enkolesnikov/AnOOPlan/releases/tag/v2.10.0> — заголовок
+  «AnOOPlan 2.10.0 — Документы и смета», ассеты: APK, `.apk.sha256`, три PNG.
+- **APK в релизе собран CI** (`android-release.yml` на коммите `116552f`), сертификат и разрешения
+  проверены на скачанном файле: versionCode 47, versionName 2.10.0, только `VIBRATE`, 1 620 771 Б,
+  SHA-256 `bfbdb884…80f7c`. Локальная сборка из того же кода отличается байтами (ZIP-таймстампы),
+  поэтому в документах указан SHA **опубликованного** ассета.
+- **CI на релизном коммите:** CI 113 с — success, CodeQL 98 с — success, Gitleaks 12 с — success,
+  Deploy to Pages — success; открытых алертов CodeQL — 0.
 
 ## Что сделано
 

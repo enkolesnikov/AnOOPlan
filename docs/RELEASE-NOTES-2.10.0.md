@@ -6,7 +6,7 @@
 `INTERNET` нет, внешних вызовов нет; `.anooplan` и старые проекты открываются как раньше.
 
 **APK:** `AnOOPlan-2.10.0.apk` · 1 620 771 Б · Android 7.0+ (minSdk 24, targetSdk 35)
-**SHA-256 APK:** `53a9c64f89c759f4e712757a5914da0eb923d2b38781d59809a71cbf873f01f1`
+**SHA-256 APK:** `bfbdb88418f7284851017d3163935b4f13bbd6dee0ac69ea53fef9b338180f7c`
 **Подпись:** прежний сертификат SHA-256 `6431374c…92fe097`; versionCode 47.
 
 ## Что вошло
