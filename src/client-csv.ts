@@ -1,7 +1,7 @@
 import type { Cable, Project } from './model';
 import { cableSection, calculateCable, routeSectionsText, specificationKnS, specifications } from './engine';
 import { estimate } from './estimate';
-import { PRICE_KIND_LABELS, laborLabel, priceSourceLabel, pricesVatLabel, vatCharged, vatLabel } from './sheets';
+import { PRICE_KIND_LABELS, laborLabel, netLabel, priceSourceLabel, pricesVatLabel, vatCharged, vatLabel } from './sheets';
 
 /** Диаметр кабеля для выгрузки: незаданное значение остаётся пустым, а не превращается в 0. */
 function cableDiameter(cable: Cable): number | null {
@@ -58,7 +58,7 @@ export function clientCsv(project: Project): string {
   }
   rows.push(['', 'Итого материалы', '', '', '', estimateResult.materials, '', '']);
   rows.push(['', worksLabel, '', '', '', estimateResult.labor, '', '']);
-  rows.push(['', vatCharged(estimateResult) ? 'Итого до НДС' : 'Итого по смете', '', '', '', estimateResult.total, '', '']);
+  rows.push(['', vatCharged(estimateResult) ? netLabel(estimateResult) : 'Итого по смете', '', '', '', estimateResult.net, '', '']);
   if (vatCharged(estimateResult)) {
     rows.push(['', vatLabel(estimateResult), '', '', '', estimateResult.vat, '', '']);
     rows.push(['', 'Итого с НДС', '', '', '', estimateResult.gross, '', '']);
@@ -75,7 +75,7 @@ export function clientCsv(project: Project): string {
   for (const section of materialSections) rows.push([section.title, section.total]);
   rows.push(['Итого материалы', estimateResult.materials]);
   rows.push([worksLabel, estimateResult.labor]);
-  rows.push([vatCharged(estimateResult) ? 'Итого до НДС' : 'Итого', estimateResult.total]);
+  rows.push([vatCharged(estimateResult) ? netLabel(estimateResult) : 'Итого', estimateResult.net]);
   if (vatCharged(estimateResult)) {
     rows.push([vatLabel(estimateResult), estimateResult.vat]);
     rows.push(['Итого с НДС', estimateResult.gross]);

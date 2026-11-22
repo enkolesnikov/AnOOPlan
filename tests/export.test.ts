@@ -5,7 +5,7 @@ import * as XLSX from 'xlsx';
 import { exportSheets } from '../src/sheets';
 import { clientCsv } from '../src/client-csv';
 import { buildWorkbook } from '../src/export-xlsx';
-import { buildJournalPdf, formatNumber } from '../src/export-pdf';
+import { buildJournalPdf, formatDateRu, formatMoney, formatNumber } from '../src/export-pdf';
 import type { JournalFonts } from '../src/export-fonts';
 import { createDemoProject } from '../src/demo';
 import { calculateCable, specifications } from '../src/engine';
@@ -29,7 +29,10 @@ const CATALOG_HEADER = ['Вид', 'Наименование', 'Ед.', 'Цена
 
 /** PDF-текст: любые пробельные разделители (nbsp) сводим к обычному пробелу для сравнения. */
 const squash = (value: string): string => value.replace(/\s+/g, ' ');
+// Деньги в PDF печатаются до копейки (formatMoney), количества — до трёх знаков.
 const pdfNumber = (value: number | null): string => squash(formatNumber(value));
+/** Деньги в PDF печатаются до копейки, поэтому ищем именно денежный формат. */
+const pdfMoney = (value: number | null): string => squash(formatMoney(value));
 const JOURNAL_HEADER = ['Номер', 'Наименование', 'Марка', 'Диаметр, мм', 'Сечение, мм²', 'Назначение', 'От', 'До', 'Трасса (ID)', 'Количество', 'Геометрия, м', 'Запас трассы, м', 'Запас кабеля, м', 'Запас концов, м', 'Итог одного, м', 'Итог с количеством, м', 'Цена, ₽/м', 'Стоимость, ₽', 'Расчёт полный', 'Предупреждения', 'Примечание'];
 const FILL_HEADER = ['Трасса', 'Сегмент', 'Тип трассы', 'КНС, мм', 'Площадь КНС, мм²', 'Линий', 'Площадь кабелей, мм²', 'Заполнение, %', 'Статус'];
 
@@ -215,7 +218,7 @@ test('PDF журнала собирается офлайн с кириллице
 
   // Новые колонки журнала и секция заполнения лотка.
   assert.ok(text.includes('Ø, мм'), 'нет колонки диаметра');
-  assert.ok(text.includes('S, мм²'), 'нет колонки сечения');
+  assert.ok(text.includes('S каб., мм²'), 'нет колонки площади кабеля');
   assert.ok(text.includes('Заполнение КНС'), 'нет секции заполнения лотков');
   assert.ok(text.includes('Заполнение, %'), 'нет колонки процента заполнения');
   assert.ok(text.includes('Внимание выше 40'), 'в примечании нет порога 40 %');
@@ -233,16 +236,16 @@ test('PDF журнала собирается офлайн с кириллице
   const normalized = squash(text);
   assert.ok(text.includes('Смета'), 'нет секции сметы');
   assert.ok(text.includes('Коммерческое предложение'), 'нет секции коммерческого предложения');
-  assert.ok(text.includes('Итого по смете'), 'нет итога по смете');
+  assert.ok(text.includes('Итого по смете') || text.includes('Итого до НДС'), 'нет итога по смете');
   assert.ok(text.includes('Итого материалы'), 'нет итога по материалам');
   assert.ok(text.includes('Дата прайса: '), 'нет даты прайса в смете');
-  assert.ok(normalized.includes(`Дата прайса: ${project.catalogDate}`), 'в PDF нет фактической даты прайса');
+  assert.ok(normalized.includes(`Дата прайса: ${formatDateRu(project.catalogDate)}`), 'в PDF нет фактической даты прайса в виде ДД.ММ.ГГГГ');
   assert.ok(normalized.includes(project.estimate!.note!), 'в PDF нет примечания к смете');
   assert.ok(normalized.includes(`Работы (${project.estimate!.laborPercent} %)`), 'в PDF нет процента работ');
   assert.ok(!normalized.includes('Итого: Работы'), 'в PDF работы не дублируются строкой «Итого: Работы»');
-  assert.ok(normalized.includes(pdfNumber(estimateResult.total)), `в PDF нет итога сметы ${formatNumber(estimateResult.total)}`);
-  assert.ok(normalized.includes(pdfNumber(estimateResult.materials)), `в PDF нет материалов ${formatNumber(estimateResult.materials)}`);
-  assert.ok(normalized.includes(pdfNumber(estimateResult.labor)), `в PDF нет стоимости работ ${formatNumber(estimateResult.labor)}`);
+  assert.ok(normalized.includes(pdfMoney(estimateResult.net)), `в PDF нет итога сметы ${formatMoney(estimateResult.net)}`);
+  assert.ok(normalized.includes(pdfMoney(estimateResult.materials)), `в PDF нет материалов ${formatMoney(estimateResult.materials)}`);
+  assert.ok(normalized.includes(pdfMoney(estimateResult.labor)), `в PDF нет стоимости работ ${formatMoney(estimateResult.labor)}`);
   assert.ok(normalized.includes('6 500'), 'в смете PDF нет цены камеры из справочника');
   assert.ok(text.includes('Оборудование') && text.includes('Кабели') && text.includes('Лотки'), 'в PDF нет разделов сметы');
 });
@@ -532,7 +535,8 @@ test('PDF: титульный лист с реквизитами докумен�
   }
   assert.ok(title.includes('Екатеринбург · 2026'), 'на титуле нет города и года');
   assert.ok(title.includes('Составил') && title.includes('Проверил'), 'на титуле нет блока подписей');
-  assert.ok(title.includes(`Дата: ${document.date}`), 'на титуле нет даты документа');
+  const ruDate = (document.date ?? '').split('-').reverse().join('.');
+  assert.ok(title.includes(`Дата: ${ruDate}`), `на титуле нет даты документа в виде ДД.ММ.ГГГГ: ${ruDate}`);
   assert.ok(!title.includes('Разраб.'), 'на титульном листе не должно быть штампа');
   assert.ok(text.includes(project.name), 'название проекта не попало в PDF');
   assert.ok(pageTexts.length > 3, 'титул, оглавление и разделы должны занимать больше страниц');
@@ -588,7 +592,8 @@ test('PDF: лист регистрации изменений с записям�
   for (const entry of changes) {
     assert.ok(text.includes(entry.description), `нет описания изменения «${entry.description}»`);
     assert.ok(text.includes(entry.author), `нет автора изменения «${entry.author}»`);
-    assert.ok(text.includes(entry.date), `нет даты изменения «${entry.date}»`);
+    const ruDate = (entry.date ?? '').split('-').reverse().join('.');
+    assert.ok(text.includes(ruDate), `нет даты изменения «${ruDate}»`);
   }
   const noChanges = createDemoProject();
   noChanges.document = { ...noChanges.document, changeLog: [] };

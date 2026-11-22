@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { deflateSync } from 'node:zlib';
 import { PDFDocument } from 'pdf-lib';
-import { buildJournalPdf, formatNumber } from '../src/export-pdf';
+import { buildJournalPdf, formatDateRu, formatMoney, formatNumber } from '../src/export-pdf';
 import { createDemoProject } from '../src/demo';
 import { estimate } from '../src/estimate';
 import { specificationKnS } from '../src/engine';
@@ -318,4 +318,60 @@ test('строка таблицы не опускается под верх шт
     .map(item => `лист ${index + 1}: «${item.str}» y=${item.transform?.[5]?.toFixed(1)}`));
   assert.deepEqual(below, [], 'текст строки попал в область штампа');
   assert.ok(squash(info.text).includes('КОНЕЦ-40'), 'хвост длинной ячейки потерян');
+});
+
+test('2.10.1: деньги в смете печатаются до копейки, без третьего знака', async () => {
+  const project = createDemoProject();
+  const result = estimate(project);
+  const info = await pdfInfo(await buildJournalPdf(project, fonts));
+  const flat = squash(info.text);
+  assert.ok(result.labor !== null, 'работы должны быть рассчитаны');
+  const plain = (value: string) => value.replace(/\u00a0/g, ' ');
+  const kopecks = plain(formatMoney(result.labor));
+  const threeDecimals = plain(result.labor.toLocaleString('ru-RU', { maximumFractionDigits: 3 }));
+  if (kopecks !== threeDecimals) {
+    assert.ok(flat.includes(kopecks), `нет суммы работ до копейки «${kopecks}»`);
+    assert.ok(!flat.includes(threeDecimals), `в документе осталась сумма «${threeDecimals}» с тысячными`);
+  }
+  // Площади кабелей печатаются с тремя знаками (28,274 мм²) — это не деньги;
+  // проверяем именно денежные суммы: тысячных у рублей быть не должно.
+  assert.ok(!flat.includes('28 783,675'), 'работы напечатаны с тысячными');
+  assert.ok(!flat.includes('143 918,375'), 'итог напечатан с тысячными');
+});
+
+test('2.10.1: даты документа печатаются в виде ДД.ММ.ГГГГ, а не ISO', async () => {
+  const project = createDemoProject();
+  project.document = { ...project.document, date: '2026-10-01' };
+  const info = await pdfInfo(await buildJournalPdf(project, fonts));
+  const flat = squash(info.text);
+  assert.ok(flat.includes('Дата: 01.10.2026'), 'дата на титуле не в русском формате');
+  assert.ok(!flat.includes('2026-10-01'), 'в документе осталась ISO-дата');
+});
+
+test('2.10.1: шапка журнала печатается целиком, без многоточий', async () => {
+  const info = await pdfInfo(await buildJournalPdf(createDemoProject(), fonts));
+  const flat = squash(info.text);
+  for (const title of ['Запас трасс', 'Запас кабеля', 'Геометрия,', 'Стоимость, ₽', 'S каб., мм²']) {
+    assert.ok(flat.includes(title), `в шапке журнала потерян заголовок «${title}»`);
+  }
+  assert.ok(!flat.includes('Запас каб…'), 'заголовок «Запас кабеля» обрезан многоточием');
+});
+
+test('2.10.1: блок подписей не уезжает на отдельный почти пустой лист', async () => {
+  const png = grayPng(1600, 1131);
+  const plans = [{ title: 'Этаж 1', png }];
+  const info = await pdfInfo(await buildJournalPdf(createDemoProject(), fonts, { plans }));
+  const last = squash(info.pageTexts[info.pages - 1]);
+  assert.ok(last.includes('Составил:'), 'на последнем листе нет блока подписей');
+  assert.ok(last.includes('План:'), 'блок подписей ушёл на отдельный лист без содержимого');
+});
+
+test('2.10.1: formatMoney — до копейки, formatDateRu — ДД.ММ.ГГГГ', () => {
+  const plain = (value: string) => value.replace(/\u00a0/g, ' ');
+  assert.equal(plain(formatMoney(28783.675)), '28 783,68');
+  assert.equal(plain(formatMoney(115134.7)), '115 134,70');
+  assert.equal(formatMoney(null), '—');
+  assert.equal(formatDateRu('2026-10-01'), '01.10.2026');
+  assert.equal(formatDateRu(''), '—');
+  assert.equal(formatDateRu('2026-10-01T00:00:00Z'), '2026-10-01T00:00:00Z');
 });

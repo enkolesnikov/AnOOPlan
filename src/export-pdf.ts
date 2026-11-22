@@ -6,6 +6,7 @@ import fontkit from '@pdf-lib/fontkit';
 import type { Cable, Project } from './model';
 import { cableSection, calculateCable, domainWarnings, routeSectionsText, specificationKnS, specifications, validateProject } from './engine';
 import { estimate } from './estimate';
+import { netLabel } from './sheets';
 import type { JournalFonts } from './export-fonts';
 
 export interface JournalPhoto { number: string; name: string; data: ArrayBuffer; mime: string }
@@ -101,6 +102,24 @@ export const formatNumber = (value: number | null): string => {
   if (value === null || value === undefined || !Number.isFinite(value)) return '—';
   return value.toLocaleString('ru-RU', { maximumFractionDigits: 3 });
 };
+
+/**
+ * Деньги в документе — не больше копеек. До 2.10.1 смета печатала «28 783,675 ₽»:
+ * процент работ от дробных материалов даёт третью цифру после запятой, а рубли
+ * в печатной форме живут до копейки.
+ */
+export const formatMoney = (value: number | null): string => {
+  if (value === null || value === undefined || !Number.isFinite(value)) return '—';
+  return value.toLocaleString('ru-RU', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+};
+
+/** Дата документа в русском виде ДД.ММ.ГГГГ; ISO-строка модели — для данных, не для печати. */
+export function formatDateRu(value: string | null | undefined): string {
+  const text = (value ?? '').trim();
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(text);
+  if (!match) return text || '—';
+  return `${match[3]}.${match[2]}.${match[1]}`;
+}
 
 /** Внешний диаметр кабеля: незаданное значение не подменяется нулём. */
 const cableDiameter = (cable: Cable): number | null => {
@@ -249,7 +268,7 @@ class Renderer {
     };
     signature('Составил', compiledBy, y);
     signature('Проверил', checkedBy, y - 28);
-    if (date) center(`Дата: ${date}`, y - 68, 10, this.regular);
+    if (date) center(`Дата: ${formatDateRu(date)}`, y - 68, 10, this.regular);
     const year = /^\d{4}/.test(date) ? date.slice(0, 4) : String(new Date().getFullYear());
     center(city ? `${city} · ${year}` : year, this.height - 500, 11, this.regular);
   }
@@ -307,15 +326,26 @@ class Renderer {
     const headerSize = 7.4 * this.scale;
     const lineHeight = size + 2.6 * this.scale;
     const padding = 4 * this.scale;
-    const headerHeight = 18 * this.scale;
     const rowPadding = padding * 1.4;
+    // Шапка переносится по словам, а не обрезается многоточием: «Запас кабеля»
+    // в 2.10.0 печаталось как «Запас каб…» и читалось как потерянный столбец.
+    const headerLines = columns.map((column, index) =>
+      wrapText(column.title, this.bold, headerSize, Math.max(1, widths[index] - padding * 2)));
+    const headerLineCount = Math.max(1, ...headerLines.map(lines => lines.length));
+    const headerHeight = Math.max(18 * this.scale, headerLineCount * (headerSize + 1.8) + padding * 1.6);
 
     const drawHeader = (): void => {
       this.page.drawRectangle({ x: this.margin, y: this.y - headerHeight, width: this.content, height: headerHeight, color: BRAND });
       let x = this.margin;
-      columns.forEach((column, index) => {
-        this.page.drawText(fitText(column.title, this.bold, headerSize, Math.max(1, widths[index] - padding * 2)), {
-          x: x + padding, y: this.y - headerHeight + 6, size: headerSize, font: this.bold, color: WHITE,
+      headerLines.forEach((lines, index) => {
+        lines.forEach((line, lineIndex) => {
+          this.page.drawText(line, {
+            x: x + padding,
+            y: this.y - padding * 0.8 - headerSize - lineIndex * (headerSize + 1.8),
+            size: headerSize,
+            font: this.bold,
+            color: WHITE,
+          });
         });
         x += widths[index];
       });
@@ -435,7 +465,7 @@ class Renderer {
     }
     const parts = [
       metersComplete ? `Итого кабеля по журналу: ${formatNumber(meters)} м` : 'Итого кабеля по журналу: рассчитано не полностью',
-      costComplete && project.cables.length ? `стоимость: ${formatNumber(cost)} ₽` : 'стоимость: цены заданы не для всех кабелей',
+      costComplete && project.cables.length ? `стоимость: ${formatMoney(cost)} ₽` : 'стоимость: цены заданы не для всех кабелей',
     ];
     this.ensure(40);
     this.page.drawRectangle({ x: this.margin, y: this.y - 22, width: this.content, height: 22, color: ZEBRA });
@@ -447,7 +477,14 @@ class Renderer {
     const compiledBy = (project.document?.compiledBy || '').trim();
     const checkedBy = (project.document?.checkedBy || '').trim();
     const date = (project.document?.date || '').trim() || new Date().toLocaleDateString('ru-RU');
-    this.ensure(96);
+    // Одинокий блок подписей внизу листа лучше, чем почти пустой лист с тремя строками.
+    const needed = 98;
+    if (this.y - needed < this.contentBottom) {
+      this.addPage();
+      this.y -= 2;
+      this.page.drawText('Подписи', { x: this.margin, y: this.y - 13, size: 12, font: this.bold, color: BRAND });
+      this.y -= 24;
+    }
     this.y -= 6;
     this.page.drawLine({ start: { x: this.margin, y: this.y }, end: { x: this.margin + this.content, y: this.y }, thickness: 0.8, color: BORDER });
     this.y -= 22;
@@ -464,7 +501,7 @@ class Renderer {
       this.page.drawText('подпись', { x: lineEnd + 6, y: this.y, size: 7.5, font: this.regular, color: MUTED });
       this.y -= 26;
     }
-    this.page.drawText(`Дата: ${date}`, { x: this.margin, y: this.y, size: 9, font: this.regular, color: BRAND });
+    this.page.drawText(`Дата: ${formatDateRu(date)}`, { x: this.margin, y: this.y, size: 9, font: this.regular, color: BRAND });
     this.page.drawText('Документ сформирован в AnOOPlan', { x: this.margin + this.content - 170, y: this.y, size: 7.5, font: this.regular, color: MUTED });
     this.y -= 18;
   }
@@ -507,10 +544,14 @@ class Renderer {
     return page;
   }
 
-  /** Планы этажей; возвращает записи оглавления (по одной на план). */
-  async plans(items: JournalPlan[]): Promise<TocEntry[]> {
+  /** Планы этажей; возвращает записи оглавления (по одной на план). `reserveBottom` —
+   * место под последующий блок подписей на последнем листе (чтобы документ не заканчивался
+   * почти пустой страницей с одними подписями). */
+  async plans(items: JournalPlan[], reserveBottom = 0): Promise<TocEntry[]> {
     const entries: TocEntry[] = [];
-    for (const item of items) {
+    for (let index = 0; index < items.length; index += 1) {
+      const item = items[index];
+      const reserve = index === items.length - 1 ? reserveBottom : 0;
       // Заголовок и изображение должны попасть на один лист: резервируем место сразу
       // под заголовок, примечание и фактическую высоту картинки. Иначе заголовок
       // остаётся сиротой внизу листа, а план уезжает на следующий (регрессия 2.3.0).
@@ -518,13 +559,13 @@ class Renderer {
       let rendered: { image: PDFImage; width: number; height: number } | null;
       try {
         const image = await this.document.embedPng(item.png);
-        const maxHeight = Math.max(160, Math.min(380, this.contentHeight - 110 - noteLines * 13));
+        const maxHeight = Math.max(160, Math.min(380, this.contentHeight - 110 - noteLines * 13 - reserve));
         const scale = Math.min(this.content / image.width, maxHeight / image.height);
         rendered = { image, width: image.width * scale, height: image.height * scale };
       } catch {
         rendered = null;
       }
-      this.ensure(56 + noteLines * 13 + 10 + (rendered ? rendered.height + 16 : 20));
+      this.ensure(56 + noteLines * 13 + 10 + (rendered ? rendered.height + 16 : 20) + reserve);
       const title = `План: ${item.title}`;
       const page = this.heading(title, 'Подложка этажа и нанесённые трассы с оборудованием — лист для подписи.');
       entries.push({ title, page });
@@ -599,9 +640,9 @@ class Renderer {
       ['Утв.', '—'],
     ];
     const rowHeight = this.stamp.height / signatureRows.length;
-    const labelWidth = 42;
-    const nameWidth = 62;
-    const signWidth = 42;
+    const labelWidth = 40;
+    const nameWidth = 76;
+    const signWidth = 44;
     [x0 + labelWidth, x0 + labelWidth + nameWidth, x0 + labelWidth + nameWidth + signWidth]
       .forEach(x => line({ x, y: y0 }, { x, y: y1 }));
     signatureRows.forEach(([label, value], index) => {
@@ -623,7 +664,7 @@ class Renderer {
       ['Лист', String(sheet)],
       ['№ докум.', (document.documentCode ?? '').trim() || '—'],
       ['Подп.', '—'],
-      ['Дата', (lastChange?.date ?? '').trim() || '—'],
+      ['Дата', formatDateRu(lastChange?.date)],
     ];
     const headerFractions = [0.08, 0.1, 0.34, 0.24, 0.24];
     let cursor = middleX;
@@ -729,8 +770,8 @@ function buildSections(project: Project, estimateResult: EstimateResult): Sectio
       formatNumber(result.total),
       Number.isFinite(cable.quantity) ? String(cable.quantity) : '—',
       formatNumber(result.total === null || !Number.isFinite(cable.quantity) ? null : result.total * cable.quantity),
-      formatNumber(result.pricePerMeter),
-      formatNumber(result.cost),
+      formatMoney(result.pricePerMeter),
+      formatMoney(result.cost),
       result.complete ? 'полный' : 'неполный',
     ];
   });
@@ -744,11 +785,11 @@ function buildSections(project: Project, estimateResult: EstimateResult): Sectio
         line.name || '—',
         line.unit || '—',
         formatNumber(line.quantity),
-        formatNumber(line.price),
-        formatNumber(line.total),
+        formatMoney(line.price),
+        formatMoney(line.total),
       ]);
     }
-    estimateRows.push(['', `Итого: ${section.title}`, '', '', '', formatNumber(section.total)]);
+    estimateRows.push(['', `Итого: ${section.title}`, '', '', '', formatMoney(section.total)]);
   }
   if (estimateResult.worksMode === 'items') {
     const worksSection = estimateResult.sections.find(item => item.kind === 'work');
@@ -758,29 +799,29 @@ function buildSections(project: Project, estimateResult: EstimateResult): Sectio
         line.name || '—',
         line.unit || '—',
         formatNumber(line.quantity),
-        formatNumber(line.price),
-        formatNumber(line.total),
+        formatMoney(line.price),
+        formatMoney(line.total),
       ]);
     }
   }
-  estimateRows.push(['', 'Итого материалы', '', '', '', formatNumber(estimateResult.materials)]);
-  estimateRows.push(['', laborSummaryLabel(estimateResult), '', '', '', formatNumber(estimateResult.labor)]);
-  estimateRows.push(['', vatCharged(estimateResult) ? 'Итого до НДС' : 'Итого по смете', '', '', '', formatNumber(estimateResult.total)]);
+  estimateRows.push(['', 'Итого материалы', '', '', '', formatMoney(estimateResult.materials)]);
+  estimateRows.push(['', laborSummaryLabel(estimateResult), '', '', '', formatMoney(estimateResult.labor)]);
+  estimateRows.push(['', vatCharged(estimateResult) ? netLabel(estimateResult) : 'Итого по смете', '', '', '', formatMoney(estimateResult.net)]);
   if (vatCharged(estimateResult)) {
-    estimateRows.push(['', vatLabel(estimateResult), '', '', '', formatNumber(estimateResult.vat)]);
-    estimateRows.push(['', 'Итого с НДС', '', '', '', formatNumber(estimateResult.gross)]);
+    estimateRows.push(['', vatLabel(estimateResult), '', '', '', formatMoney(estimateResult.vat)]);
+    estimateRows.push(['', 'Итого с НДС', '', '', '', formatMoney(estimateResult.gross)]);
   }
 
   // Коммерческое предложение: те же итоги с НДС, примечание о ценах с налогом/без.
   const commercialRows: TableRow[] = [
-    ...estimateResult.sections.filter(section => section.kind !== 'work').map(section => [section.title, formatNumber(section.total)]),
-    ['Итого материалы', formatNumber(estimateResult.materials)],
-    [laborSummaryLabel(estimateResult), formatNumber(estimateResult.labor)],
-    [vatCharged(estimateResult) ? 'Итого до НДС' : 'Итого', formatNumber(estimateResult.total)],
+    ...estimateResult.sections.filter(section => section.kind !== 'work').map(section => [section.title, formatMoney(section.total)]),
+    ['Итого материалы', formatMoney(estimateResult.materials)],
+    [laborSummaryLabel(estimateResult), formatMoney(estimateResult.labor)],
+    [vatCharged(estimateResult) ? netLabel(estimateResult) : 'Итого', formatMoney(estimateResult.net)],
   ];
   if (vatCharged(estimateResult)) {
-    commercialRows.push([vatLabel(estimateResult), formatNumber(estimateResult.vat)]);
-    commercialRows.push(['Итого с НДС', formatNumber(estimateResult.gross)]);
+    commercialRows.push([vatLabel(estimateResult), formatMoney(estimateResult.vat)]);
+    commercialRows.push(['Итого с НДС', formatMoney(estimateResult.gross)]);
   }
 
   // Спецификация КНС: строки идут блоками по подсистемам, после блока — подытог.
@@ -798,7 +839,7 @@ function buildSections(project: Project, estimateResult: EstimateResult): Sectio
         formatNumber(line.quantity),
         line.angles ? String(line.angles) : '—',
         [line.article, line.manufacturer].filter(Boolean).join(' / ') || '—',
-        formatNumber(line.cost),
+        formatMoney(line.cost),
       ]);
     }
     knsRows.push({
@@ -810,7 +851,7 @@ function buildSections(project: Project, estimateResult: EstimateResult): Sectio
         formatNumber(group.length),
         group.angles ? String(group.angles) : '—',
         '',
-        formatNumber(group.cost),
+        formatMoney(group.cost),
       ],
       bold: true,
       zebra: true,
@@ -826,12 +867,12 @@ function buildSections(project: Project, estimateResult: EstimateResult): Sectio
       formatNumber(line.quantity),
       line.angles ? String(line.angles) : '—',
       [line.article, line.manufacturer].filter(Boolean).join(' / ') || '—',
-      formatNumber(line.cost),
+      formatMoney(line.cost),
     ]);
   }
 
   const estimateNote = [
-    `Дата прайса: ${estimateResult.catalogDate ?? '—'}`,
+    `Дата прайса: ${formatDateRu(estimateResult.catalogDate)}`,
     estimateResult.rounding !== null ? `Округление: до ${formatNumber(estimateResult.rounding)} ₽` : '',
     'Неизвестные значения показаны как «—» и не заменяются нулём.',
   ].filter(Boolean).join(' · ');
@@ -840,23 +881,23 @@ function buildSections(project: Project, estimateResult: EstimateResult): Sectio
     {
       id: 'journal',
       title: 'Кабельный журнал',
-      note: 'Длина одного кабеля учитывает геометрию трассы, запасы трасс и кабеля, концевые запасы. Неполные данные помечены и не заменяются нулём.',
+      note: 'Длина одного кабеля учитывает геометрию трассы, запасы трасс и кабеля, концевые запасы. «S каб.» — площадь по наружному диаметру для расчёта заполнения КНС, а не сечение жилы. Неполные данные помечены и не заменяются нулём.',
       columns: [
-        { title: '№', width: 32 },
-        { title: 'Кабель / марка', width: 148 },
-        { title: 'Ø, мм', width: 36, align: 'right' },
-        { title: 'S, мм²', width: 44, align: 'right' },
-        { title: 'От - до', width: 74 },
-        { title: 'Геометрия, м', width: 56, align: 'right' },
-        { title: 'Запас трасс', width: 50, align: 'right' },
-        { title: 'Запас кабеля', width: 50, align: 'right' },
-        { title: 'Концы', width: 40, align: 'right' },
-        { title: 'Итог / шт, м', width: 56, align: 'right' },
+        { title: '№', width: 28 },
+        { title: 'Кабель / марка', width: 136 },
+        { title: 'Ø, мм', width: 32, align: 'right' },
+        { title: 'S каб., мм²', width: 44, align: 'right' },
+        { title: 'От - до', width: 66 },
+        { title: 'Геометрия, м', width: 50, align: 'right' },
+        { title: 'Запас трасс', width: 52, align: 'right' },
+        { title: 'Запас кабеля', width: 54, align: 'right' },
+        { title: 'Концы', width: 36, align: 'right' },
+        { title: 'Итог / шт, м', width: 52, align: 'right' },
         { title: 'Кол.', width: 26, align: 'right' },
-        { title: 'Итого, м', width: 56, align: 'right' },
-        { title: 'Цена, ₽/м', width: 52, align: 'right' },
-        { title: 'Стоимость, ₽', width: 58, align: 'right' },
-        { title: 'Статус', width: 52 },
+        { title: 'Итого, м', width: 50, align: 'right' },
+        { title: 'Цена, ₽/м', width: 48, align: 'right' },
+        { title: 'Стоимость, ₽', width: 54, align: 'right' },
+        { title: 'Статус', width: 46 },
       ],
       rows: journal,
     },
@@ -987,7 +1028,7 @@ function buildSections(project: Project, estimateResult: EstimateResult): Sectio
       id: 'commercial',
       title: 'Коммерческое предложение',
       note: [
-        `Дата прайса: ${estimateResult.catalogDate ?? '—'}`,
+        `Дата прайса: ${formatDateRu(estimateResult.catalogDate)}`,
         project.estimate?.note ? `Примечание: ${project.estimate.note}` : '',
         estimateResult.vatIncluded ? 'Цены с НДС.' : 'Цены без НДС.',
         'Неизвестные значения не заменяются нулём.',
@@ -1035,7 +1076,7 @@ function buildSections(project: Project, estimateResult: EstimateResult): Sectio
         entry.version || '—',
         '—',
         entry.description || '—',
-        entry.date || '—',
+        formatDateRu(entry.date),
         entry.author || '—',
       ]),
     },
@@ -1089,7 +1130,12 @@ export async function buildJournalPdf(project: Project, fonts: JournalFonts, opt
     if (section.footer) renderer.paragraph(section.footer, MUTED);
   }
 
-  if (include.has('plans') && options.plans?.length) toc.push(...await renderer.plans(options.plans));
+  const plansLast = !warnings.length
+    && !(include.has('photos') && options.photos?.length)
+    && !(include.has('pinPhotos') && options.pinPhotos?.length);
+  if (include.has('plans') && options.plans?.length) {
+    toc.push(...await renderer.plans(options.plans, plansLast ? 104 : 0));
+  }
   if (include.has('photos') && options.photos?.length) {
     const page = await renderer.photos(options.photos);
     if (page !== null) toc.push({ title: 'Фотографии оборудования', page });

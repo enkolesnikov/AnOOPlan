@@ -58,6 +58,13 @@ export const vatCharged = (result: EstimateResult): boolean => result.vatRate !=
 export const vatLabel = (result: EstimateResult): string =>
   `НДС ${result.vatRate!.toLocaleString('ru-RU')} %${result.vatIncluded ? ' (в т.ч.)' : ''}`;
 
+/**
+ * Подпись строки «Итого до НДС». При `vatIncluded: true` сумма до налога — это нетто,
+ * и подпись говорит это прямо: иначе «до НДС» рядом с суммой с налогом читается как ошибка.
+ */
+export const netLabel = (result: EstimateResult): string =>
+  result.vatIncluded ? 'Итого до НДС (без НДС)' : 'Итого до НДС';
+
 /** Примечание о налоге в ценах: «Цены с НДС» / «Цены без НДС». */
 export const pricesVatLabel = (result: EstimateResult): string => (result.vatIncluded ? 'Цены с НДС' : 'Цены без НДС');
 
@@ -94,7 +101,7 @@ export function exportSheets(project: Project): ExportSheet[] {
   }
   estimateRows.push(['', 'Итого материалы', '', '', '', estimateResult.materials, '', '']);
   estimateRows.push(['', laborLabel(estimateResult.laborPercent, estimateResult.worksMode), '', '', '', estimateResult.labor, '', '']);
-  estimateRows.push(['', vatCharged(estimateResult) ? 'Итого до НДС' : 'Итого по смете', '', '', '', estimateResult.total, '', '']);
+  estimateRows.push(['', vatCharged(estimateResult) ? netLabel(estimateResult) : 'Итого по смете', '', '', '', estimateResult.net, '', '']);
   if (vatCharged(estimateResult)) {
     estimateRows.push(['', vatLabel(estimateResult), '', '', '', estimateResult.vat, '', '']);
     estimateRows.push(['', 'Итого с НДС', '', '', '', estimateResult.gross, '', '']);
@@ -117,7 +124,7 @@ export function exportSheets(project: Project): ExportSheet[] {
   for (const section of materialSections) commercial.push([section.title, section.total]);
   commercial.push(['Итого материалы', estimateResult.materials]);
   commercial.push([laborLabel(estimateResult.laborPercent, estimateResult.worksMode), estimateResult.labor]);
-  commercial.push([vatCharged(estimateResult) ? 'Итого до НДС' : 'Итого', estimateResult.total]);
+  commercial.push([vatCharged(estimateResult) ? netLabel(estimateResult) : 'Итого', estimateResult.net]);
   if (vatCharged(estimateResult)) {
     commercial.push([vatLabel(estimateResult), estimateResult.vat]);
     commercial.push(['Итого с НДС', estimateResult.gross]);
