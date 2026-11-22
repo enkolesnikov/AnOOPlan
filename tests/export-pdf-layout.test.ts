@@ -219,7 +219,7 @@ test('смета: работы по видам, НДС, округление и 
   assert.notEqual(result.vat, null);
 
   const flat = squash((await pdfInfo(await buildJournalPdf(project, fonts))).text);
-  for (const expected of ['Монтаж камеры', 'Пусконаладка', 'Итого материалы', 'Работы (по видам работ)', 'Итого до НДС', 'НДС 20 %', 'Итого с НДС', 'Округление: до 1 ₽', 'Цены без НДС']) {
+  for (const expected of ['Монтаж камеры', 'Пусконаладка', 'Итого материалы', 'Работы (по видам)', 'Итого до НДС', 'НДС 20 %', 'Итого с НДС', 'Округление: до 1 ₽', 'Цены без НДС']) {
     assert.ok(flat.includes(expected), `в PDF нет «${expected}»`);
   }
   assert.ok(flat.includes(squash(formatNumber(result.gross))), 'в PDF нет итога с НДС');

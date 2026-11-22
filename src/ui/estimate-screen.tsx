@@ -1,6 +1,6 @@
 import { useMemo, useRef, useState } from 'react';
 import type { PriceItem, PriceKind, Project, ProjectEstimate, WorkLine } from '../model';
-import { estimate, isCatalogDate, normalizeCatalog, normalizeRounding, roundMoney } from '../estimate';
+import { estimate, isCatalogDate, normalizeCatalog, normalizeRounding } from '../estimate';
 import { parseCatalogRows, mergeCatalog, type CatalogImportResult } from '../catalog-import';
 import { readCatalogFile } from '../catalog-file';
 import type { EstimateResult, EstimateSection as EstimateSectionData } from '../estimate';

@@ -41,7 +41,7 @@
           <h1>Кабельные планы<br /><span>без интернета</span></h1>
           <p class="lead">Загрузите PDF-план, расставьте оборудование, проведите трассы и получите кабельный журнал, ведомости и смету прямо на объекте — без сети, облака и аккаунтов.</p>
           <div class="actions">
-            <a class="btn primary" href="https://github.com/enkolesnikov/AnOOPlan/releases/latest">Скачать APK <small>2.9.1 · 1,6 МБ</small></a>
+            <a class="btn primary" href="https://github.com/enkolesnikov/AnOOPlan/releases/latest">Скачать APK <small>2.10.0 · 1,6 МБ</small></a>
             <a class="btn secondary" href="app/">Открыть веб-версию</a>
           </div>
           <ul class="proof" aria-label="Ключевые параметры">
@@ -61,7 +61,7 @@
       </section>
 
       <section class="stats wrap" aria-label="Коротко о приложении">
-        <div><strong>394</strong><span>юнит-тестов<i>плюс смоук, E2E и визуальные эталоны</i></span></div>
+        <div><strong>470</strong><span>юнит-тестов<i>плюс 241 смоук-проверка, E2E и визуальные эталоны</i></span></div>
         <div><strong>4</strong><span>формата экспорта<i>PDF, XLSX, CSV, .anooplan</i></span></div>
         <div><strong>∞</strong><span>этажей и проектов<i>всё хранится на устройстве</i></span></div>
         <div><strong>0 ₽</strong><span>без рекламы и подписок<i>никакой монетизации</i></span></div>
@@ -86,11 +86,11 @@
           </article>
           <article class="feature">
             <span class="ico" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M5 4h14v16H5zM8 8h8M8 12h8M8 16h5" /></svg></span>
-            <h3>Журнал и ведомости</h3><p>Кабельный журнал, спецификация КНС, схема трасс и ведомость замечаний — с печатью и экспортом.</p>
+            <h3>Журнал и ведомости</h3><p>Кабельный журнал, спецификация КНС с ценами по сечениям, схема трасс и ведомость замечаний — с печатью и экспортом.</p>
           </article>
           <article class="feature">
             <span class="ico" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 4v16M7 9h10M8 14h8" /></svg></span>
-            <h3>Смета и КП</h3><p>Материалы, работы по проценту и итоги по справочнику цен; коммерческое предложение в PDF и XLSX.</p>
+            <h3>Смета и КП</h3><p>Материалы, работы процентом или по видам, НДС и округление; итоги по разделам и коммерческое предложение в PDF и XLSX.</p>
           </article>
           <article class="feature">
             <span class="ico" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18zM3 12h18M12 3c3 3 3 15 0 18M12 3C9 6 9 18 12 21" /></svg></span>
@@ -102,17 +102,17 @@
       <section id="audit" class="section wrap">
         <div class="audit-card">
           <div>
-            <p class="eyebrow">Релиз 2.9.1 · ноябрь 2026</p>
-            <h2>Что нового в 2.9.1</h2>
-            <p class="section-lead">Релиз закрывает остатки аудита 2.9: углы на стыках и стояках, цены по сечениям, честные миграции, скорость ввода и перетаскивания. Каждый пункт — отдельный коммит с тестом.</p>
-            <p class="audit-more"><a href="https://github.com/enkolesnikov/AnOOPlan/blob/main/docs/RELEASE-NOTES-2.9.1.md">Заметки о релизе <span aria-hidden="true">↗</span></a></p>
+            <p class="eyebrow">Релиз 2.10.0 · ноябрь 2026</p>
+            <h2>Что нового в 2.10.0</h2>
+            <p class="section-lead">Комплект документов выходит из приложения без доработки в Excel: печатные формы со штампом ГОСТ, смета с НДС и работами по видам, цена КНС по сечению, аккуратная книга Excel. Каждый пункт — отдельный коммит с тестом.</p>
+            <p class="audit-more"><a href="https://github.com/enkolesnikov/AnOOPlan/blob/main/docs/RELEASE-NOTES-2.10.0.md">Заметки о релизе <span aria-hidden="true">↗</span></a></p>
           </div>
           <ul class="audit-list">
-            <li><b>Углы без потерь</b><span>цепочка строится в обе стороны, стояк не рвёт её, а угол на стыке разделённой трассы считается один раз</span></li>
-            <li><b>Цены по сечениям</b><span>смета даёт отдельные строки «Лоток · 100×50» и «Стояк · 50×50»; чужое сечение — прочерк и предупреждение, а не первая цена</span></li>
-            <li><b>Скорость</b><span>drag через requestAnimationFrame, totals из готовых расчётов и индекс заполнения: 16,7 мс/кадр на 2000 сегментах, без long tasks</span></li>
-            <li><b>Данные без подмены</b><span>количество 0/NaN и запасы не превращаются в правдоподобные числа; в журнале и CSV — прочерк</span></li>
-            <li><b>Надёжный экспорт</b><span>лист предупреждений, безопасное имя файла, PDF из IndexedDB на сервере и кэш хешированных ассетов</span></li>
+            <li><b>Смета с НДС</b><span>работы по видам или процентом, ставка НДС и признак «включён в цены», округление до копейки/рубля/10/100 ₽, итоги по разделам и КП</span></li>
+            <li><b>Цена КНС по сечению</b><span>артикул и цена подбираются под сечение, разные сечения — разные строки; подытоги по подсистемам и итоги по типам</span></li>
+            <li><b>Печатные формы</b><span>полный штамп ГОСТ 2.104 с «Лист N из M», формат A4/A3, масштаб таблиц и продолжение длинных ячеек без потери текста</span></li>
+            <li><b>XLSX</b><span>ширины колонок, автофильтр и закреплённая шапка; отдельные листы журнала, КНС, сметы и КП</span></li>
+            <li><b>Планы без дублей</b><span>общий PDF здания печатается один раз — по листу на страницу; этаж с одними замечаниями тоже получает лист</span></li>
           </ul>
         </div>
       </section>
@@ -143,7 +143,7 @@
         <div>
           <p class="eyebrow">Android</p>
           <h2>Скачайте AnOOPlan</h2>
-          <p>Бесплатно, без рекламы и встроенных покупок. Версия 2.9.1, Android 7.0+, WebView 98+.</p>
+          <p>Бесплатно, без рекламы и встроенных покупок. Версия 2.10.0, Android 7.0+, WebView 98+.</p>
           <div class="actions">
             <a class="btn primary" href="https://github.com/enkolesnikov/AnOOPlan/releases/latest">Скачать APK</a>
             <a class="btn secondary" href="app/">Открыть в браузере</a>
@@ -151,7 +151,7 @@
         </div>
         <aside class="download-card" aria-label="Параметры релиза">
           <span class="eyebrow">Релиз</span>
-          <strong>2.9.1</strong>
+          <strong>2.10.0</strong>
           <dl><div><dt>Размер</dt><dd>1,6 МБ</dd></div><div><dt>Подпись</dt><dd>release</dd></div><div><dt>Разрешения</dt><dd>VIBRATE</dd></div><div><dt>Сеть</dt><dd>не требуется</dd></div></dl>
           <a href="https://github.com/enkolesnikov/AnOOPlan" rel="noopener">Исходный код на GitHub <span aria-hidden="true">↗</span></a>
         </aside>

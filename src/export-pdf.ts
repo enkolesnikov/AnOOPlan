@@ -693,7 +693,7 @@ const laborLabel = (percent: number | null): string => (percent === null ? 'Ра
 
 /** Подпись работ: процент от материалов либо режим работ по видам. */
 const laborSummaryLabel = (result: EstimateResult): string =>
-  result.worksMode === 'items' ? 'Работы (по видам работ)' : laborLabel(result.laborPercent);
+  result.worksMode === 'items' ? 'Работы (по видам)' : laborLabel(result.laborPercent);
 
 /** Начисляется ли НДС: нулевая или отсутствующая ставка — не начисляется. */
 const vatCharged = (result: EstimateResult): boolean => result.vatRate !== null && result.vatRate > 0;
