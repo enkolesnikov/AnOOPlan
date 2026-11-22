@@ -174,8 +174,17 @@ export interface EstimateResult {
   laborPercent: number | null;
   /** Стоимость работ: процент от материалов или итог раздела работ по видам. */
   labor: number | null;
-  /** Итог ДО НДС (материалы + работы), уже округлённый при заданном `rounding`. */
+  /**
+   * Итог «материалы + работы».
+   * При `vatIncluded: true` это уже сумма с налогом (цены в справочнике с НДС),
+   * поэтому для «Итого до НДС» используйте `net`, а не `total`.
+   */
   total: number | null;
+  /**
+   * Итог БЕЗ НДС: `total − vat`, если цены уже включают НДС, иначе равен `total`.
+   * `null` — итог или НДС неизвестен (например, неверная ставка НДС).
+   */
+  net: number | null;
   complete: boolean;
   catalogDate: string | null;
   warnings: string[];
@@ -213,16 +222,19 @@ function makeSection(
   title: string,
   lines: EstimateLine[],
   warnings: string[],
+  moneyStep: number,
 ): EstimateSection {
   const totalsKnown = lines.every(line => line.total !== null);
   const sum = totalsKnown ? lines.reduce((acc, line) => acc + (line.total as number), 0) : null;
-  const total = sum !== null && Number.isFinite(sum) ? sum : null;
+  // Округление суммы убирает шум двоичного представления (0,1 + 0,2): сами строки
+  // уже кратны шагу, поэтому значение не сдвигается, а печатается ровно.
+  const total = sum !== null && Number.isFinite(sum) ? roundMoney(sum, moneyStep) : null;
   const sectionWarnings = [...warnings];
   if (sum !== null && total === null) sectionWarnings.push('Смета: стоимость раздела не является конечным числом');
   return { kind, title, lines, total, complete: totalsKnown && total !== null, warnings: [...new Set(sectionWarnings)] };
 }
 
-function equipmentLines(project: Project, rounding: number | null): { lines: EstimateLine[]; warnings: string[] } {
+function equipmentLines(project: Project, rounding: number): { lines: EstimateLine[]; warnings: string[] } {
   const catalog = project.catalog;
   // Группировка по модели: properties.model, иначе name; порядок — по первому появлению.
   const counts = new Map<string, number>();
@@ -251,7 +263,7 @@ function equipmentLines(project: Project, rounding: number | null): { lines: Est
   return { lines, warnings };
 }
 
-function cableLines(project: Project, rounding: number | null): { lines: EstimateLine[]; warnings: string[] } {
+function cableLines(project: Project, rounding: number): { lines: EstimateLine[]; warnings: string[] } {
   const catalog = project.catalog;
   const lines: EstimateLine[] = [];
   const warnings: string[] = [];
@@ -284,7 +296,7 @@ function cableLines(project: Project, rounding: number | null): { lines: Estimat
   return { lines, warnings };
 }
 
-function trayLines(project: Project, rounding: number | null): { lines: EstimateLine[]; warnings: string[] } {
+function trayLines(project: Project, rounding: number): { lines: EstimateLine[]; warnings: string[] } {
   const catalog = project.catalog;
   const lines: EstimateLine[] = [];
   const warnings: string[] = [];
@@ -346,7 +358,7 @@ function trayLines(project: Project, rounding: number | null): { lines: Estimate
  * Строки работ по видам: итог строки — количество × цена (иначе неизвестен).
  * Строка без имени — мусор: количество и цена считаются неизвестными, раздел неполный.
  */
-function workLines(works: WorkLine[], rounding: number | null): { lines: EstimateLine[]; warnings: string[] } {
+function workLines(works: WorkLine[], rounding: number): { lines: EstimateLine[]; warnings: string[] } {
   const lines: EstimateLine[] = [];
   const warnings: string[] = [];
   works.forEach((work, index) => {
@@ -376,11 +388,13 @@ function workLines(works: WorkLine[], rounding: number | null): { lines: Estimat
  *
  * Материалы — сумма трёх материальных разделов. Работы — `laborPercent` % от
  * материалов либо, если задан непустой список `works`, итог работ по видам
- * (процент тогда не применяется). Итог `total` — материалы + работы ДО НДС;
- * НДС и итог с НДС (`gross`) считаются отдельно по `vatRate`/`vatIncluded`.
- * Денежные значения округляются по `rounding`; любое неизвестное значение делает
- * соответствующие строку/раздел/итог `null` (не 0) и добавляет предупреждение.
- * Функция не мутирует проект.
+ * (процент тогда не применяется). Итог `total` — материалы + работы (при
+ * `vatIncluded: true` уже с НДС); НДС, сумма без НДС (`net`) и итог с НДС
+ * (`gross`) считаются отдельно по `vatRate`/`vatIncluded`. Деньги всегда точны до
+ * копейки: `rounding` задаёт более грубый шаг (1/10/100 ₽), а null означает
+ * округление до 0,01 ₽ — иначе 25 % от 115 134,7 печаталось бы как 28 783,675 ₽.
+ * Любое неизвестное значение делает соответствующие строку/раздел/итог `null`
+ * (не 0) и добавляет предупреждение. Функция не мутирует проект.
  */
 export function estimate(project: Project): EstimateResult {
   // Правило округления общее для всей сметы. Заданный, но недопустимый шаг
@@ -391,23 +405,26 @@ export function estimate(project: Project): EstimateResult {
   if (rawRounding !== undefined && rawRounding !== null && rounding === null) {
     moneyWarnings.push('Смета: неверное правило округления');
   }
+  // «Без округления» — это не сырые дробные рубли, а точность до копейки:
+  // смета не должна печатать 28 783,675 ₽.
+  const moneyRounding = rounding ?? 0.01;
 
   // Непустой список работ включает режим по видам: процент работ игнорируется без предупреждения.
   const works = normalizeWorks(project.estimate?.works);
   const itemsMode = works.length > 0;
 
-  const equipment = equipmentLines(project, rounding);
-  const cables = cableLines(project, rounding);
-  const trays = trayLines(project, rounding);
+  const equipment = equipmentLines(project, moneyRounding);
+  const cables = cableLines(project, moneyRounding);
+  const trays = trayLines(project, moneyRounding);
 
-  const equipmentSection = makeSection('equipment', EQUIPMENT_TITLE, equipment.lines, equipment.warnings);
-  const cableSection = makeSection('cable', CABLE_TITLE, cables.lines, cables.warnings);
-  const traySection = makeSection('tray', TRAY_TITLE, trays.lines, trays.warnings);
+  const equipmentSection = makeSection('equipment', EQUIPMENT_TITLE, equipment.lines, equipment.warnings, moneyRounding);
+  const cableSection = makeSection('cable', CABLE_TITLE, cables.lines, cables.warnings, moneyRounding);
+  const traySection = makeSection('tray', TRAY_TITLE, trays.lines, trays.warnings, moneyRounding);
   const materialSections = [equipmentSection, cableSection, traySection];
 
   const materialsKnown = materialSections.every(section => section.total !== null);
   let materials = materialsKnown
-    ? materialSections.reduce((sum, section) => sum + (section.total as number), 0)
+    ? roundMoney(materialSections.reduce((sum, section) => sum + (section.total as number), 0), moneyRounding)
     : null;
   const worksWarnings: string[] = [];
   if (materials !== null && !Number.isFinite(materials)) {
@@ -419,12 +436,12 @@ export function estimate(project: Project): EstimateResult {
   let labor: number | null;
   let worksLines: EstimateLine[] = [];
   if (itemsMode) {
-    const items = workLines(works, rounding);
+    const items = workLines(works, moneyRounding);
     worksLines = items.lines;
     worksWarnings.push(...items.warnings);
     const totalsKnown = worksLines.length > 0 && worksLines.every(line => line.total !== null);
     const sum = totalsKnown ? worksLines.reduce((acc, line) => acc + (line.total as number), 0) : null;
-    labor = sum !== null && Number.isFinite(sum) ? sum : null;
+    labor = sum !== null && Number.isFinite(sum) ? roundMoney(sum, moneyRounding) : null;
     if (sum !== null && labor === null) worksWarnings.push('Смета: стоимость раздела не является конечным числом');
   } else {
     const rawLaborPercent = project.estimate?.laborPercent;
@@ -435,22 +452,22 @@ export function estimate(project: Project): EstimateResult {
     } else if (laborPercent === null) {
       worksWarnings.push('Смета: не задан процент работ');
     }
-    labor = materials !== null && laborPercent !== null ? roundMoney(materials * laborPercent / 100, rounding) : null;
+    labor = materials !== null && laborPercent !== null ? roundMoney(materials * laborPercent / 100, moneyRounding) : null;
     if (labor !== null && !Number.isFinite(labor)) {
       labor = null;
       worksWarnings.push('Смета: стоимость работ не является конечным числом');
     }
   }
 
-  // Итог — точная сумма уже округлённых значений: повторное округление сдвигало бы
-  // его относительно суммы разделов на ошибку представления.
-  let total = materials !== null && labor !== null ? materials + labor : null;
+  // Итог — сумма уже округлённых слагаемых; округление здесь убирает только шум
+  // двоичного представления, а не сдвигает сумму относительно разделов.
+  let total = materials !== null && labor !== null ? roundMoney(materials + labor, moneyRounding) : null;
   if (total !== null && !Number.isFinite(total)) {
     total = null;
     worksWarnings.push('Смета: итог не является конечным числом');
   }
 
-  const worksSection = makeSection('work', WORK_TITLE, worksLines, worksWarnings);
+  const worksSection = makeSection('work', WORK_TITLE, worksLines, worksWarnings, moneyRounding);
   worksSection.total = labor;
   // В режиме процента раздел рассчитан, только если известны и процент, и материалы.
   worksSection.complete = itemsMode
@@ -476,15 +493,23 @@ export function estimate(project: Project): EstimateResult {
     gross = null;
   } else if (vatRate !== null && vatRate > 0 && total !== null) {
     const raw = vatIncluded ? total * vatRate / (100 + vatRate) : total * vatRate / 100;
-    const rounded = roundMoney(raw, rounding);
+    const rounded = roundMoney(raw, moneyRounding);
     if (Number.isFinite(rounded)) {
       vat = rounded;
-      gross = vatIncluded ? total : total + vat;
+      gross = vatIncluded ? total : roundMoney(total + vat, moneyRounding);
     } else {
       gross = null;
       moneyWarnings.push('Смета: стоимость НДС не является конечным числом');
     }
   }
+  // База без НДС. При «НДС в цене» total — уже сумма с налогом, поэтому строка
+  // «Итого до НДС» должна показывать net, а не total.
+  let net: number | null;
+  if (vatRateInvalid || total === null) net = null;
+  else if (vatIncluded) net = vatRate !== null && vatRate > 0
+    ? (vat === null ? null : roundMoney(total - vat, moneyRounding))
+    : total;
+  else net = total;
   const sections = [equipmentSection, cableSection, traySection, worksSection];
   const vatKnown = !vatRateInvalid && (vatRate === null || vatRate === 0 || vat !== null);
   return {
@@ -493,6 +518,7 @@ export function estimate(project: Project): EstimateResult {
     laborPercent,
     labor,
     total,
+    net,
     complete: sections.every(section => section.complete) && vatKnown,
     catalogDate: normalizeCatalogDate(project.catalogDate),
     warnings: [...new Set([...sections.flatMap(section => section.warnings), ...moneyWarnings])],

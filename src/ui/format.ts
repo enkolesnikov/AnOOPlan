@@ -2,6 +2,13 @@ import type { Point } from '../model';
 
 /** Число в русской локали; null/undefined/NaN — «—», а не 0. */
 export const number = (value: unknown) => typeof value === 'number' && Number.isFinite(value) ? value.toLocaleString('ru-RU', { maximumFractionDigits: 3 }) : '—';
+/**
+ * Деньги в рублях: не больше двух знаков после запятой (копейки).
+ * Отдельно от `number`, потому что количества показываем до трёх знаков,
+ * а рубли с тремя знаками (28 783,675) — ошибка точности.
+ * null/undefined/NaN — «—», а не 0: неизвестная сумма не подменяется нулём.
+ */
+export const money = (value: unknown): string => typeof value === 'number' && Number.isFinite(value) ? value.toLocaleString('ru-RU', { maximumFractionDigits: 2 }) : '—';
 // Статусы заполнения приходят из движка английскими ключами — в интерфейсе показываем по-русски.
 export const FILL_STATUS_LABELS: Record<string, string> = { ok: 'ок', warning: 'внимание', over: 'превышено', empty: 'пусто', incomplete: 'неполный' };
 export const fillStatus = (status: string | null | undefined): string => (status ? FILL_STATUS_LABELS[status] ?? status : '');

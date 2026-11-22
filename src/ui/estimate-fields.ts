@@ -18,7 +18,9 @@ export const nonNegativeOrNull = (raw: string): number | null => {
 export function workLineTotal(work: Pick<WorkLine, 'quantity' | 'price'>, rounding: number | null): number | null {
   if (work.quantity === null || work.price === null) return null;
   if (!Number.isFinite(work.quantity) || !Number.isFinite(work.price)) return null;
-  return roundMoney(work.quantity * work.price, rounding);
+  // Как и в `estimate()`: без явного шага деньги точны до копейки, иначе сумма
+  // строки в редакторе расходилась бы с итогом раздела на третьем знаке.
+  return roundMoney(work.quantity * work.price, rounding ?? 0.01);
 }
 
 /** Склонение «строка» по числу: 1 строка, 2 строки, 5 строк. */

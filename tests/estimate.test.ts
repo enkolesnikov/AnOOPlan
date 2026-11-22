@@ -5,6 +5,7 @@ import {
   estimate,
   normalizeCatalog,
   normalizePriceItem,
+  roundMoney,
 } from '../src/estimate';
 import { createDemoProject } from '../src/demo';
 import { migrateProject } from '../src/migrations';
@@ -364,8 +365,10 @@ test('демо-проект: смета полная, итог положите�
   assert.ok(result.materials !== null && result.materials > 0);
   assert.ok(result.labor !== null && result.labor > 0);
   assert.ok(result.total !== null && result.total > 0);
-  close(result.labor, result.materials! * 25 / 100);
-  close(result.total, result.materials! + result.labor!);
+  // 25 % от 115 134,7 = 28 783,675 ₽: смета округляет деньги до копейки, а не печатает
+  // три знака в PDF/UI. Поэтому эталон тоже округлён до копейки.
+  close(result.labor, roundMoney(result.materials! * 25 / 100, 0.01));
+  close(result.total, roundMoney(result.materials! + result.labor!, 0.01));
   assert.deepEqual(result.warnings, []);
   assert.ok(result.sections.every(section => section.complete));
 

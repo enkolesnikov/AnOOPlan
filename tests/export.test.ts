@@ -9,7 +9,7 @@ import { buildJournalPdf, formatNumber } from '../src/export-pdf';
 import type { JournalFonts } from '../src/export-fonts';
 import { createDemoProject } from '../src/demo';
 import { calculateCable, specifications } from '../src/engine';
-import { estimate } from '../src/estimate';
+import { estimate, roundMoney } from '../src/estimate';
 import type { Project } from '../src/model';
 
 const toArrayBuffer = (path: string): ArrayBuffer => {
@@ -442,7 +442,8 @@ test('смета демо сходится: материалы + работы = 
   assert.ok(result.labor !== null && result.labor > 0);
   assert.ok(result.total !== null && result.total > 0);
   assert.ok(Math.abs(result.total - (result.materials + result.labor)) < 1e-9, 'итог = материалы + работы');
-  assert.ok(Math.abs(result.labor - result.materials * project.estimate!.laborPercent! / 100) < 1e-9, 'работы = процент от материалов');
+  // Демо-материалы 115 134,7: 25 % = 28 783,675 ₽, а смета округляет деньги до копейки.
+  assert.ok(Math.abs(result.labor - roundMoney(result.materials * project.estimate!.laborPercent! / 100, 0.01)) < 1e-9, 'работы = процент от материалов');
   assert.equal(result.catalogDate, project.catalogDate, 'дата прайса берётся из проекта');
   assert.deepEqual(result.warnings, [], 'в полной демо-смете предупреждений нет');
   const sheets = exportSheets(project);

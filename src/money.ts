@@ -17,8 +17,14 @@ export function normalizeRounding(value: unknown): number | null {
 
 /**
  * Округление денежного значения до шага (0.01, 1, 10 или 100 ₽).
- * `null` — значение без изменений; `Math.round(value / rounding) * rounding`.
+ * `null` — значение без изменений; иначе `Math.round(value / rounding) * rounding`.
  */
 export function roundMoney(value: number, rounding: number | null): number {
-  return rounding === null ? value : Math.round(value / rounding) * rounding;
+  if (rounding === null) return value;
+  const steps = value / rounding;
+  // Двоичное представление делает ровную половину шага чуть меньше
+  // (1,005 ₽ → 100,4999… копейки), и Math.round уводит её вниз. Сдвиг на
+  // несколько ULP возвращает ожидаемое человеком десятичное округление.
+  const shifted = steps + Math.abs(steps) * Number.EPSILON * 4;
+  return Math.round(shifted) * rounding;
 }
