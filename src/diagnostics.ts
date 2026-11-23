@@ -84,7 +84,7 @@ export function clearDiagnostics(storage: DiagnosticStorage | null = defaultStor
   try { storage?.removeItem(KEY); } catch { /* хранилище недоступно */ }
 }
 
-export function diagnosticsText(version: string, storage: DiagnosticStorage | null = defaultStorage()): string {
+export function diagnosticsText(version: string, storage: DiagnosticStorage | null = defaultStorage(), info: string[] = []): string {
   const entries = readDiagnostics(storage);
   const userAgent = typeof navigator === 'undefined' ? '—' : navigator.userAgent;
   const lines = [
@@ -92,6 +92,7 @@ export function diagnosticsText(version: string, storage: DiagnosticStorage | nu
     `Версия приложения: ${version}`,
     `Сформировано: ${new Date().toISOString()}`,
     `WebView / браузер: ${userAgent}`,
+    ...info,
     `Записей: ${entries.length}`,
     '---',
   ];

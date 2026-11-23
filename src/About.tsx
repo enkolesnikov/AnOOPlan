@@ -1,6 +1,9 @@
 import oflText from './assets/fonts/OFL.txt?raw';
 import packageInfo from '../package.json';
+import { useEffect, useState } from 'react';
 import type { DiagnosticEntry } from './diagnostics';
+import type { Project } from './model';
+import { collectRuntimeReport, runtimeReportLines, type RuntimeReport } from './runtime-info';
 
 export const APP_VERSION = packageInfo.version;
 
@@ -15,12 +18,19 @@ const COMPONENTS = [
   ['Medeo Sans — сабсет для интерфейса', 'SIL Open Font License 1.1'],
 ];
 
-export function AboutSheet({ onClose, diagnostics, onExportDiagnostics, onClearDiagnostics }: {
+export function AboutSheet({ onClose, diagnostics, onExportDiagnostics, onClearDiagnostics, project }: {
   onClose: () => void;
   diagnostics: DiagnosticEntry[];
   onExportDiagnostics: () => void;
   onClearDiagnostics: () => void;
+  project: Project;
 }) {
+  const [runtime, setRuntime] = useState<RuntimeReport | null>(null);
+  useEffect(() => {
+    let active = true;
+    void collectRuntimeReport(APP_VERSION, project).then(report => { if (active) setRuntime(report); });
+    return () => { active = false; };
+  }, [project]);
   return (
     <div className="sheet-backdrop about-backdrop" onPointerDown={event => { if (event.target === event.currentTarget) onClose(); }}>
       <section className="sheet about-sheet" role="dialog" aria-label="О программе и лицензии">
@@ -38,9 +48,15 @@ export function AboutSheet({ onClose, diagnostics, onExportDiagnostics, onClearD
           <p className="about-copy">© 2026 enkolesnikov. Исходный код распространяется по лицензии MIT.</p>
 
           <h3>Диагностика</h3>
-          <p className="about-help">Локальный журнал ошибок (до 50 записей) хранится только на устройстве. Если PDF не отрисовался или что-то пошло не так — скачайте журнал и пришлите разработчику.</p>
+          {runtime && <dl className="runtime-info">
+            {runtimeReportLines(runtime).map(line => {
+              const [label, ...rest] = line.split(': ');
+              return <div key={line}><dt>{label}</dt><dd>{rest.join(': ')}</dd></div>;
+            })}
+          </dl>}
+          <p className="about-help">Локальный журнал ошибок (до 50 записей) хранится только на устройстве. Если PDF не отрисовался или что-то пошло не так — скачайте отчёт и пришлите разработчику.</p>
           <div className="diagnostics-actions">
-            <button onClick={onExportDiagnostics}>Скачать журнал</button>
+            <button onClick={onExportDiagnostics}>Скачать отчёт</button>
             <button onClick={onClearDiagnostics} disabled={!diagnostics.length}>Очистить</button>
           </div>
           {diagnostics.length

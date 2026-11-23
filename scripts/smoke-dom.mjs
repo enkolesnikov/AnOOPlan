@@ -753,8 +753,8 @@ if (aboutButton) {
   check(aboutText.includes('PT Sans'), 'шрифт PT Sans указан в лицензиях');
   check(/версия \d+\.\d+\.\d+/.test(aboutText), 'версия приложения показана');
   check(aboutText.includes('Диагностика'), 'раздел диагностики показан');
-  const diagnosticsButton = buttons().find(button => (button.textContent || '').trim() === 'Скачать журнал');
-  check(Boolean(diagnosticsButton), 'кнопка «Скачать журнал» доступна');
+  const diagnosticsButton = buttons().find(button => (button.textContent || '').trim() === 'Скачать отчёт');
+  check(Boolean(diagnosticsButton), 'кнопка «Скачать отчёт» доступна');
   if (diagnosticsButton) {
     diagnosticsButton.click();
     await sleep(400);

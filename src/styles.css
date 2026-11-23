@@ -1143,3 +1143,9 @@ body.field-mode .sidebar-project button { min-height: 48px; }
   gap: 4px;
 }
 .field-bar button.active { background: var(--accent-soft); border-color: var(--accent); color: var(--accent-2); }
+
+/* Сведения о среде в «О программе» (3.0.0). */
+.runtime-info { display: grid; gap: 6px; margin: 0 0 12px; padding: 10px 12px; background: var(--surface-2); border: 1px solid var(--border-soft); border-radius: 10px; font-size: 13px; }
+.runtime-info > div { display: flex; gap: 8px; justify-content: space-between; }
+.runtime-info dt { color: var(--muted); flex-shrink: 0; }
+.runtime-info dd { margin: 0; text-align: right; word-break: break-all; }

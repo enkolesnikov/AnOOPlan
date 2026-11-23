@@ -24,6 +24,7 @@ export default function App() {
       diagnostics={ui.diagnostics}
       onExportDiagnostics={() => void ui.run(ui.exportDiagnostics)}
       onClearDiagnostics={() => { clearDiagnostics(); ui.setDiagnostics([]); }}
+      project={ui.project}
     />}
     {(ui.menuOpen || ui.propsOpen) && <Scrim ui={ui} />}
     <PropsFab ui={ui} />

@@ -9,6 +9,7 @@ import { exportSheets } from '../sheets';
 import { ANOOPLAN_EXTENSION, ANOOPLAN_MIME, buildAnoPlanFile, safeFileBaseName, serializeAnoPlanFile } from '../project-file';
 import { JOURNAL_SECTIONS } from './constants';
 import { storageHealth } from '../storage-health';
+import { collectRuntimeReport, runtimeReportLines } from '../runtime-info';
 import { blobToBase64, bytesToBase64, nativeBridge, saveBlobOnDevice } from './native';
 import type { ProjectIo } from './use-project-io';
 import type { WorkspaceState } from './use-workspace-state';
@@ -164,7 +165,10 @@ export function useExport(s: WorkspaceState, io: ProjectIo) {
   }
 
   async function exportDiagnostics(): Promise<void> {
-    const blob = new Blob([diagnosticsText(APP_VERSION)], { type: 'text/plain;charset=utf-8' });
+    // 3.0.0: отчёт начинается со снимка среды (WebView, квота, persist, размер
+    // проекта) — полевой отчёт самодостаточен и не требует расспросов.
+    const report = await collectRuntimeReport(APP_VERSION, projectRef.current);
+    const blob = new Blob([diagnosticsText(APP_VERSION, undefined, runtimeReportLines(report))], { type: 'text/plain;charset=utf-8' });
     const name = `AnOOPlan-диагностика-${new Date().toISOString().slice(0, 10)}.txt`;
     const savedPath = await saveBlobOnDevice(name, blob);
     if (!savedPath) {
@@ -174,7 +178,7 @@ export function useExport(s: WorkspaceState, io: ProjectIo) {
       link.click();
       setTimeout(() => URL.revokeObjectURL(link.href), 1000);
     }
-    setMessage(savedPath ? `Журнал диагностики сохранён: ${savedPath}` : 'Журнал диагностики сформирован.');
+    setMessage(savedPath ? `Отчёт диагностики сохранён: ${savedPath}` : 'Отчёт диагностики сформирован.');
   }
   return { printJournal, download, shareExport, saveAnoPlan, shareAnoPlan, exportDiagnostics };
 }
