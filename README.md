@@ -17,15 +17,16 @@ PDF-план здания, расставьте оборудование (кам
   <a href="docs/HANDOFF.md"><img alt="Документация" src="https://img.shields.io/badge/документация-HANDOFF-6e7781"></a>
 </p>
 
-<p align="center"><b>Версия 3.0.1 · APK ~1,6 МБ · Android 7.0+</b></p>
+<p align="center"><b>Версия 3.0.1 · APK 1 628 963 Б (1,6 МБ) · Android 7.0+</b></p>
 
 <p align="center"><img src="docs/store/screenshots/01-plan.png" width="240" alt="План этажа с кабельными трассами и длинами сегментов"></p>
 
 ## Скачать и установить
 
 - **APK:** [последний релиз](https://github.com/enkolesnikov/AnOOPlan/releases/latest) —
-  `AnOOPlan-3.0.1.apk`, около **1,6 МБ**, Android 7.0+ (minSdk 24, targetSdk 35,
-  WebView 98+), без интернета и аналитики. Точный размер и SHA-256 — в примечании к релизу.
+  `AnOOPlan-3.0.1.apk`, около **1,6 МБ** (1 628 963 Б), Android 7.0+ (minSdk 24, targetSdk 35,
+  WebView 98+), без интернета и аналитики. SHA-256:
+  `2ee311d2d08af8522a93fadc40468e69a308761e7b01acc9198ba3409448c80e`.
 - **Сайт:** [enkolesnikov.github.io/AnOOPlan](https://enkolesnikov.github.io/AnOOPlan/) —
   возможности, скриншоты и загрузка.
 - **Веб-версия:** [enkolesnikov.github.io/AnOOPlan/app/](https://enkolesnikov.github.io/AnOOPlan/app/) —
@@ -160,7 +161,7 @@ PDF-план здания, расставьте оборудование (кам
 | E2E / визуальные | **11** / **4** (`npm run test:ui`, `npm run test:visual`) |
 | Покрытие | 93,3 / 88,0 / 94,8 % по тестируемым модулям (пороги 93/85/92); 72,0 % по всем `src/` |
 | Стартовый бандл | **497,7 КБ JS** + **45,8 КБ CSS** (бюджеты 600/60) |
-| APK | **~1,6 МБ**, versionCode 50, minSdk 24, targetSdk 35; SHA-256 — в примечании к релизу |
+| APK | **1 628 963 Б**, versionCode 50, minSdk 24, targetSdk 35; SHA-256 `2ee311d2…48c80e` |
 | CI на push | lint → knip → tsc → покрытие → сборка/размер → смоук → E2E, ~120 с (бюджет 130) |
 
 ## Запуск локально

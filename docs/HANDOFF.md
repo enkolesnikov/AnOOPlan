@@ -32,7 +32,8 @@
   reduced-motion; бюджет памяти рендера плана — 8 Мпикс с предупреждением.
 - Подпись: SHA-256 сертификата `6431374cf6a7d385c4c47f0f2bf54fcb5ee5b2c7120f057b18c4062af92fe097`.
 - Текущий релиз: [v3.0.1](https://github.com/enkolesnikov/AnOOPlan/releases/tag/v3.0.1) —
-  подписанный APK `AnOOPlan-3.0.1.apk` (versionCode 50; размер и SHA-256 — в примечании к релизу),
+  подписанный APK `AnOOPlan-3.0.1.apk` (versionCode 50, 1 628 963 Б,
+  SHA-256 `2ee311d2d08af8522a93fadc40468e69a308761e7b01acc9198ba3409448c80e`),
   заметки — [RELEASE-NOTES-3.0.1.md](RELEASE-NOTES-3.0.1.md).
 - Предыдущий релиз: [v3.0.0 «Поле и надёжность»](https://github.com/enkolesnikov/AnOOPlan/releases/tag/v3.0.0) —
   подписанный APK `AnOOPlan-3.0.0.apk` (versionCode 49, 1 628 963 Б,
