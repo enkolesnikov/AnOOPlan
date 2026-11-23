@@ -33,10 +33,16 @@ fi
 KS_ALIAS="${KS_ALIAS:-anooplan}"
 
 PACKAGE="com.anooplan.app"
+# Windows (Git Bash/MSYS): node — нативный exe и не понимает пути /c/...;
+# cygpath -m даёт C:/... (без обратных слешей — безопасно для JS-строки).
+ROOT_NODE="$ROOT"
+if command -v cygpath >/dev/null 2>&1; then
+    ROOT_NODE="$(cygpath -m "$ROOT")"
+fi
 # Версия и versionCode берутся из package.json (единый источник, см. HANDOFF):
 # androidVersionCode — целое, только растёт при каждом релизе.
-VERSION_NAME="${VERSION_NAME:-$(node -e "process.stdout.write(require('${ROOT}/package.json').version)")}"
-VERSION_CODE="${VERSION_CODE:-$(node -e "process.stdout.write(String(require('${ROOT}/package.json').androidVersionCode))")}"
+VERSION_NAME="${VERSION_NAME:-$(node -e "process.stdout.write(require('${ROOT_NODE}/package.json').version)")}"
+VERSION_CODE="${VERSION_CODE:-$(node -e "process.stdout.write(String(require('${ROOT_NODE}/package.json').androidVersionCode))")}"
 case "$VERSION_CODE" in
     ''|*[!0-9]*) echo "androidVersionCode в package.json должен быть целым числом (получено: $VERSION_CODE)" >&2; exit 1 ;;
 esac
@@ -48,22 +54,25 @@ fi
 say() { printf '\n\033[1;36m==> %s\033[0m\n' "$1"; }
 need() { command -v "$1" >/dev/null 2>&1 || { echo "Не найдено: $1" >&2; exit 1; }; }
 
-need javac; need java; need zip; need node; need python3
+need javac; need java; need jar; need zip; need node; need python3
 need "$AAPT"; need "$ZIPALIGN"
 [ -f "$ANDROID_JAR" ] || { echo "Нет $ANDROID_JAR — выполните scripts/fetch-tools.sh или задайте ANDROID_JAR" >&2; exit 1; }
 
-if [ -z "$D8_CMD" ] && [ -x "$BUILD_TOOLS_DIR/d8" ]; then
-    D8_CMD="$BUILD_TOOLS_DIR/d8"
-fi
-if [ -z "$D8_CMD" ]; then
-    if command -v d8 >/dev/null 2>&1; then
-        D8_CMD="d8"
-    elif [ -f "$R8_JAR" ]; then
-        D8_CMD="java -cp $R8_JAR com.android.tools.r8.D8"
-    else
-        echo "Нет ни d8 в PATH, ни $R8_JAR — выполните scripts/fetch-tools.sh" >&2
-        exit 1
-    fi
+# d8 вызываем массивом: в пути до build-tools могут быть пробелы («Рабочий стол»),
+# а непроцитированный $D8_CMD резал путь на слова. Env-переопределение D8_CMD
+# по-прежнему допускает форму «java -cp ... com.android.tools.r8.D8».
+D8_ARR=()
+if [ -n "$D8_CMD" ]; then
+    read -r -a D8_ARR <<< "$D8_CMD"
+elif [ -x "$BUILD_TOOLS_DIR/d8" ]; then
+    D8_ARR=("$BUILD_TOOLS_DIR/d8")
+elif command -v d8 >/dev/null 2>&1; then
+    D8_ARR=(d8)
+elif [ -f "$R8_JAR" ]; then
+    D8_ARR=(java -cp "$R8_JAR" com.android.tools.r8.D8)
+else
+    echo "Нет ни d8 в PATH, ни $R8_JAR — выполните scripts/fetch-tools.sh" >&2
+    exit 1
 fi
 
 say "1/7 Проверка типов и сборка веб-приложения (Vite)"
@@ -95,14 +104,27 @@ mkdir -p "$BUILD_DIR/gen" "$BUILD_DIR/classes" "$BUILD_DIR/dex"
     --rename-manifest-package "$PACKAGE"
 
 say "5/7 Компиляция Java и dex (javac + d8)"
+# Пути в @-файле в кавычках: в пути проекта могут быть пробелы («Рабочий стол»),
+# а javac разбирает @-файл по пробелам. Кавычки безопасны и на Linux.
 find "$ANDROID_DIR/java" -name '*.java' > "$BUILD_DIR/sources.txt"
+# Windows: @-файл читает нативный java.exe — и пути внутри, и сам аргумент @...
+# должны быть Windows-вида (msys-конверсия на «@/c/...» не срабатывает).
+SOURCES_ARG="@$BUILD_DIR/sources.txt"
+if command -v cygpath >/dev/null 2>&1; then
+    cygpath -m -f "$BUILD_DIR/sources.txt" | sed 's/.*/"&"/' > "$BUILD_DIR/sources.win.txt"
+    mv "$BUILD_DIR/sources.win.txt" "$BUILD_DIR/sources.txt"
+    SOURCES_ARG="@$(cygpath -m "$BUILD_DIR/sources.txt")"
+else
+    sed -i 's/.*/"&"/' "$BUILD_DIR/sources.txt"
+fi
 javac -nowarn -encoding UTF-8 -source 8 -target 8 \
     -bootclasspath "$ANDROID_JAR" \
     -d "$BUILD_DIR/classes" \
-    @"$BUILD_DIR/sources.txt"
-find "$BUILD_DIR/classes" -name '*.class' > "$BUILD_DIR/classes.txt"
-# shellcheck disable=SC2086
-$D8_CMD --release --min-api 24 --lib "$ANDROID_JAR" --output "$BUILD_DIR/dex" @"$BUILD_DIR/classes.txt"
+    "$SOURCES_ARG"
+# d8 каталоги не принимает («Unsupported source file type»): классы упаковываем в JAR —
+# так обходим и лимит длины командной строки Windows, и @-файлы с пробелами в путях.
+(cd "$BUILD_DIR/classes" && jar cf "$BUILD_DIR/classes.jar" .)
+"${D8_ARR[@]}" --release --min-api 24 --lib "$ANDROID_JAR" --output "$BUILD_DIR/dex" "$BUILD_DIR/classes.jar"
 
 say "6/7 Упаковка и выравнивание (aapt + zip + zipalign)"
 UNSIGNED="$BUILD_DIR/anooplan-unsigned.apk"
@@ -175,4 +197,12 @@ KS_PASS="$KS_PASS" "$APKSIGNER" sign \
 
 say "Готово"
 ls -lh "$OUT_APK"
-"$AAPT" dump badging "$OUT_APK" | head -6
+# aapt (narrow C++ API на Windows) не открывает пути с кириллицей —
+# дамп манифеста делаем по временной ASCII-копии.
+DUMP_TMP="${TMPDIR:-/tmp}/anooplan-dump-$$.apk"
+if cp "$OUT_APK" "$DUMP_TMP" 2>/dev/null; then
+    "$AAPT" dump badging "$DUMP_TMP" | head -6
+    rm -f "$DUMP_TMP"
+else
+    echo "(aapt dump пропущен: не удалось создать ASCII-копию APK)"
+fi

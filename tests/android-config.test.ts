@@ -27,7 +27,8 @@ test('сборка APK использует targetSdk 35 и официальны
   const manifest = read('android/AndroidManifest.xml');
   const manifestCode = Number(/android:versionCode="(\d+)"/.exec(manifest)?.[1]);
   const manifestName = /android:versionName="([^"]+)"/.exec(manifest)?.[1];
-  assert.ok(script.includes("require('${ROOT}/package.json').version"), 'build-apk берёт версию из package.json');
+  // ROOT_NODE — Windows-форма ROOT (cygpath -m) для node.exe; на Linux ROOT_NODE = ROOT.
+  assert.ok(/require\('\$\{ROOT(?:_NODE)?\}\/package\.json'\)\.version/.test(script), 'build-apk берёт версию из package.json');
   assert.ok(script.includes('androidVersionCode'), 'build-apk берёт versionCode из package.json');
   assert.ok(Number.isInteger(pkg.androidVersionCode) && pkg.androidVersionCode > 0, 'package.json: androidVersionCode — целое > 0');
   assert.equal(manifestCode, pkg.androidVersionCode, 'versionCode манифеста совпадает с package.json');

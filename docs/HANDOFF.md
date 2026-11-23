@@ -66,7 +66,8 @@
   (`diagnostics.ts` принимает `info: string[]`).
 - **Техдолг:** `export-pdf.ts` разбит на `src/pdf/pdf-model.ts`, `pdf-sections.ts`,
   `pdf-renderer.ts`; точка входа — фасад (~120 строк), публичный API прежний.
-  `MainActivity.java` (642 строки) **не тронут**: на машине нет JDK/эмулятора — отложено.
+  `MainActivity.java` (642 строки) **не тронут**: JDK уже установлен (локальная сборка APK
+  работает, см. раздел «Сборка APK» ниже), но эмулятора на машине нет — отложено.
 - **Windows-особенности:** `scripts/coverage.mjs` запускает tsx напрямую через
   `process.execPath` + `node_modules/tsx/dist/cli.mjs` (npx.cmd под spawnSync запрещён —
   EINVAL, а shell:true ломает пути с пробелами). `knip` на Windows/Node 24 не стартует:
@@ -632,6 +633,27 @@ Android-инструменты; JDK на VPS уже установлен. Есл
 Сборка на VPS уже подготовлена: JDK 17, Android SDK в `/root/android-sdk`, build-tools 35 в
 `tools/build-tools/35.0.0`, platform jar в `tools/android.jar`, AVD `AnOOPlan35`, Chromium Playwright
 в `~/.cache/ms-playwright`. `adb` — `/root/android-sdk/platform-tools/adb`.
+
+**Локальная сборка APK на Windows** (с 2026-11-23, проверена на 3.0.0 — подпись тем же ключом,
+что в CI): JDK Temurin 21 в `C:\Users\x4k3r\devtools\jdk-21.0.13.1+2`, Windows build-tools 35.0.0
+в `tools/build-tools-win/35.0.0` (скачаны с dl.google.com; `d8`/`apksigner` — bash-обёртки поверх
+`lib/d8.jar` и `lib/apksigner.jar`), zip-шим в `C:\Users\x4k3r\devtools\bin\zip` (Info-ZIP под
+MSYS не завёлся; шим эмулирует `zip -q -X -0` через `python3 zipfile`). Запуск:
+
+```bash
+export PATH="/c/Users/x4k3r/devtools/jdk-21.0.13.1+2/bin:/c/Users/x4k3r/devtools/bin:$PATH"
+export BUILD_TOOLS_DIR="$PWD/tools/build-tools-win/35.0.0"
+export ANDROID_JAR='C:\Users\x4k3r\devtools\android.jar'   # копия tools/android.jar в ASCII-пути!
+bash scripts/build-apk.sh
+```
+
+Тонкости Windows: `npm run build:apk` под MSYS теряет node-шим — запускать скрипт напрямую через
+`bash`; `ANDROID_JAR` обязан быть ASCII-путём (aapt — narrow C++ API, на кириллице «Illegal byte
+sequence»; то же для финального `aapt dump` — скрипт дампит по ASCII-копии); javac получает
+@-файл с Windows-путями в кавычках (`cygpath -m`); d8 вызывается массивом `D8_ARR` (путь с
+пробелом «Рабочий стол») и получает классы JAR-ом — каталоги d8 не принимает («Unsupported
+source file type»). Не создавать в `tools/build-tools-win/35.0.0` файлы `aapt`/`zipalign` без
+расширения: MSYS считает их тем же файлом, что и `.exe`, и затирает бинарь.
 
 Если keystore на машине нет (новая сессия/контейнер), подписанный APK локально не собрать: для проверки
 собирается `UNSIGNED_APK=1 npm run build:apk` (версия/versionCode, отсутствие `INTERNET`, вес), а подпись
