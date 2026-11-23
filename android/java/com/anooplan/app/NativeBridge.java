@@ -12,7 +12,6 @@ import android.os.VibratorManager;
 import android.provider.MediaStore;
 import android.util.Base64;
 import android.webkit.JavascriptInterface;
-import android.webkit.WebView;
 import android.widget.Toast;
 
 import java.io.File;
@@ -39,12 +38,22 @@ public class NativeBridge {
 
     private final Context context;
     private final Host host;
-    private final WebView webView;
+    /**
+     * Последний URL страницы, запомненный WebViewClient'ом на главном потоке.
+     * WebView.getUrl() здесь вызывать нельзя: методы моста исполняются на потоке
+     * JavaBridge, а WebView принимает вызовы только из главного потока — на
+     * Android 15 это RuntimeException и «Uncaught Error» в JS при инициализации.
+     */
+    private volatile String currentUrl;
 
-    NativeBridge(Context context, Host host, WebView webView) {
+    NativeBridge(Context context, Host host) {
         this.context = context.getApplicationContext();
         this.host = host;
-        this.webView = webView;
+    }
+
+    /** Вызывается из WebViewClient.onPageStarted (главный поток). */
+    void onPageUrl(String url) {
+        currentUrl = url;
     }
 
     /**
@@ -53,8 +62,7 @@ public class NativeBridge {
      * мог бы писать файлы и запрашивать печать/выход от имени пользователя.
      */
     private boolean isTrustedOrigin() {
-        if (webView == null) return false;
-        String url = webView.getUrl();
+        String url = currentUrl;
         if (url == null) return false;
         Uri uri = Uri.parse(url);
         return "https".equals(uri.getScheme()) && AssetServer.HOST.equals(uri.getHost());

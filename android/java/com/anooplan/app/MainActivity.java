@@ -174,7 +174,16 @@ public class MainActivity extends Activity implements NativeBridge.Host {
             // Приложение офлайн: не отправляем запросы в сервис безопасного просмотра.
             settings.setSafeBrowsingEnabled(false);
         }
+        final NativeBridge bridge = new NativeBridge(this, this);
         webView.setWebViewClient(new AssetServer(this) {
+            @Override
+            public void onPageStarted(WebView view, String url, android.graphics.Bitmap favicon) {
+                super.onPageStarted(view, url, favicon);
+                // Мост исполняется на потоке JavaBridge и не может спрашивать URL
+                // у WebView — запоминаем его здесь, на главном потоке.
+                bridge.onPageUrl(url);
+            }
+
             @Override
             public void onPageFinished(WebView view, String url) {
                 super.onPageFinished(view, url);
@@ -183,7 +192,7 @@ public class MainActivity extends Activity implements NativeBridge.Host {
             }
         });
         webView.setWebChromeClient(new FileChooserClient());
-        webView.addJavascriptInterface(new NativeBridge(this, this, webView), "AnOOPlanNative");
+        webView.addJavascriptInterface(bridge, "AnOOPlanNative");
         webView.setDownloadListener(new DownloadListener() {
             @Override
             public void onDownloadStart(String url, String userAgent, String contentDisposition, String mimetype, long contentLength) {

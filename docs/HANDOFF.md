@@ -655,6 +655,22 @@ sequence»; то же для финального `aapt dump` — скрипт �
 source file type»). Не создавать в `tools/build-tools-win/35.0.0` файлы `aapt`/`zipalign` без
 расширения: MSYS считает их тем же файлом, что и `.exe`, и затирает бинарь.
 
+**Эмулятор на Windows** (с 2026-11-23): Android SDK в `C:\Users\x4k3r\devtools\android-sdk`
+(cmdline-tools, platform-tools 37, emulator 37.3, platform 35, образ
+`system-images;android-35;google_apis;x86_64`), AVD — `AnOOPlan35` (pixel_6, Android 15).
+WHPX работает (ускорение есть, `-accel-check` зелёный). ВАЖНО: AVD создан с `hw.ramSize =
+1536M` — с такой памятью lowmemorykiller убивает renderer WebView и приложение показывает
+белый экран; в `~/.android/avd/AnOOPlan35.avd/config.ini` выставлено `hw.ramSize = 4096M`,
+`vm.heapSize = 512M`. Запуск: `emulator -avd AnOOPlan35`, затем
+`adb install -r build/AnOOPlan-<версия>.apk`; `adb` — `devtools/android-sdk/platform-tools/adb.exe`.
+Логи WebView: `adb logcat -d | grep chromium` (CONSOLE — ошибки JS).
+
+**Баг 3.0.0, найденный эмулятором:** `NativeBridge.isTrustedOrigin()` вызывал
+`webView.getUrl()` с потока JavaBridge → RuntimeException на Android 15, «Uncaught Error»
+при инициализации и пустой экран. Исправлено: URL мосту передаёт `WebViewClient.onPageStarted`
+(главный поток) в `volatile currentUrl`; конструктор моста — `new NativeBridge(this, this)`.
+Регрессионный страж — `tests/webview-security.test.ts`.
+
 Если keystore на машине нет (новая сессия/контейнер), подписанный APK локально не собрать: для проверки
 собирается `UNSIGNED_APK=1 npm run build:apk` (версия/versionCode, отсутствие `INTERNET`, вес), а подпись
 и сертификат проверяет `android-release.yml` из GitHub Secrets. Не генерировать новый ключ без решения

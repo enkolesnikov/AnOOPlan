@@ -41,7 +41,13 @@ test('JS-мост проверяет origin страницы перед дейс
   }
   const platform = methodBody(source, 'platform');
   assert.match(platform, /isTrustedOrigin\(\)\s*\?/, 'platform отдаёт android только доверенной странице');
-  assert.match(squash(read('android/java/com/anooplan/app/MainActivity.java')), /new NativeBridge\(this, this, webView\)/);
+  const activity = squash(read('android/java/com/anooplan/app/MainActivity.java'));
+  assert.match(activity, /new NativeBridge\(this, this\)/);
+  // Android 15: WebView.getUrl() с потока JavaBridge бросает RuntimeException, и JS
+  // получает «Uncaught Error» при инициализации (пустой экран). Поэтому URL мосту
+  // передаёт WebViewClient с главного потока, а прямых вызовов WebView в мосте нет.
+  assert.match(activity, /bridge\.onPageUrl\(url\)/);
+  assert.doesNotMatch(source, /\bwebView\.getUrl\(/);
 });
 
 test('WebView не открывает file/content и блокирует чужие схемы', () => {
