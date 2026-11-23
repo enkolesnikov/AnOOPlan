@@ -510,14 +510,17 @@ APK всегда работает в режиме «Браузер»: запро
    в JSON). Если появится оригинальный keystore — положить его в `keystore/anooplan.jks`, заменить
    пароль и пересобрать релиз.
    **RuStore (2026-11-24):** подготовлены `keystore/rustore/pepk_out.zip` и
-   `keystore/rustore/uploadcert.pem`. PEPK ZIP содержит зашифрованный существующий ключ приложения
-   и его сертификат с SHA-256 `6431374cf6a7d385c4c47f0f2bf54fcb5ee5b2c7120f057b18c4062af92fe097`.
+   `keystore/rustore/uploadcert.pem`; владелец подтвердил их загрузку в RuStore 2026-11-24.
+   Повторно загружать файлы подписи для следующих версий не нужно. PEPK ZIP содержит зашифрованный
+   существующий ключ приложения и его сертификат с SHA-256
+   `6431374cf6a7d385c4c47f0f2bf54fcb5ee5b2c7120f057b18c4062af92fe097`.
    Для AAB создан отдельный `keystore/rustore/upload.keystore`, alias `upload`, RSA 2048; пароль —
    `keystore/rustore/upload-pass.txt` (0600, вне git), SHA-256 upload-сертификата —
    `ac3bdf0c8ef8cffa8d6efb30084de642d4ba8755bdbe10d191666e51f8f8b65a`. Все AAB для RuStore
    подписывать только этим upload key и не пересоздавать его. Основной ключ приложения не менять:
-   RuStore будет подписывать им APK после загрузки AAB. Подготовка файлов не означает, что приложение
-   уже загружено или опубликовано в RuStore. AAB-сборка добавлена: `bash scripts/build-aab.sh`
+   RuStore будет подписывать им APK после загрузки AAB. Подтверждённая загрузка файлов подписи не
+   означает загрузку AAB, прохождение модерации или публикацию приложения. AAB-сборка добавлена:
+   `bash scripts/build-aab.sh`
    собирает `build/AnOOPlan-<версия>.aab` через aapt2 + bundletool без Gradle и подписывает его
    только upload key. AAB 3.0.1 (versionCode 50) собран, `jarsigner -verify` и
    `bundletool validate` пройдены; формирование universal APK проверено, установка на устройство
