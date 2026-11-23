@@ -83,8 +83,9 @@
   (`diagnostics.ts` принимает `info: string[]`).
 - **Техдолг:** `export-pdf.ts` разбит на `src/pdf/pdf-model.ts`, `pdf-sections.ts`,
   `pdf-renderer.ts`; точка входа — фасад (~120 строк), публичный API прежний.
-  `MainActivity.java` (642 строки) **не тронут**: JDK уже установлен (локальная сборка APK
-  работает, см. раздел «Сборка APK» ниже), но эмулятора на машине нет — отложено.
+  `MainActivity.java` (642 строки) **не тронут** — декомпозиция перенесена в 3.1.0: JDK 21,
+  локальная сборка APK и эмулятор `AnOOPlan35` (Android 15) на машине есть (см. раздел
+  «Сборка APK» ниже), правки Java теперь проверяемы локально.
 - **Windows-особенности:** `scripts/coverage.mjs` запускает tsx напрямую через
   `process.execPath` + `node_modules/tsx/dist/cli.mjs` (npx.cmd под spawnSync запрещён —
   EINVAL, а shell:true ломает пути с пробелами). `knip` на Windows/Node 24 не стартует:
@@ -938,11 +939,13 @@ WHPX работает (ускорение есть, `-accel-check` зелёны�
 ## Первые шаги в новой сессии
 
 1. Клонировать репозиторий / открыть `/home/office/AnOOPlan`, `git checkout main && git pull`.
-2. `npm ci && npm run lint && npm test && npm run smoke` — убедиться, что база зелёная (394/235);
+2. `npm ci && npm run lint && npm test && npm run smoke` — убедиться, что база зелёная (561/241);
    `npm run coverage` и `npm run size` — пороги (93/85/92 %, JS ≤600 КБ, CSS ≤60 КБ).
-3. `bash scripts/fetch-tools.sh && bash scripts/build-apk.sh` — собрать APK 2.9.1 локально
-   (на VPS keystore уже на месте); проверить версию/versionCode 46, сертификат и отсутствие `INTERNET`,
-   вес ≤4 МБ. Без keystore — `UNSIGNED_APK=1` или релиз по тегу.
-4. Взять следующую итерацию: **2.10.0 «Документы и смета»** — штамп/оглавление, работы/НДС,
-   XLSX-ширины/фильтры, планы этажей. Дальше — 3.0.0 «Поле и надёжность».
+3. `bash scripts/fetch-tools.sh && bash scripts/build-apk.sh` — собрать APK 3.0.1 локально
+   (на VPS keystore уже на месте; на Windows — по разделу «Сборка APK»); проверить
+   версию/versionCode 50, сертификат и отсутствие `INTERNET`, вес ≤4 МБ, запуск на эмуляторе
+   `AnOOPlan35`. Без keystore — `UNSIGNED_APK=1` или релиз по тегу.
+4. Взять следующую итерацию: **3.1.0 «Оболочка и приёмка»** — декомпозиция `MainActivity`,
+   E2E «сбой → восстановление» на эмуляторе, скан истории git (S-11). Дальше — 3.2.0 «Полная
+   смета» (по решениям владельца) и 3.3.0 «Серверный режим».
 5. Прочитать [ROADMAP.md](ROADMAP.md) и [ARCHITECTURE.md](../ARCHITECTURE.md) перед изменением модели.

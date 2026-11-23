@@ -15,6 +15,19 @@
 - **Абсолютные пороги времени в тестах** (ReDoS/линейность) держать с запасом ×10: локально 2–5 мс,
   на общем раннере 50–80 мс — иначе CI краснеет на ровном месте.
 
+## Среда на Windows (с 2026-11-23)
+
+- JDK Temurin 21 — `C:\Users\x4k3r\devtools\jdk-21.0.13.1+2`; Android SDK —
+  `C:\Users\x4k3r\devtools\android-sdk`; AVD `AnOOPlan35` (Android 15). В `config.ini` AVD
+  выставлено `hw.ramSize = 4096M` — с дефолтными 1536M lowmemorykiller убивает renderer WebView,
+  и приложение показывает белый экран. Локальная сборка APK работает — команды и тонкости MSYS
+  в `docs/HANDOFF.md`, раздел «Сборка APK».
+- **Правки `MainActivity`/`NativeBridge` перед релизом проверять на эмуляторе:** баг 3.0.0
+  (`webView.getUrl()` с потока JavaBridge → белый экран на Android 15) нашёл только эмулятор,
+  юнит-тесты его не ловили.
+- Следующая итерация — **3.1.0 «Оболочка и приёмка»**: декомпозиция `MainActivity`, E2E
+  «сбой → восстановление» на эмуляторе, скан истории git (S-11). План — `docs/ROADMAP.md`.
+
 ## Безопасность
 
 - Текущее состояние и история: [`docs/REPORT-SECURITY.md`](docs/REPORT-SECURITY.md) — открытых алертов CodeQL 0.
