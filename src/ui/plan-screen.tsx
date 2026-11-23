@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type RefObject } from 'react';
 import { dimensionGeometry, dimensionText, findRoute, segmentLength } from '../engine';
 import { chainDimensions } from '../plan-edits';
+import { pointVisible, segmentVisible, visibleFloorRect } from '../plan-culling';
 import { createUuid } from '../compat';
 import { equipmentColor, equipmentIcon } from '../equipment-icons';
 import { routeColor } from '../route-kinds';
@@ -122,6 +123,10 @@ export function PlanScreen({ ui }: { ui: AppUi }) {
     setMessage(`Цепочка размеров: ${created.length} шт.`);
     setChainMode(false); setChainIds([]); setDimensionFrom(null);
   }
+  // 3.0.0: отсечение по видимой области — на крупном проекте в DOM попадают
+  // только объекты в кадре (плюс допуск на размер символов и области клика).
+  const cullPad = 16 / zoom;
+  const cull = visibleFloorRect(pan, zoom, stage.current?.clientWidth ?? 0, stage.current?.clientHeight ?? 0, cullPad);
 
   return (
 <div className="plan-view">
@@ -154,6 +159,7 @@ export function PlanScreen({ ui }: { ui: AppUi }) {
             {project.routes.flatMap(r => r.segments.map((s, index) => {
               const visibleA = s.a.floorId === floor.id, visibleB = s.b.floorId === floor.id; if (!visibleA && !visibleB) return null;
               const chosen = cableSegments.includes(s.id) || cable?.segmentIds.includes(s.id); const selected = selection?.id === r.id;
+              if (cull && !selected && !chosen && !segmentVisible(cull, s.a.x, s.a.y, s.b.x, s.b.y, cullPad)) return null;
               const segmentMeters = segmentLength(project, s);
               return <g key={s.id} data-object="segment" data-id={s.id} data-route={r.id} className={`route-segment ${chosen ? 'cable-selected' : ''} ${selected ? 'is-selected' : ''}`} style={{ '--route-color': routeColor(r) } as unknown as import('react').CSSProperties} onDoubleClick={e => { if (tool !== 'select') return; e.preventDefault(); e.stopPropagation(); const p = position(e, false); insertVertex(r.id, s.id, p); }} onPointerDown={e => { e.stopPropagation(); if (pinching.current) return; if (tool === 'cable') armTap(e, () => setCableSegments(ids => ids.includes(s.id) ? ids.filter(id => id !== s.id) : [...ids, s.id])); else if (tool === 'route') armTap(e, () => { const p = position(e); setDraft(points => [...points, p]); }); else if (tool === 'select') armTap(e, () => setSelection({ kind: 'route', id: r.id })); }}>
                 <line x1={s.a.x} y1={s.a.y} x2={s.b.x} y2={s.b.y} stroke="transparent" strokeWidth={26 / zoom} />
@@ -168,6 +174,7 @@ export function PlanScreen({ ui }: { ui: AppUi }) {
               const from = project.equipment.find(item => item.id === dimension.fromId);
               const to = project.equipment.find(item => item.id === dimension.toId);
               if (geometry.floorId !== floor.id || geometry.units === null || !from || !to) return null;
+              if (cull && !(selection?.kind === 'dimension' && selection.id === dimension.id) && !segmentVisible(cull, from.x, from.y, to.x, to.y, cullPad)) return null;
               const angle = Math.atan2(to.y - from.y, to.x - from.x);
               const offset = 10 / zoom;
               const normalX = -Math.sin(angle) * offset;
@@ -187,7 +194,7 @@ export function PlanScreen({ ui }: { ui: AppUi }) {
                 <text x={(x1 + x2) / 2} y={(y1 + y2) / 2 - 6 / zoom} textAnchor="middle" fontSize={12 / zoom} fill="#875ec5" stroke="#fff" strokeWidth={3 / zoom} paintOrder="stroke" className="svg-label">{dimensionText(geometry)}</text>
               </g>;
             })}
-            {project.equipment.filter(eq => eq.floorId === floor.id).map(eq => <g data-object="equipment" data-id={eq.id} data-icon={equipmentIcon(eq.type)} data-color={equipmentColor(eq)} key={eq.id} transform={`translate(${eq.x},${eq.y})`} className={`equipment-symbol ${selection?.id === eq.id ? 'is-selected' : ''}`} onPointerDown={e => { if (pinching.current) return; if (tool === 'select') { setSelection({ kind: 'equipment', id: eq.id }); startDrag(e, 'equipment', eq.id); } else if (tool === 'route') { e.stopPropagation(); armTap(e, () => setDraft(points => { const p = { x: eq.x, y: eq.y }; const last = points[points.length - 1]; return ortho && last && last.x !== p.x && last.y !== p.y ? [...points, { x: p.x, y: last.y }, p] : [...points, p]; })); } else if (tool === 'cable') { e.stopPropagation(); armTap(e, () => { if (!cableFrom) { setCableFrom(eq.id); setMessage(`Начало: ${eq.number}. Коснитесь конечного устройства.`); } else if (cableTo !== eq.id) { setCableTo(eq.id); const res = findRoute(project, cableFrom, eq.id); if (res.error) { setCableSegments([]); setError(res.error); } else { setCableSegments(res.segmentIds); setMessage(`Конец: ${eq.number}. Маршрут построен автоматически: ${res.segmentIds.length} сегм.`); } } }); } else if (tool === 'dimension') { e.stopPropagation(); armTap(e, () => {
+            {project.equipment.filter(eq => eq.floorId === floor.id).filter(eq => !cull || selection?.id === eq.id || pointVisible(cull, eq.x, eq.y, cullPad)).map(eq => <g data-object="equipment" data-id={eq.id} data-icon={equipmentIcon(eq.type)} data-color={equipmentColor(eq)} key={eq.id} transform={`translate(${eq.x},${eq.y})`} className={`equipment-symbol ${selection?.id === eq.id ? 'is-selected' : ''}`} onPointerDown={e => { if (pinching.current) return; if (tool === 'select') { setSelection({ kind: 'equipment', id: eq.id }); startDrag(e, 'equipment', eq.id); } else if (tool === 'route') { e.stopPropagation(); armTap(e, () => setDraft(points => { const p = { x: eq.x, y: eq.y }; const last = points[points.length - 1]; return ortho && last && last.x !== p.x && last.y !== p.y ? [...points, { x: p.x, y: last.y }, p] : [...points, p]; })); } else if (tool === 'cable') { e.stopPropagation(); armTap(e, () => { if (!cableFrom) { setCableFrom(eq.id); setMessage(`Начало: ${eq.number}. Коснитесь конечного устройства.`); } else if (cableTo !== eq.id) { setCableTo(eq.id); const res = findRoute(project, cableFrom, eq.id); if (res.error) { setCableSegments([]); setError(res.error); } else { setCableSegments(res.segmentIds); setMessage(`Конец: ${eq.number}. Маршрут построен автоматически: ${res.segmentIds.length} сегм.`); } } }); } else if (tool === 'dimension') { e.stopPropagation(); armTap(e, () => {
                 if (chainMode) { setChainIds(ids => ids.includes(eq.id) ? ids : [...ids, eq.id]); setMessage(`Цепочка: добавлено ${eq.number}.`); return; }
                 if (!dimensionFrom) { setDimensionFrom(eq.id); setMessage(`Размер: ${eq.number} — выберите второе оборудование.`); return; }
                 if (dimensionFrom === eq.id) { setMessage('Для размера выберите другое оборудование.'); return; }
@@ -200,7 +207,7 @@ export function PlanScreen({ ui }: { ui: AppUi }) {
               }); } }}>
               <EquipmentSymbol item={eq} zoom={zoom} />
             </g>)}
-            {project.pins.filter(pin => pin.floorId === floor.id).map(pin => <g data-object="pin" data-id={pin.id} key={pin.id} transform={`translate(${pin.x},${pin.y})`} className={`pin-symbol ${selection?.id === pin.id ? 'is-selected' : ''}`} onPointerDown={e => { e.stopPropagation(); if (pinching.current) return; if (tool === 'select') { setSelection({ kind: 'pin', id: pin.id }); setTab('pins'); setView('plan'); } }}>
+            {project.pins.filter(pin => pin.floorId === floor.id).filter(pin => !cull || selection?.id === pin.id || pointVisible(cull, pin.x, pin.y, cullPad)).map(pin => <g data-object="pin" data-id={pin.id} key={pin.id} transform={`translate(${pin.x},${pin.y})`} className={`pin-symbol ${selection?.id === pin.id ? 'is-selected' : ''}`} onPointerDown={e => { e.stopPropagation(); if (pinching.current) return; if (tool === 'select') { setSelection({ kind: 'pin', id: pin.id }); setTab('pins'); setView('plan'); } }}>
               <circle r={9 / zoom} fill={pin.status === 'closed' ? '#2f9e63' : '#e78c22'} stroke="#fff" strokeWidth={2 / zoom} />
               <text x={13 / zoom} y={4 / zoom} fontSize={12 / zoom} className="svg-label" fill="#122936">{pin.number}</text>
             </g>)}
