@@ -7,6 +7,7 @@ import { Window } from 'happy-dom';
 import { mkdir } from 'node:fs/promises';
 import { readFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
+import { pathToFileURL } from 'node:url';
 import * as XLSX from 'xlsx';
 
 const ROOT = resolve(import.meta.dirname, '..');
@@ -162,7 +163,7 @@ window.alert = () => {};
 globalThis.confirm = window.confirm;
 globalThis.alert = window.alert;
 
-await import(bundleFile);
+await import(pathToFileURL(bundleFile).href);
 await sleep(300);
 
 const bodyText = () => document.body.textContent || '';
