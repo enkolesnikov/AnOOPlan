@@ -21,8 +21,11 @@ const LCOV_PATH = join(COVERAGE_DIR, 'lcov.info');
 const files = readdirSync(join(ROOT, 'tests')).filter(name => name.endsWith('.test.ts')).map(name => join('tests', name));
 const THRESHOLDS = { lines: 93, branches: 85, functions: 92 };
 mkdirSync(COVERAGE_DIR, { recursive: true });
-const result = spawnSync('npx', [
-  'tsx', '--test', '--experimental-test-coverage',
+// Запускаем tsx напрямую через node: на Windows npx.cmd под spawnSync запрещён
+// (EINVAL, CVE-2024-27980), а shell:true ломает пути с пробелами.
+const TSX_CLI = join(ROOT, 'node_modules', 'tsx', 'dist', 'cli.mjs');
+const result = spawnSync(process.execPath, [
+  TSX_CLI, '--test', '--experimental-test-coverage',
   '--test-reporter=spec', '--test-reporter-destination=stdout',
   '--test-reporter=lcov', `--test-reporter-destination=${LCOV_PATH}`,
   ...files,

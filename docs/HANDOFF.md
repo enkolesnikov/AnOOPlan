@@ -14,8 +14,8 @@
 - Сайт: <https://enkolesnikov.github.io/AnOOPlan/> — лендинг с возможностями и скриншотами.
 - Веб-версия: <https://enkolesnikov.github.io/AnOOPlan/app/> — та же сборка, что и APK; публикуется
   автоматически при изменениях приложения (ручной `workflow_dispatch` сохранён).
-- Текущая версия: **2.10.1**, versionCode 48, `com.anooplan.app`, minSdk 24, targetSdk 35.
-  WebView 98+, **538** юнит-тестов + 241 проверка смоука + 11 E2E.
+- Текущая версия: **3.0.0**, versionCode 49, `com.anooplan.app`, minSdk 24, targetSdk 35.
+  WebView 98+, **559** юнит-тестов + смоук happy-dom + 11 E2E.
 - Возможности: PDF-планы и калибровка, оборудование с иконками и цветом, трассы, кабели и автопрокладка,
   журнал, справочник цен и смета с коммерческим предложением, печатные формы (титул, оглавление,
   штамп ГОСТ, лист изменений), печать выбранных разделов, обмен PDF/XLSX и проектом `.anooplan`,
@@ -31,7 +31,10 @@
 - **Доступность:** системный размер шрифта Android (textZoom 85–160 %), тёмная тема, высокий контраст,
   reduced-motion; бюджет памяти рендера плана — 8 Мпикс с предупреждением.
 - Подпись: SHA-256 сертификата `6431374cf6a7d385c4c47f0f2bf54fcb5ee5b2c7120f057b18c4062af92fe097`.
-- Текущий релиз: [v2.10.1 «Демо и точность»](https://github.com/enkolesnikov/AnOOPlan/releases/tag/v2.10.1) —
+- Текущий релиз: [v3.0.0 «Поле и надёжность»](https://github.com/enkolesnikov/AnOOPlan/releases/tag/v3.0.0) —
+  подписанный APK `AnOOPlan-3.0.0.apk` (versionCode 49; размер и SHA-256 ассета — в релизе),
+  заметки — [RELEASE-NOTES-3.0.0.md](RELEASE-NOTES-3.0.0.md).
+- Предыдущий релиз: [v2.10.1 «Демо и точность»](https://github.com/enkolesnikov/AnOOPlan/releases/tag/v2.10.1) —
   подписанный APK `AnOOPlan-2.10.1.apk` (versionCode 48, 1 624 867 Б,
   SHA-256 `2394ca21d5cdd58756b3c903cc5f12dfe123ff49945a92170d48a6b1fd806852`), заметки — [RELEASE-NOTES-2.10.1.md](RELEASE-NOTES-2.10.1.md),
   отчёт — [REPORT-2.10.1.md](REPORT-2.10.1.md), разбор дефектов — [DEMO-REVIEW-2.10.1.md](DEMO-REVIEW-2.10.1.md).
@@ -41,6 +44,36 @@
   отчёт — [REPORT-2.10.0.md](REPORT-2.10.0.md).
 - Предыдущий релиз: [v2.9.1 «Точность и скорость»](https://github.com/enkolesnikov/AnOOPlan/releases/tag/v2.9.1) —
   APK `AnOOPlan-2.9.1.apk` (versionCode 46, 1 612 488 Б, SHA-256 `926779d9…ca48d9`).
+
+### Состояние на 2026-11-23 (3.0.0, релиз)
+
+- **Хранилище проектов:** список проектов — в IndexedDB (`src/project-store.ts`, store `projects`,
+  DB_VERSION 3), миграция из `cableplan:projects` автоматическая со страховочной копией
+  `cableplan:projects.migrated`; чтение объединяет IndexedDB и legacy localStorage, запись
+  деградирует в localStorage при недоступном idb. `navigator.storage.persist()` запрашивается
+  при старте (`use-app-effects.ts`).
+- **Авто-экспорт:** каждое 10-е ручное сохранение проекта дополнительно скачивает `.anooplan`
+  (`src/auto-backup.ts`, счётчик `cableplan:save-count:<id>`; подключено в `use-app-controller.ts`).
+- **Culling плана:** `src/plan-culling.ts` (`visibleFloorRect`, `pointVisible`, `segmentVisible`);
+  в `plan-screen.tsx` рендерятся только объекты видимой области (выбранные и выбранный кабель —
+  всегда). Бенч 2000 сегментов: 60 в DOM, ~1100 узлов вместо ~10 000.
+- **Полевой режим:** `src/field-mode.ts` (ключ `cableplan:field-mode`, блокировка портрета);
+  кнопка в сайдбаре, класс `field-mode` на body, нижняя панель `.field-bar` (4 действия),
+  быстрый пин с камерой и `vibrate(30)` в `use-plan-editing.ts`, тёмная «уличная» тема в конце
+  `src/styles.css`.
+- **Диагностика:** `src/runtime-info.ts` (версия WebView/браузера из UA, размер проекта,
+  `collectRuntimeReport`); блок на экране «О программе», кнопка «Скачать отчёт»
+  (`diagnostics.ts` принимает `info: string[]`).
+- **Техдолг:** `export-pdf.ts` разбит на `src/pdf/pdf-model.ts`, `pdf-sections.ts`,
+  `pdf-renderer.ts`; точка входа — фасад (~120 строк), публичный API прежний.
+  `MainActivity.java` (642 строки) **не тронут**: на машине нет JDK/эмулятора — отложено.
+- **Windows-особенности:** `scripts/coverage.mjs` запускает tsx напрямую через
+  `process.execPath` + `node_modules/tsx/dist/cli.mjs` (npx.cmd под spawnSync запрещён —
+  EINVAL, а shell:true ломает пути с пробелами). `knip` на Windows/Node 24 не стартует:
+  oxc-parser требует 2-ГиБ ArrayBuffer, который V8 в этой сборке не выделяет; knip — только в CI.
+- **Перф-бенч:** `tests/perf/plan-2000.spec.ts` ждёт сегменты по счётчику, а не по видимости
+  (у SVG `<g>` нет собственного bbox, Playwright отвечает «hidden»). Полный прогон drag/ввод —
+  ручной замер, на слабой машине не укладывается в таймаут; culling подтверждён логом.
 
 ### Состояние на 2026-11-23 (2.10.1, релиз)
 
