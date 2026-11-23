@@ -24,16 +24,13 @@ import {
 } from './pdf/pdf-model';
 
 export {
-  DEFAULT_JOURNAL_SECTIONS,
   formatDateRu,
   formatMoney,
   formatNumber,
   type JournalFormat,
   type JournalOptions,
   type JournalPhoto,
-  type JournalPlan,
   type JournalSectionId,
-  type TableRow,
 } from './pdf/pdf-model';
 
 /** Доступные форматы листа: данные живут рядом с JOURNAL_SECTIONS, API — здесь. */
