@@ -2,6 +2,8 @@ import { useEffect, useRef } from 'react';
 import type { Project } from '../model';
 import { collectStorageGarbage } from '../garbage-collector';
 import { logDiagnostic } from '../diagnostics';
+import { migrateProjectsToIdb } from '../project-store';
+import { requestPersistentStorage } from '../storage-health';
 import { nativeBridge, type NativeHostWindow } from './native';
 import type { PlanEditing } from './use-plan-editing';
 import { useLayerFocus } from './use-layer-focus';
@@ -37,6 +39,18 @@ export function useAppEffects(
   useEffect(() => { const handler = (e: BeforeUnloadEvent) => { if (dirty) { e.preventDefault(); e.returnValue = ''; } }; window.addEventListener('beforeunload', handler); return () => window.removeEventListener('beforeunload', handler); }, [dirty]);
   useEffect(() => { setDraft([]); setCalibration([]); setMeasure([]); }, [floor?.id, floor?.pdfId, setDraft, setCalibration, setMeasure]);
   useEffect(() => { fetch('/api/health').then(r => { if (!r.ok) setStaticMode(true); }).catch(() => setStaticMode(true)); }, [setStaticMode]);
+  // 3.0.0: перенос списка проектов из localStorage в IndexedDB и закрепление
+  // хранилища (persist), чтобы браузер не вычищал проекты под давлением места.
+  useEffect(() => {
+    if (!staticMode) return;
+    void (async () => {
+      try {
+        const moved = await migrateProjectsToIdb();
+        if (moved > 0) setMessageRef.current(`Хранилище обновлено: проектов перенесено в надёжное хранилище — ${moved}.`);
+      } catch (error) { logDiagnostic('error', error, 'projects-migration'); }
+      try { await requestPersistentStorage(); } catch (error) { logDiagnostic('error', error, 'storage-persist'); }
+    })();
+  }, [staticMode]);
   useEffect(() => {
     if (!staticMode) return;
     const timer = setTimeout(() => { try { localStorage.setItem('cableplan:autosave', JSON.stringify(projectRef.current)); } catch (error) { logDiagnostic('error', error, 'autosave-local'); setMessageRef.current('Черновик не сохранён: в браузере кончилось место. Выгрузите проект в .anooplan.'); } }, 800);

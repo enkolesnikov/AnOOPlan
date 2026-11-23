@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import type { MouseEvent } from 'react';
 import { createDemoProject } from '../demo';
 import { readDiagnostics } from '../diagnostics';
-import { readLocalProjects } from '../local-projects';
+import { listStoredProjects } from '../project-store';
 import { api } from './api';
 import { EquipmentIcon } from './equipment-icon';
 import { number } from './format';
@@ -233,7 +233,7 @@ function ProjectActions({ ui }: { ui: AppUi }) {
   const { busy, mayLeave, load, setMenuOpen, setProjects, staticMode, restoreInput, run, setMessage, setTemplatesOpen } = ui;
   return <div className="sidebar-project">
     <button onClick={() => { setMenuOpen(false); setTemplatesOpen(true); }}>＋ Новый проект</button>
-    <button disabled={busy} onClick={() => { setMenuOpen(false); void run(async () => { setProjects(staticMode ? readLocalProjects().map(item => ({ id: item.id, name: item.name, updatedAt: item.updatedAt })) : await api('/api/projects')); }); }}>📂 Открыть проект</button>
+    <button disabled={busy} onClick={() => { setMenuOpen(false); void run(async () => { setProjects(staticMode ? (await listStoredProjects()).map(item => ({ id: item.id, name: item.name, updatedAt: item.updatedAt })) : await api('/api/projects')); }); }}>📂 Открыть проект</button>
     <button disabled={busy} onClick={() => { setMenuOpen(false); restoreInput.current?.click(); }}>⬆ Загрузить JSON</button>
     <button onClick={() => { setMenuOpen(false); if (mayLeave()) { load(createDemoProject(), false); setMessage('Учебный проект: синтетические данные, не рабочая документация.'); } }}>📘 Учебный проект</button>
   </div>;

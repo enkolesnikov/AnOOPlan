@@ -5,6 +5,7 @@ import type { Project } from '../src/model';
 import type { WorkspaceState } from '../src/ui/use-workspace-state';
 import { useProjectIo } from '../src/ui/use-project-io';
 import { PROJECTS_KEY } from '../src/local-projects';
+import { listStoredProjects } from '../src/project-store';
 import { idbDelete, idbGet, idbStoreDelete, idbStoreGet, idbStoreKeys, idbStorePut } from '../src/idb';
 import type { SnapshotEntry } from '../src/use-snapshots';
 import { baseProject, device, floor } from './fixtures';
@@ -66,12 +67,9 @@ function harness(project: Project): Harness {
   return { state, loads, saved, persisted, messages, errors, snapshotReasons };
 }
 
-const projectsInStorage = (): Project[] => {
-  const raw = localStorage.getItem(PROJECTS_KEY);
-  return raw ? JSON.parse(raw) as Project[] : [];
-};
+const projectsInStorage = async (): Promise<Project[]> => listStoredProjects();
 
-test('useProjectIo: staticMode saveProject кладёт проект в localStorage и в снимок', async () => {
+test('useProjectIo: staticMode saveProject кладёт проект в хранилище и в снимок', async () => {
   const project = baseProject({ id: 'io-save', name: 'Сохранение' });
   const h = harness(project);
   const io = useProjectIo(h.state);
@@ -79,9 +77,8 @@ test('useProjectIo: staticMode saveProject кладёт проект в localSto
   const result = await io.saveProject();
 
   assert.equal(result.name, 'Сохранение');
-  const list = projectsInStorage();
+  const list = (await projectsInStorage()).filter(item => item.id === 'io-save');
   assert.equal(list.length, 1);
-  assert.equal(list[0].id, 'io-save');
   assert.equal(list[0].name, 'Сохранение');
   assert.deepEqual(h.saved, [JSON.stringify(project)]);
   assert.deepEqual(h.persisted, [true]);
@@ -91,7 +88,7 @@ test('useProjectIo: staticMode saveProject кладёт проект в localSto
   // silent-режим (автосохранение) не пишет сообщение и не плодит снимки.
   h.state.projectRef.current.name = 'Сохранение 2';
   await io.saveProject(true);
-  const updated = projectsInStorage();
+  const updated = (await projectsInStorage()).filter(item => item.id === 'io-save');
   assert.equal(updated.length, 1, 'проект обновляется, а не дублируется');
   assert.equal(updated[0].name, 'Сохранение 2');
   assert.deepEqual(h.messages, ['Проект «Сохранение» сохранён в браузере']);
@@ -161,7 +158,7 @@ test('useProjectIo: staticMode deleteProject удаляет проект со с
   try {
     await io.deleteProject('io-open', 'Открытый');
 
-    assert.deepEqual(projectsInStorage().map(item => item.id), ['io-other']);
+    assert.deepEqual((await projectsInStorage()).filter(item => item.id === 'io-open' || item.id === 'io-other').map(item => item.id), ['io-other']);
     assert.equal(await idbStoreGet<SnapshotEntry>('snapshots', openSnapshot.key), undefined, 'снимки удалённого проекта убраны');
     assert.ok(await idbStoreGet<SnapshotEntry>('snapshots', otherSnapshot.key), 'снимки чужого проекта не тронуты');
     const snapshotKeys = await idbStoreKeys('snapshots');

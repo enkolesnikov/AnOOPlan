@@ -2,9 +2,10 @@
 // Хранилище одно (`pdfs`): PDF лежат под UUID, фото — под `photo:<key>`.
 
 const DB_NAME = 'cableplan';
-const DB_VERSION = 2;
+const DB_VERSION = 3;
 const BLOB_STORE = 'pdfs';
 const SNAPSHOT_STORE = 'snapshots';
+const PROJECT_STORE = 'projects';
 
 let connection: Promise<IDBDatabase> | null = null;
 
@@ -21,6 +22,7 @@ export function idbOpen(): Promise<IDBDatabase> {
     request.onupgradeneeded = () => {
       if (!request.result.objectStoreNames.contains(BLOB_STORE)) request.result.createObjectStore(BLOB_STORE);
       if (!request.result.objectStoreNames.contains(SNAPSHOT_STORE)) request.result.createObjectStore(SNAPSHOT_STORE);
+      if (!request.result.objectStoreNames.contains(PROJECT_STORE)) request.result.createObjectStore(PROJECT_STORE);
     };
     request.onsuccess = () => {
       const db = request.result;

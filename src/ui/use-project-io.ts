@@ -3,7 +3,8 @@ import { ANOOPLAN_EXTENSION, parseAnoPlanFile } from '../project-file';
 import { createUuid as uid, cloneValue as clone } from '../compat';
 import { logDiagnostic } from '../diagnostics';
 import { idbDelete, idbPut, idbStoreDelete, idbStoreKeys } from '../idb';
-import { deleteLocalProject, saveLocalProject } from '../local-projects';
+import { deleteStoredProject, saveStoredProject } from '../project-store';
+import { resetSaveCounter } from '../auto-backup';
 import { migrateProject } from '../migrations';
 import { collectStorageGarbage } from '../garbage-collector';
 import { verifyAttachmentManifest, type AttachmentManifest } from '../attachment-manifest';
@@ -24,7 +25,7 @@ export function useProjectIo(s: WorkspaceState) {
   async function saveProject(silent = false): Promise<Project> {
     const snapshot = clone(projectRef.current);
     if (staticMode) {
-      saveLocalProject(snapshot); setPersisted(true); setSaved(JSON.stringify(snapshot));
+      await saveStoredProject(snapshot); setPersisted(true); setSaved(JSON.stringify(snapshot));
       if (!silent) {
         setMessage(`Проект «${snapshot.name}» сохранён в браузере`);
         void takeSnapshot('ручное сохранение').catch(() => { /* история недоступна */ });
@@ -47,7 +48,8 @@ export function useProjectIo(s: WorkspaceState) {
         for (const key of snapshotKeys) { try { await idbStoreDelete('snapshots', key); } catch { /* хранилище недоступно */ } }
       } catch { /* хранилище недоступно — проект всё равно удаляем */ }
       // Блобы не удаляем здесь: GC проверит оставшиеся проекты, undo и снимки.
-      deleteLocalProject(id);
+      await deleteStoredProject(id);
+      resetSaveCounter(id);
       void collectStorageGarbage([projectRef.current]);
     } else await api('/api/projects/' + id, { method: 'DELETE' });
     setProjects(list => list ? list.filter(p => p.id !== id) : null);

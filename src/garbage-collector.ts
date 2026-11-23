@@ -1,7 +1,8 @@
 import type { Project } from './model';
 import type { SnapshotEntry } from './use-snapshots';
 import { idbDelete, idbStoreDelete, idbStoreGetAll, idbStoreKeys } from './idb';
-import { readAutosaveDraft, readLocalProjects } from './local-projects';
+import { readAutosaveDraft } from './local-projects';
+import { listStoredProjects } from './project-store';
 import { unusedStorageKeys } from './storage-gc';
 
 /**
@@ -14,7 +15,7 @@ import { unusedStorageKeys } from './storage-gc';
  */
 export async function collectStorageGarbage(states: Project[]): Promise<void> {
   try {
-    const saved = readLocalProjects();
+    const saved = await listStoredProjects();
     const draft = readAutosaveDraft();
     const live = draft ? [...states, draft] : states;
     const projectIds = new Set([...live, ...saved].map(item => item.id));
