@@ -1,7 +1,7 @@
 {
   "name": "anooplan",
-  "version": "3.0.0",
-  "androidVersionCode": 49,
+  "version": "3.0.1",
+  "androidVersionCode": 50,
   "private": true,
   "type": "module",
   "scripts": {

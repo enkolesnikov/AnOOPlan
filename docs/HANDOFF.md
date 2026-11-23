@@ -14,8 +14,8 @@
 - Сайт: <https://enkolesnikov.github.io/AnOOPlan/> — лендинг с возможностями и скриншотами.
 - Веб-версия: <https://enkolesnikov.github.io/AnOOPlan/app/> — та же сборка, что и APK; публикуется
   автоматически при изменениях приложения (ручной `workflow_dispatch` сохранён).
-- Текущая версия: **3.0.0**, versionCode 49, `com.anooplan.app`, minSdk 24, targetSdk 35.
-  WebView 98+, **559** юнит-тестов + смоук happy-dom + 11 E2E.
+- Текущая версия: **3.0.1**, versionCode 50, `com.anooplan.app`, minSdk 24, targetSdk 35.
+  WebView 98+, **561** юнит-тест + смоук happy-dom + 11 E2E.
 - Возможности: PDF-планы и калибровка, оборудование с иконками и цветом, трассы, кабели и автопрокладка,
   журнал, справочник цен и смета с коммерческим предложением, печатные формы (титул, оглавление,
   штамп ГОСТ, лист изменений), печать выбранных разделов, обмен PDF/XLSX и проектом `.anooplan`,
@@ -31,9 +31,14 @@
 - **Доступность:** системный размер шрифта Android (textZoom 85–160 %), тёмная тема, высокий контраст,
   reduced-motion; бюджет памяти рендера плана — 8 Мпикс с предупреждением.
 - Подпись: SHA-256 сертификата `6431374cf6a7d385c4c47f0f2bf54fcb5ee5b2c7120f057b18c4062af92fe097`.
-- Текущий релиз: [v3.0.0 «Поле и надёжность»](https://github.com/enkolesnikov/AnOOPlan/releases/tag/v3.0.0) —
+- Текущий релиз: [v3.0.1](https://github.com/enkolesnikov/AnOOPlan/releases/tag/v3.0.1) —
+  подписанный APK `AnOOPlan-3.0.1.apk` (versionCode 50; размер и SHA-256 — в примечании к релизу),
+  заметки — [RELEASE-NOTES-3.0.1.md](RELEASE-NOTES-3.0.1.md).
+- Предыдущий релиз: [v3.0.0 «Поле и надёжность»](https://github.com/enkolesnikov/AnOOPlan/releases/tag/v3.0.0) —
   подписанный APK `AnOOPlan-3.0.0.apk` (versionCode 49, 1 628 963 Б,
   SHA-256 `9375bed5d5c9a3af702869f2c6e00f3e2c051404824e646a572e829d5a9ee6dc`), заметки — [RELEASE-NOTES-3.0.0.md](RELEASE-NOTES-3.0.0.md).
+  ВНИМАНИЕ: APK 3.0.0 не запускается на Android 15 (белый экран, см. ниже «Баг 3.0.0») — пользователям
+  нужен 3.0.1.
 - Предыдущий релиз: [v2.10.1 «Демо и точность»](https://github.com/enkolesnikov/AnOOPlan/releases/tag/v2.10.1) —
   подписанный APK `AnOOPlan-2.10.1.apk` (versionCode 48, 1 624 867 Б,
   SHA-256 `2394ca21d5cdd58756b3c903cc5f12dfe123ff49945a92170d48a6b1fd806852`), заметки — [RELEASE-NOTES-2.10.1.md](RELEASE-NOTES-2.10.1.md),
@@ -44,6 +49,17 @@
   отчёт — [REPORT-2.10.0.md](REPORT-2.10.0.md).
 - Предыдущий релиз: [v2.9.1 «Точность и скорость»](https://github.com/enkolesnikov/AnOOPlan/releases/tag/v2.9.1) —
   APK `AnOOPlan-2.9.1.apk` (versionCode 46, 1 612 488 Б, SHA-256 `926779d9…ca48d9`).
+
+### Состояние на 2026-11-23 (3.0.1, патч)
+
+- **Запуск на Android 15 исправлен:** мост получает URL от `WebViewClient.onPageStarted`,
+  `webView.getUrl()` из моста убран (RuntimeException с потока JavaBridge). Проверено
+  на локальном эмуляторе (AVD `AnOOPlan35`): интерфейс рендерится, учебный проект
+  проходит проверки без замечаний.
+- **Устаревший учебный проект** (копия без цен/сечений, сохранённая старой версией)
+  распознаётся по имени + проверкам движка и заменяется свежей при загрузке
+  (`refreshedDemoProject` в `src/demo.ts`; вызовы — автосейв-восстановление и «Открыть проект»).
+- Эмулятор и JDK на Windows установлены — см. раздел «Сборка APK» ниже.
 
 ### Состояние на 2026-11-23 (3.0.0, релиз)
 
