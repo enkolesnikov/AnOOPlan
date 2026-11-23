@@ -1,5 +1,6 @@
 import type { Project, Floor, Equipment, Route, Cable, Segment, Vertex, Pin, PriceItem, PriceKind } from './model';
 import { createUuid } from './compat';
+import { domainWarnings, validateProject } from './engine';
 
 /** Идентификаторы демо-проекта уникальны и не используют слабый Math.random. */
 const uid = (): string => `demo-${createUuid()}`;
@@ -297,4 +298,24 @@ export function createDemoProject(): Project {
       ],
     },
   };
+}
+
+/**
+ * Устаревшая копия учебного проекта: сохранена старой версией приложения,
+ * поэтому в ней нет цен кабелей и сечений КНС, а экран «Ведомости» заполнен
+ * замечаниями. Определяем по имени и результату проверок: рабочий проект
+ * с таким же пробелом, но другим названием, не трогаем никогда.
+ */
+export function isStaleDemoProject(project: Project): boolean {
+  return project.name === 'Учебный проект'
+    && (validateProject(project).length > 0 || domainWarnings(project).length > 0);
+}
+
+/**
+ * Свежая копия вместо устаревшей учебной (это синтетические учебные данные,
+ * не рабочая документация — потери нет). null — проект не учебный или уже
+ * проходит проверки.
+ */
+export function refreshedDemoProject(project: Project): Project | null {
+  return isStaleDemoProject(project) ? createDemoProject() : null;
 }

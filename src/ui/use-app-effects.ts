@@ -5,6 +5,7 @@ import { logDiagnostic } from '../diagnostics';
 import { migrateProjectsToIdb } from '../project-store';
 import { lockPortraitOrientation, unlockOrientation } from '../field-mode';
 import { requestPersistentStorage } from '../storage-health';
+import { refreshedDemoProject } from '../demo';
 import { nativeBridge, type NativeHostWindow } from './native';
 import type { PlanEditing } from './use-plan-editing';
 import { useLayerFocus } from './use-layer-focus';
@@ -132,7 +133,13 @@ export function useAppEffects(
       if (!raw) return;
       const saved = JSON.parse(raw) as Project;
       if (saved && (saved.schemaVersion === 1 || saved.schemaVersion === 2) && Array.isArray(saved.floors) && projectRef.current.name === 'Новый проект' && projectRef.current.equipment.length === 0) {
-        loadRef.current(saved, true); setMessageRef.current('Восстановлен последний черновик из браузера.');
+        // Учебный проект из старой версии приложения заменяем свежим: иначе
+        // «Ведомости» заполнены замечаниями о ценах и сечениях, которых тогда не было.
+        const refreshed = refreshedDemoProject(saved);
+        loadRef.current(refreshed ?? saved, true);
+        setMessageRef.current(refreshed
+          ? 'Учебный проект обновлён до актуальной версии: цены, сечения и заполнение КНС на месте.'
+          : 'Восстановлен последний черновик из браузера.');
       }
     } catch { /* ignore */ }
   }, [staticMode, projectRef]);

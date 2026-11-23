@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { createDemoProject } from '../demo';
+import { createDemoProject, refreshedDemoProject } from '../demo';
 import { listStoredProjects, readStoredProject } from '../project-store';
 import type { Project } from '../model';
 import { api } from './api';
@@ -158,6 +158,6 @@ export function ProjectsModal({ ui }: { ui: AppUi }) {
   const { setProjects, busy, mayLeave, run, staticMode, load, setMessage, deleteProject } = ui;
   const projects = ui.projects!;
   return (
-<div className="modal-backdrop"><section className="modal"><div className="modal-heading"><h2>Открыть проект</h2><button onClick={() => setProjects(null)}>×</button></div>{projects.length ? projects.map(p => <div className="project-row" key={p.id}><button className="project-option" disabled={busy} onClick={() => { if (mayLeave()) void run(async () => { const result = staticMode ? await readStoredProject(p.id) : await api<Project>(`/api/projects/${p.id}`); if (!result) throw new Error('Проект не найден в хранилище.'); load(result, true); setProjects(null); setMessage(`Проект «${result.name}» открыт.`); }); }}><strong>{p.name}</strong><small>{new Date(p.updatedAt).toLocaleString('ru-RU')}</small><span>→</span></button><button className="project-delete" disabled={busy} title="Удалить проект" onClick={() => void run(() => deleteProject(p.id, p.name))}>🗑</button></div>) : <p className="help">Сохранённых проектов пока нет.</p>}</section></div>
+<div className="modal-backdrop"><section className="modal"><div className="modal-heading"><h2>Открыть проект</h2><button onClick={() => setProjects(null)}>×</button></div>{projects.length ? projects.map(p => <div className="project-row" key={p.id}><button className="project-option" disabled={busy} onClick={() => { if (mayLeave()) void run(async () => { const result = staticMode ? await readStoredProject(p.id) : await api<Project>(`/api/projects/${p.id}`); if (!result) throw new Error('Проект не найден в хранилище.'); const refreshed = refreshedDemoProject(result); load(refreshed ?? result, true); setProjects(null); setMessage(refreshed ? 'Учебный проект обновлён до актуальной версии: цены, сечения и заполнение КНС на месте.' : `Проект «${result.name}» открыт.`); }); }}><strong>{p.name}</strong><small>{new Date(p.updatedAt).toLocaleString('ru-RU')}</small><span>→</span></button><button className="project-delete" disabled={busy} title="Удалить проект" onClick={() => void run(() => deleteProject(p.id, p.name))}>🗑</button></div>) : <p className="help">Сохранённых проектов пока нет.</p>}</section></div>
   );
 }

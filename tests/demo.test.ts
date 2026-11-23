@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createDemoProject, demoPlanPdf } from '../src/demo';
-import { validateProject } from '../src/engine';
+import { createDemoProject, demoPlanPdf, isStaleDemoProject, refreshedDemoProject } from '../src/demo';
+import { domainWarnings, validateProject } from '../src/engine';
 import { estimate } from '../src/estimate';
 import type { PriceItem } from '../src/model';
 
@@ -20,6 +20,36 @@ test('демо-проект: валиден и смета полная, без �
   assert.notEqual(result.total, null);
   assert.notEqual(result.vat, null);
   assert.notEqual(result.gross, null);
+});
+
+test('демо-проект: проверки проекта проходят без замечаний', () => {
+  const demo = createDemoProject();
+  assert.deepEqual(validateProject(demo), []);
+  // Цены кабелей, сечения КНС и кабелей, заполнение лотков — всё на месте.
+  assert.deepEqual(domainWarnings(demo), []);
+});
+
+test('устаревший учебный проект: распознаётся и заменяется свежим', () => {
+  const fresh = createDemoProject();
+  assert.equal(isStaleDemoProject(fresh), false);
+  assert.equal(refreshedDemoProject(fresh), null);
+
+  // Копия, сохранённая старой версией приложения: ни цен, ни сечений.
+  const stale = createDemoProject();
+  for (const cable of stale.cables) delete cable.pricePerMeter;
+  for (const route of stale.routes) { delete route.trayWidthMm; delete route.trayHeightMm; }
+  assert.ok(domainWarnings(stale).length > 0, 'у устаревшей копии должны быть замечания');
+  assert.equal(isStaleDemoProject(stale), true);
+
+  const healed = refreshedDemoProject(stale);
+  assert.ok(healed, 'устаревшая учебная копия должна заменяться свежей');
+  assert.deepEqual(validateProject(healed), []);
+  assert.deepEqual(domainWarnings(healed), []);
+
+  // Рабочий проект с теми же пробелами, но другим названием, не трогаем.
+  stale.name = 'Объект заказчика';
+  assert.equal(isStaleDemoProject(stale), false);
+  assert.equal(refreshedDemoProject(stale), null);
 });
 
 test('демо-проект: 8–10 единиц оборудования, 4–6 кабелей, 4–5 трасс и 2–3 замечания', () => {
