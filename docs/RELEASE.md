@@ -54,7 +54,35 @@ adb shell cmd uimode night yes                    # тёмная тема в Web
 - [ ] Тёмная тема и крупный шрифт работают в APK (не только в браузере).
 - [ ] Скриншоты 1–3 в `build/release-screenshots/` (git не трогаем).
 
-## 4. Git, тег, релиз
+## 4. AAB для RuStore — обязательно для каждой RuStore-версии
+
+RuStore — постоянный канал публикации. Для него собирается **AAB**, а не APK; APK из раздела 3
+остаётся артефактом GitHub Releases. Версия и `androidVersionCode` должны быть теми же, что у релиза.
+
+```bash
+# Windows: добавить JDK и zip-shim в PATH, затем из корня проекта:
+export PATH="/c/Users/x4k3r/devtools/jdk-21.0.13.1+2/bin:/c/Users/x4k3r/devtools/bin:$PATH"
+bash scripts/build-aab.sh
+
+AAB=build/AnOOPlan-X.Y.Z.aab
+jarsigner -verify -certs "$AAB"
+java -jar tools/bundletool-all-1.18.1.jar validate --bundle="$AAB"
+```
+
+- [ ] AAB собран из актуальной версии `package.json`; пакет — `com.anooplan.app`.
+- [ ] Подпись выполнена только `keystore/rustore/upload.keystore`, alias `upload`; ключ не пересоздан.
+- [ ] `jarsigner -verify` и `bundletool validate` прошли; размер AAB ≤5 ГБ.
+- [ ] Дополнительно сформирован universal APK через `bundletool build-apks --mode=universal`;
+      его манифест и структура проверены. Этот технический APK имеет debug-подпись и в RuStore не загружается.
+- [ ] В `docs/RELEASE-NOTES-X.Y.Z.md` есть раздел **«Кратко для RuStore»**: 2–4 понятных пользователю
+      пункта без внутренних технических деталей. Этот текст переносится в описание новой версии в консоли.
+- [ ] При первой настройке подписи в RuStore загружены `keystore/rustore/pepk_out.zip` и
+      `keystore/rustore/uploadcert.pem`; затем нажата «Отправить подпись».
+- [ ] В консоль загружен свежий AAB; заполнены описание и остальные поля; версия отправлена на модерацию.
+- [ ] Загрузка, модерация и публикация отмечены в HANDOFF отдельно и только по фактическому статусу
+      консоли. Собранный AAB сам по себе не означает опубликованное приложение.
+
+## 5. Git, тег, релиз
 
 - [ ] Коммит и push `main`; дождаться зелёного CI и CodeQL.
 - [ ] Аннотированный тег с описанием изменений (оно станет текстом GitHub Release):
@@ -78,7 +106,7 @@ curl -s -X POST -H "Authorization: Bearer $GH_TOKEN" -H "Content-Type: image/png
 
 - [ ] Обновить HANDOFF: ссылка на релиз, фактическое время CI, проверенный APK; push docs-коммита.
 
-## 5. После релиза
+## 6. После релиза
 
 - [ ] `npm run status` — статус проекта.
 - [ ] Веб-версию публиковать только вручную (`deploy.yml`), если нужно.

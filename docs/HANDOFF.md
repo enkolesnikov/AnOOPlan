@@ -509,6 +509,19 @@ APK всегда работает в режиме «Браузер»: запро
    APK с 1.6.1 подписаны им; обновление поверх 1.6.0 требует переустановки (сначала сохранить проект
    в JSON). Если появится оригинальный keystore — положить его в `keystore/anooplan.jks`, заменить
    пароль и пересобрать релиз.
+   **RuStore (2026-11-24):** подготовлены `keystore/rustore/pepk_out.zip` и
+   `keystore/rustore/uploadcert.pem`. PEPK ZIP содержит зашифрованный существующий ключ приложения
+   и его сертификат с SHA-256 `6431374cf6a7d385c4c47f0f2bf54fcb5ee5b2c7120f057b18c4062af92fe097`.
+   Для AAB создан отдельный `keystore/rustore/upload.keystore`, alias `upload`, RSA 2048; пароль —
+   `keystore/rustore/upload-pass.txt` (0600, вне git), SHA-256 upload-сертификата —
+   `ac3bdf0c8ef8cffa8d6efb30084de642d4ba8755bdbe10d191666e51f8f8b65a`. Все AAB для RuStore
+   подписывать только этим upload key и не пересоздавать его. Основной ключ приложения не менять:
+   RuStore будет подписывать им APK после загрузки AAB. Подготовка файлов не означает, что приложение
+   уже загружено или опубликовано в RuStore. AAB-сборка добавлена: `bash scripts/build-aab.sh`
+   собирает `build/AnOOPlan-<версия>.aab` через aapt2 + bundletool без Gradle и подписывает его
+   только upload key. AAB 3.0.1 (versionCode 50) собран, `jarsigner -verify` и
+   `bundletool validate` пройдены; формирование universal APK проверено, установка на устройство
+   в этой задаче не выполнялась. `build/`, `tools/` и `keystore/` остаются в `.gitignore`.
 6. **Автобэкап выключен** (`allowBackup="false"`): проекты могут содержать планы заказчика.
    Перед переустановкой/удалением приложения пользователь должен сохранить JSON-копию.
 7. **История и GC.** Снимки проектов (до 20 на проект) лежат в IndexedDB. Фоновый GC удаляет
@@ -637,6 +650,7 @@ npm run smoke               # смоук интерфейса (happy-dom, 231 п
 npm run build               # tsc --noEmit + vite build
 bash scripts/fetch-tools.sh # platform-35, build-tools 35.0.0, r8.jar
 npm run build:apk           # подписанный APK в build/AnOOPlan-<версия>.apk
+bash scripts/build-aab.sh   # AAB для RuStore, подписанный upload key (aapt2 + bundletool)
 UNSIGNED_APK=1 npm run build:apk  # выровненный неподписанный APK (артефакт, вручную)
 # Версия и versionCode берутся из package.json: version + androidVersionCode.
 npm start                   # локальный сервер: API + сайт на :3001
@@ -672,6 +686,27 @@ sequence»; то же для финального `aapt dump` — скрипт �
 пробелом «Рабочий стол») и получает классы JAR-ом — каталоги d8 не принимает («Unsupported
 source file type»). Не создавать в `tools/build-tools-win/35.0.0` файлы `aapt`/`zipalign` без
 расширения: MSYS считает их тем же файлом, что и `.exe`, и затирает бинарь.
+
+**RuStore — постоянный канал публикации. Для каждой RuStore-версии обязателен AAB** (APK остаётся
+форматом GitHub Releases, но не заменяет AAB для RuStore). Порядок на Windows:
+
+```bash
+export PATH="/c/Users/x4k3r/devtools/jdk-21.0.13.1+2/bin:/c/Users/x4k3r/devtools/bin:$PATH"
+bash scripts/build-aab.sh
+```
+
+Скрипт берёт версию/`versionCode` из `package.json`, собирает `build/AnOOPlan-<версия>.aab` через
+aapt2 + bundletool без Gradle, подписывает его существующим `keystore/rustore/upload.keystore`
+(alias `upload`) и выполняет `jarsigner -verify` + `bundletool validate`. Пароль читается из
+`keystore/rustore/upload-pass.txt` или `UPLOAD_PASS`; основной ключ APK не используется для подписи
+AAB. Дополнительная приёмка: `bundletool build-apks --mode=universal` и проверка манифеста/подписи
+полученного APK; технический universal APK подписывается debug key и **не предназначен для RuStore**.
+
+В RuStore при первой настройке подписи загружаются `pepk_out.zip` и `uploadcert.pem`, затем для
+каждой версии — свежий AAB. Закрытые ключи, pass-файлы и `pepk.jar` не загружать. В примечаниях
+`docs/RELEASE-NOTES-X.Y.Z.md` обязателен раздел **«Кратко для RuStore»** с понятным пользователю
+описанием изменений. Факт загрузки, прохождения модерации и публикации фиксировать отдельно по
+результату в консоли, а не по наличию собранного AAB. Полный чек-лист — `docs/RELEASE.md`.
 
 **Эмулятор на Windows** (с 2026-11-23): Android SDK в `C:\Users\x4k3r\devtools\android-sdk`
 (cmdline-tools, platform-tools 37, emulator 37.3, platform 35, образ

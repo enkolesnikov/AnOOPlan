@@ -15,6 +15,28 @@
 - **Абсолютные пороги времени в тестах** (ReDoS/линейность) держать с запасом ×10: локально 2–5 мс,
   на общем раннере 50–80 мс — иначе CI краснеет на ровном месте.
 
+## RuStore: публикация и подпись (с 2026-11-24)
+
+- **RuStore — постоянный канал публикации AnOOPlan.** Для каждой версии, предназначенной RuStore,
+  обязательно собирать **AAB**; заменять его APK нельзя. Для GitHub Releases по-прежнему нужен APK.
+  Загрузка, модерация и факт публикации в RuStore — отдельные статусы: не считать их выполненными
+  без подтверждения владельца или консоли.
+- Сборка: `bash scripts/build-aab.sh` → `build/AnOOPlan-<версия>.aab` (aapt2 + bundletool, без Gradle;
+  модуль — `scripts/pack-aab-module.py`). Скрипт сам подписывает AAB и запускает `jarsigner -verify`
+  и `bundletool validate`. Полный порядок и проверки — `docs/RELEASE.md`, раздел «AAB для RuStore».
+- AAB подписывать только `keystore/rustore/upload.keystore`, alias `upload`; пароль —
+  `keystore/rustore/upload-pass.txt`. Этот upload key сохранять и использовать для всех следующих
+  RuStore-версий, не подменять его основным ключом и не создавать заново.
+- Основной ключ остаётся `keystore/anooplan.jks`, alias `anooplan`, SHA-256 сертификата
+  `6431374cf6a7d385c4c47f0f2bf54fcb5ee5b2c7120f057b18c4062af92fe097`. Не пересоздавать его и не
+  использовать `ALLOW_NEW_KEYSTORE=1` для существующего приложения.
+- В RuStore для первой настройки подписи загружаются `keystore/rustore/pepk_out.zip` и
+  `keystore/rustore/uploadcert.pem`; для каждой версии — свежий AAB. Закрытые ключи и пароли в консоль
+  не загружать. Каталоги `build/`, `tools/` и `keystore/` игнорируются Git: их содержимое не коммитить
+  и не отправлять в GitHub.
+- Для каждой RuStore-версии в `docs/RELEASE-NOTES-X.Y.Z.md` держать раздел **«Кратко для RuStore»**:
+  2–4 понятных пользователю пункта без JavaBridge, DEX, PEPK и других технических деталей.
+
 ## Среда на Windows (с 2026-11-23)
 
 - JDK Temurin 21 — `C:\Users\x4k3r\devtools\jdk-21.0.13.1+2`; Android SDK —
