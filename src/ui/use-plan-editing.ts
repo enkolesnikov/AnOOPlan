@@ -20,6 +20,7 @@ export function usePlanEditing(s: WorkspaceState) {
     cableFrom, setCableFrom, cableTo, setCableTo, cableSegments, setCableSegments,
     setMessage, setError, setProject, mutate, recordHistory, setDragging,
     drag, pointers, tap, pinching, snapVibe, pressStart, longPressTimer,
+    fieldMode, cameraInput,
   } = s;
   function fit() {
     if (!stage.current || !floor) return;
@@ -280,6 +281,15 @@ export function usePlanEditing(s: WorkspaceState) {
     setTab('pins');
     setTool('select');
     setPropsOpen(true);
+    if (fieldMode) {
+      // Полевой режим: замечание сразу открывает камеру — фото фиксирует
+      // обстоятельство, пока монтажник стоит на месте. Выбор уже на новом пине,
+      // поэтому снимок прикрепится к нему.
+      vibrate(30);
+      setMessage(`Замечание ${item.number} добавлено. Сфотографируйте место или закройте камеру.`);
+      window.setTimeout(() => cameraInput.current?.click(), 150);
+      return;
+    }
     setMessage(`Замечание ${item.number} добавлено. Заполните текст и при необходимости приложите фото.`);
   }
   function finishCable() {

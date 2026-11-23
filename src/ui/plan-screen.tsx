@@ -99,6 +99,7 @@ export function PlanScreen({ ui }: { ui: AppUi }) {
     setError, pdfError, pdfNote, stage, pointerDown, pointerMove, pointerUp, pointerCancel, stagePressDown,
     moveLongPress, cancelLongPress, zoomAt, armTap, position, startDrag, pinching, selection, setSelection,
     setTab, setView, pointer, route, cable, setSheet, insertVertex, deleteVertex, snapMark, toolsMoreOpen, setToolsMoreOpen,
+    fieldMode,
   } = ui;
   const [dimensionFrom, setDimensionFrom] = useState<string | null>(null);
   const [chainMode, setChainMode] = useState(false);
@@ -235,6 +236,14 @@ export function PlanScreen({ ui }: { ui: AppUi }) {
         <div className="plan-badge"><span className="dot calibrated" />{floor?.name || 'Нет этажей'}<span> / </span>{floor?.metersPerUnit ? `${number(floor.metersPerUnit)} м/ед.` : 'Масштаб не задан'}</div>
         <div className="plan-legend">{(() => { const seen = new Map<string, string>(); for (const route of project.routes) { const label = route.type || 'Трасса'; if (!seen.has(label)) seen.set(label, routeColor(route)); } const items = [...seen.entries()].slice(0, 5); return items.length ? items.map(([label, color]) => <span key={label}><i className="legend-line" style={{ background: color }} />{label}{' '}</span>) : <><span className="legend-line" />Трасса</>; })()}<span className="legend-equipment" /> Оборудование <span className="legend-cable" /> Выбранный кабель</div>
       </div><div className="tool-hint"><span>{TOOL_META[tool].hint}</span><small>Координаты PDF: {pointer ? `${number(pointer.x)}; ${number(pointer.y)}` : '—'}</small></div><PlanAccessibilityList project={project} floor={floor} />
+      {fieldMode && <div className="field-bar" role="toolbar" aria-label="Полевые действия">
+        {(['select', 'pin', 'equipment', 'route'] as const).map(id => {
+          const meta = TOOL_META[id];
+          return <button key={id} type="button" className={tool === id ? 'active' : ''} aria-pressed={tool === id} onClick={() => pickTool(id)}>
+            <ToolIcon name={id} /><span>{meta.label}</span>
+          </button>;
+        })}
+      </div>}
       {toolsMoreOpen && <ToolMoreSheet ui={ui} returnFocus={moreButtonRef} />}
 </div>
   );

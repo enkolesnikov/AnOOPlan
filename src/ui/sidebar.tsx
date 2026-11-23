@@ -230,12 +230,13 @@ function SidebarActions({ ui }: { ui: AppUi }) {
 
 /** Действия с проектом: новый, открыть, импорт JSON, учебный проект. */
 function ProjectActions({ ui }: { ui: AppUi }) {
-  const { busy, mayLeave, load, setMenuOpen, setProjects, staticMode, restoreInput, run, setMessage, setTemplatesOpen } = ui;
+  const { busy, mayLeave, load, setMenuOpen, setProjects, staticMode, restoreInput, run, setMessage, setTemplatesOpen, fieldMode, setFieldMode } = ui;
   return <div className="sidebar-project">
     <button onClick={() => { setMenuOpen(false); setTemplatesOpen(true); }}>＋ Новый проект</button>
     <button disabled={busy} onClick={() => { setMenuOpen(false); void run(async () => { setProjects(staticMode ? (await listStoredProjects()).map(item => ({ id: item.id, name: item.name, updatedAt: item.updatedAt })) : await api('/api/projects')); }); }}>📂 Открыть проект</button>
     <button disabled={busy} onClick={() => { setMenuOpen(false); restoreInput.current?.click(); }}>⬆ Загрузить JSON</button>
     <button onClick={() => { setMenuOpen(false); if (mayLeave()) { load(createDemoProject(), false); setMessage('Учебный проект: синтетические данные, не рабочая документация.'); } }}>📘 Учебный проект</button>
+    <button aria-pressed={fieldMode} className={fieldMode ? 'active' : ''} title="Крупные цели, тёмная уличная тема, быстрое замечание с камерой" onClick={() => { setFieldMode(value => !value); setMenuOpen(false); setMessage(!fieldMode ? 'Полевой режим включён: замечание на плане сразу открывает камеру.' : 'Полевой режим выключен.'); }}>🧭 Полевой режим</button>
   </div>;
 }
 

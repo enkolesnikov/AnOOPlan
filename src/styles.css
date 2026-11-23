@@ -1081,3 +1081,65 @@ button, input, select, textarea, summary,
   /* Кнопка закрытия свойств доступна и на планшете: панель можно свернуть. */
   .properties-close { display: inline-flex; }
 }
+
+/* ══════════════════════════════════════════════════════════════════════
+   Полевой режим (3.0.0): крупные сенсорные цели, принудительная тёмная
+   «уличная» тема (читается на солнце независимо от системной), нижняя
+   панель из четырёх частых действий. План остаётся белой «бумагой».
+   ══════════════════════════════════════════════════════════════════════ */
+body.field-mode {
+  color-scheme: dark;
+  --bg: #0b1a22;
+  --bg-2: #06121a;
+  --surface: #13252f;
+  --surface-2: #0c1a23;
+  --surface-3: #1a2f3a;
+  --border: #4a6b7a;
+  --border-soft: #35525f;
+  --text: #eef5f7;
+  --muted: #a9bfc8;
+  --accent: #0b7a80;
+  --accent-2: #6fd8dd;
+  --accent-soft: rgba(111, 216, 221, 0.16);
+  --warn: #f0b25a;
+  --danger: #f08aa3;
+  --good: #6fd39c;
+  --violet: #c3a8ef;
+  --shadow: 0 2px 10px rgba(0, 0, 0, 0.55);
+}
+body.field-mode .drawing-stage { background: #0a161d; }
+body.field-mode .drawing-sheet { box-shadow: 0 4px 26px rgba(0, 0, 0, 0.6); }
+body.field-mode .plan-badge, body.field-mode .plan-legend, body.field-mode .plan-zoom { background: rgba(19, 37, 47, 0.94); }
+body.field-mode .modal-backdrop { background: rgba(2, 8, 12, 0.72); }
+body.field-mode .scrim { background: rgba(2, 8, 12, 0.6); }
+body.field-mode .sheet-backdrop { background: rgba(2, 8, 12, 0.68); }
+body.field-mode .drawing-toolbar button,
+body.field-mode .drawing-options button,
+body.field-mode .view-tabs button,
+body.field-mode .sidebar-project button { min-height: 48px; }
+.field-bar {
+  position: fixed;
+  left: 50%;
+  bottom: max(12px, env(safe-area-inset-bottom, 0px));
+  transform: translateX(-50%);
+  display: flex;
+  gap: 10px;
+  z-index: 40;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 8px;
+  box-shadow: var(--shadow);
+}
+.field-bar button {
+  min-width: 76px;
+  min-height: 64px;
+  font-size: 14px;
+  font-weight: 600;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+}
+.field-bar button.active { background: var(--accent-soft); border-color: var(--accent); color: var(--accent-2); }

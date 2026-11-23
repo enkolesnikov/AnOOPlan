@@ -281,7 +281,12 @@ async function openBenchProject(page: Page) {
   await expect(page.locator('.modal')).toBeVisible();
   await page.locator('.project-option', { hasText: 'Бенчмарк 2.9.1' }).click();
   await expect(page.locator('.modal')).toBeHidden({ timeout: 30_000 });
-  await expect(page.locator('[data-object="segment"]')).toHaveCount(ROUTES * SEGMENTS_PER_ROUTE, { timeout: 60_000 });
+  // 3.0.0: в DOM попадают только сегменты видимой области (culling), а не все 2000.
+  await expect(page.locator('[data-object="segment"]').first()).toBeVisible({ timeout: 60_000 });
+  const renderedSegments = await page.locator('[data-object="segment"]').count();
+  expect(renderedSegments).toBeGreaterThan(0);
+  expect(renderedSegments).toBeLessThanOrEqual(ROUTES * SEGMENTS_PER_ROUTE);
+  console.log(`Culling: в DOM ${renderedSegments} из ${ROUTES * SEGMENTS_PER_ROUTE} сегментов (видимая область).`);
   await expect(page.locator('.statusbar')).toContainText('400 оборуд. · 200 трасс · 200 кабелей', { timeout: 30_000 });
   await installProbes(page);
 }

@@ -3,6 +3,7 @@ import type { Project } from '../model';
 import { collectStorageGarbage } from '../garbage-collector';
 import { logDiagnostic } from '../diagnostics';
 import { migrateProjectsToIdb } from '../project-store';
+import { lockPortraitOrientation, unlockOrientation } from '../field-mode';
 import { requestPersistentStorage } from '../storage-health';
 import { nativeBridge, type NativeHostWindow } from './native';
 import type { PlanEditing } from './use-plan-editing';
@@ -20,7 +21,7 @@ export function useAppEffects(
   // UX-01/UX-02: модальность шторок, inert у закрытых панелей и веб-обработчик Back.
   useLayerFocus(s);
   const {
-    dirty, dirtyRef, project, projectRef, staticMode, setStaticMode, floor, persisted,
+    dirty, dirtyRef, project, projectRef, staticMode, setStaticMode, floor, persisted, fieldMode,
     draft, setDraft, setCalibration, setMeasure, setCableSegments, setTool,
     undo, redo, history, setMessage, setError, load, takeSnapshot, selection, gridSize, mutate, setMenuOpen,
   } = s;
@@ -87,6 +88,14 @@ export function useAppEffects(
   }, [project, undo, redo, staticMode, projectRef]);
   // Нативная оболочка спрашивает, есть ли несохранённые изменения (кнопка/жест «Назад»).
   useEffect(() => { nativeBridge()?.setDirty?.(dirty); }, [dirty]);
+  // Полевой режим (3.0.0): класс на body (крупные цели, уличная тема) и портретная
+  // фиксация, если платформа позволяет. При выключении всё возвращается как было.
+  useEffect(() => {
+    document.body.classList.toggle('field-mode', fieldMode);
+    if (fieldMode) void lockPortraitOrientation();
+    else void unlockOrientation();
+    return () => { document.body.classList.remove('field-mode'); };
+  }, [fieldMode]);
   // Вызывается из Java: сохранить и только потом закрыть приложение.
   useEffect(() => {
     (window as NativeHostWindow).__anooplanSaveAndExit = async () => {

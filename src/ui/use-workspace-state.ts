@@ -5,6 +5,7 @@ import type { DiagnosticEntry } from '../diagnostics';
 import { logDiagnostic } from '../diagnostics';
 import { cableSection, calculateCable, domainWarnings, trayFill, validateProject } from '../engine';
 import { collectStorageGarbage } from '../garbage-collector';
+import { readFieldMode, writeFieldMode } from '../field-mode';
 import { migrateProject } from '../migrations';
 import { usePdfBackground } from '../use-pdf-background';
 import { usePhotoUrls } from '../use-photo-urls';
@@ -36,6 +37,16 @@ export function useWorkspaceState() {
   const [zoom, setZoom] = useState(.8);
   const [pan, setPan] = useState({ x: 35, y: 35 });
   const [grid, setGrid] = useState(true);
+  // Полевой режим (3.0.0): флаг хранится в localStorage и переживает перезапуск.
+  const [fieldModeState, setFieldModeState] = useState(() => readFieldMode());
+  function setFieldMode(value: boolean | ((current: boolean) => boolean)) {
+    setFieldModeState(current => {
+      const next = typeof value === 'function' ? value(current) : value;
+      writeFieldMode(next);
+      return next;
+    });
+  }
+  const fieldMode = fieldModeState;
   const [snap, setSnap] = useState(true);
   const [ortho, setOrtho] = useState(true);
   const [gridSize, setGridSize] = useState(10);
@@ -173,7 +184,7 @@ export function useWorkspaceState() {
     project, setProject, floorId, setFloorId, selection, setSelection, multi, setMulti, tool, setTool, view, setView,
     menuOpen, setMenuOpen, aboutOpen, setAboutOpen, diagnostics, setDiagnostics, propsOpen, setPropsOpen,
     toolsMoreOpen, setToolsMoreOpen,
-    tab, setTab, search, setSearch, zoom, setZoom, pan, setPan, grid, setGrid, snap, setSnap, ortho, setOrtho, gridSize, setGridSize,
+    tab, setTab, search, setSearch, zoom, setZoom, pan, setPan, grid, setGrid, fieldMode, setFieldMode, snap, setSnap, ortho, setOrtho, gridSize, setGridSize,
     draft, setDraft, calibration, setCalibration, measure, setMeasure, measureMode, setMeasureMode,
     sheetFormat, setSheetFormat, sheetScale, setSheetScale, cableSegments, setCableSegments,
     cableFrom, setCableFrom, cableTo, setCableTo, routeHeight, setRouteHeight,
