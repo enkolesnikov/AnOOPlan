@@ -401,6 +401,31 @@ test('смета: проект с работами по видам возвра�
   }
 });
 
+test('смета: редактор норм комплектации — добавление, правка, удаление', async () => {
+  const screen = await mountScreen(screenProject());
+  try {
+    await click(screen, buttonByText(screen, '＋ Норма'));
+    assert.equal(screen.project().fittings?.length, 1);
+    await setInput(screen, byLabel<HTMLInputElement>(screen, 'Наименование комплектации 1'), 'Заглушка');
+    await setInput(screen, byLabel<HTMLInputElement>(screen, 'Единица комплектации 1'), 'шт');
+    await setInput(screen, byLabel<HTMLInputElement>(screen, 'Норма на 1 м для комплектации 1'), '0,5');
+    await setInput(screen, byLabel<HTMLInputElement>(screen, 'Цена комплектации 1'), '30');
+    const rule = screen.project().fittings?.[0];
+    assert.equal(rule?.name, 'Заглушка');
+    assert.equal(rule?.perMeter, 0.5);
+    assert.equal(rule?.price, 30);
+    // Раздел появляется в смете экрана, как только задана хотя бы одна норма.
+    assert.match(plain(screen.container.textContent ?? ''), /Комплектация КНС/);
+    await setInput(screen, byLabel<HTMLInputElement>(screen, 'Норма на 1 м для комплектации 1'), '');
+    assert.equal(screen.project().fittings?.[0].perMeter, null, 'пустая норма — «неизвестно», а не 0');
+    await click(screen, byLabel<HTMLButtonElement>(screen, 'Удалить комплектацию 1'));
+    assert.equal(screen.project().fittings, undefined, 'пустой список норм не хранится');
+    assert.equal(screen.errors.length, 0);
+  } finally {
+    await screen.unmount();
+  }
+});
+
 test('смета: редактор справочника — дата, правка позиции, добавление и удаление', async () => {
   const project = screenProject();
   project.catalogDate = '2026-01-01';

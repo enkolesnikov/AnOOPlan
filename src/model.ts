@@ -121,6 +121,25 @@ export interface ProjectDocument {
   /** Лист регистрации изменений. */
   changeLog?:ChangeEntry[];
 }
+/**
+ * Норма расхода комплектации КНС (фитинги, крепления): количество считается
+ * как «норма на 1 м» × итоговый метраж КНС. Нормы и цены задаёт пользователь —
+ * программа не подставляет «типовые» значения сама. Пустой список (или отсутствие
+ * поля) означает, что комплектация не считается вовсе, как в версиях до 3.2.0.
+ */
+export interface FittingRule {
+  id: string;
+  /** Наименование позиции, например «Заглушка лотка 100×50». */
+  name: string;
+  /** Единица измерения: «шт», «компл.» и т.п. */
+  unit: string;
+  /** Норма расхода на 1 м КНС; null — норма не задана, количество неизвестно. */
+  perMeter: number | null;
+  /** Цена за единицу, ₽. null — цена неизвестна, а не 0. */
+  price: number | null;
+  note?: string;
+}
+
 export interface Project {
   schemaVersion:1|2; id:string; name:string; floors:Floor[]; equipment:Equipment[];
   routes:Route[]; cables:Cable[]; pins:Pin[]; dimensions?:Dimension[]; updatedAt:string; document?:ProjectDocument;
@@ -130,4 +149,6 @@ export interface Project {
   catalogDate?: string | null;
   /** Настройки сметы: процент работ и примечание. */
   estimate?: ProjectEstimate;
+  /** Нормы расхода комплектации КНС (фитинги/крепления). Отсутствие — не считаются. */
+  fittings?: FittingRule[];
 }

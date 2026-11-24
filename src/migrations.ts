@@ -1,6 +1,6 @@
 import type { ChangeEntry, Dimension, Project, Segment } from './model';
 import { normalizeEquipmentColor } from './equipment-icons';
-import { isCatalogDate, normalizeCatalog, normalizeWorks } from './estimate';
+import { isCatalogDate, normalizeCatalog, normalizeFittings, normalizeWorks } from './estimate';
 import { SECTION_DIM_KEYS, normalizeRouteColor } from './route-kinds';
 
 /**
@@ -352,5 +352,8 @@ export function migrateProject(input: unknown): Project {
   const document = normalizeDocument(raw.document);
   if (document) project.document = document;
   if (isRecord(raw.estimate)) project.estimate = normalizeEstimate(raw.estimate);
+  // Нормы комплектации КНС необязательны; пустой список не храним — «не считаются».
+  const fittings = normalizeFittings(raw.fittings);
+  if (fittings.length) project.fittings = fittings;
   return project;
 }

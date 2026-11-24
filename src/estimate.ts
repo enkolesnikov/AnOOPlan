@@ -1,7 +1,7 @@
-import type { PriceItem, PriceKind, Project, WorkLine } from './model';
+import type { FittingRule, PriceItem, PriceKind, Project, WorkLine } from './model';
 import { calculateCable, routeSummary } from './engine';
 import { segmentIndex } from './engine/geometry';
-import { resolveTrayPrice } from './engine/specification';
+import { resolveTrayPrice, specificationKnS } from './engine/specification';
 import { normalizeRounding, ROUNDING_STEPS, roundMoney } from './money';
 
 /**
@@ -146,9 +146,48 @@ export function normalizeWorks(value: unknown): WorkLine[] {
   return result;
 }
 
+/**
+ * Норма расхода комплектации КНС из внешних данных (JSON-копия): имя и единица
+ * обрезаются, норма и цена — неотрицательное конечное число или null (неизвестно).
+ * Не-объект отбрасывается; `id` — строка или детерминированный `fitting-N`.
+ */
+export function normalizeFittingRule(value: unknown, index = 0): FittingRule | null {
+  if (!isRecord(value)) return null;
+  const id = text(value.id).trim();
+  const note = text(value.note).trim();
+  return {
+    id: id || `fitting-${index + 1}`,
+    name: text(value.name).trim(),
+    unit: text(value.unit).trim() || 'шт',
+    perMeter: nonnegative(value.perMeter) ? value.perMeter : null,
+    price: nonnegative(value.price) ? value.price : null,
+    ...(note ? { note } : {}),
+  };
+}
+
+/** Нормы комплектации: не-массив — пустой, битые элементы отбрасываются, дубли id разводятся. */
+export function normalizeFittings(value: unknown): FittingRule[] {
+  if (!Array.isArray(value)) return [];
+  const used = new Set<string>();
+  const result: FittingRule[] = [];
+  value.forEach((item, index) => {
+    const normalized = normalizeFittingRule(item, index);
+    if (!normalized) return;
+    let { id } = normalized;
+    if (used.has(id)) {
+      let suffix = index + 2;
+      while (used.has(`fitting-${suffix}`)) suffix += 1;
+      id = `fitting-${suffix}`;
+    }
+    used.add(id);
+    result.push({ ...normalized, id });
+  });
+  return result;
+}
+
 export interface EstimateLine {
   id: string;
-  kind: PriceKind | 'work';
+  kind: PriceKind | 'work' | 'fittings';
   name: string;
   unit: string;
   quantity: number | null;
@@ -159,7 +198,7 @@ export interface EstimateLine {
 }
 
 export interface EstimateSection {
-  kind: PriceKind | 'work';
+  kind: PriceKind | 'work' | 'fittings';
   title: string;
   lines: EstimateLine[];
   total: number | null;
@@ -205,6 +244,7 @@ export interface EstimateResult {
 const EQUIPMENT_TITLE = 'Оборудование';
 const CABLE_TITLE = 'Кабели';
 const TRAY_TITLE = 'Лотки';
+const FITTINGS_TITLE = 'Комплектация КНС';
 const WORK_TITLE = 'Работы';
 
 const NO_PRICE = (name: string): string => `Смета: для «${name}» нет цены в справочнике`;
@@ -218,7 +258,7 @@ const catalogItemPrice = (item: PriceItem | null): number | null =>
  * и его стоимость — сумма строк; иначе стоимость неизвестна (`null`).
  */
 function makeSection(
-  kind: PriceKind | 'work',
+  kind: PriceKind | 'work' | 'fittings',
   title: string,
   lines: EstimateLine[],
   warnings: string[],
@@ -384,7 +424,40 @@ function workLines(works: WorkLine[], rounding: number): { lines: EstimateLine[]
 }
 
 /**
- * Смета проекта по разделам: «Оборудование», «Кабели», «Лотки», «Работы».
+ * Строки комплектации КНС: количество = норма на 1 м × итоговый метраж КНС.
+ * Нормы и цены — только пользовательские; незаданная норма или неизвестный
+ * метраж дают неизвестное количество (null), а не 0. Строка без имени — мусор:
+ * её количество и цена считаются неизвестными, раздел неполный.
+ */
+function fittingLines(rules: FittingRule[], knsMeters: number | null, rounding: number): { lines: EstimateLine[]; warnings: string[] } {
+  const lines: EstimateLine[] = [];
+  const warnings: string[] = [];
+  rules.forEach((rule, index) => {
+    const named = rule.name.trim() !== '';
+    const perMeter = named && nonnegative(rule.perMeter) ? rule.perMeter : null;
+    const quantity = perMeter === null || knsMeters === null ? null : roundMoney(perMeter * knsMeters, 0.001);
+    const price = named && nonnegative(rule.price) ? rule.price : null;
+    const total = quantity === null || price === null ? null : roundMoney(quantity * price, rounding);
+    const name = rule.name || `Позиция ${index + 1}`;
+    if (total === null) warnings.push(`Смета: неполная строка комплектации «${name}»`);
+    lines.push({
+      id: `fitting:${rule.id}`,
+      kind: 'fittings',
+      name,
+      unit: rule.unit || 'шт',
+      quantity,
+      price,
+      total,
+      priceSource: price === null ? null : 'manual',
+      note: [rule.note ?? '', perMeter === null ? '' : `норма ${perMeter} ${rule.unit || 'шт'}/м`].filter(Boolean).join(' · '),
+    });
+  });
+  return { lines, warnings };
+}
+
+/**
+ * Смета проекта по разделам: «Оборудование», «Кабели», «Лотки», при заданных
+ * нормах — «Комплектация КНС», «Работы».
  *
  * Материалы — сумма трёх материальных разделов. Работы — `laborPercent` % от
  * материалов либо, если задан непустой список `works`, итог работ по видам
@@ -416,11 +489,20 @@ export function estimate(project: Project): EstimateResult {
   const equipment = equipmentLines(project, moneyRounding);
   const cables = cableLines(project, moneyRounding);
   const trays = trayLines(project, moneyRounding);
+  // Комплектация КНС считается только при заданных нормах: пустой список —
+  // поведение версий до 3.2.0 бит-в-бит (раздела нет, итоги те же).
+  const fittings = normalizeFittings(project.fittings);
+  const fittingsData = fittings.length
+    ? fittingLines(fittings, specificationKnS(project).totalLength, moneyRounding)
+    : { lines: [], warnings: [] };
 
   const equipmentSection = makeSection('equipment', EQUIPMENT_TITLE, equipment.lines, equipment.warnings, moneyRounding);
   const cableSection = makeSection('cable', CABLE_TITLE, cables.lines, cables.warnings, moneyRounding);
   const traySection = makeSection('tray', TRAY_TITLE, trays.lines, trays.warnings, moneyRounding);
   const materialSections = [equipmentSection, cableSection, traySection];
+  if (fittings.length) {
+    materialSections.push(makeSection('fittings', FITTINGS_TITLE, fittingsData.lines, fittingsData.warnings, moneyRounding));
+  }
 
   const materialsKnown = materialSections.every(section => section.total !== null);
   let materials = materialsKnown
@@ -512,7 +594,7 @@ export function estimate(project: Project): EstimateResult {
   else if (vatRateInvalid) net = null;
   else if (vatRate !== null && vatRate > 0) net = vat === null ? null : roundMoney(total - vat, moneyRounding);
   else net = total;
-  const sections = [equipmentSection, cableSection, traySection, worksSection];
+  const sections = [...materialSections, worksSection];
   const vatKnown = !vatRateInvalid && (vatRate === null || vatRate === 0 || vat !== null);
   return {
     sections,

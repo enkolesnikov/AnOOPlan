@@ -1,5 +1,5 @@
 import { useMemo, useRef, useState } from 'react';
-import type { PriceItem, PriceKind, Project, ProjectEstimate, WorkLine } from '../model';
+import type { FittingRule, PriceItem, PriceKind, Project, ProjectEstimate, WorkLine } from '../model';
 import { estimate, isCatalogDate, normalizeCatalog, normalizeRounding } from '../estimate';
 import { parseCatalogRows, mergeCatalog, type CatalogImportResult } from '../catalog-import';
 import { readCatalogFile } from '../catalog-file';
@@ -206,6 +206,64 @@ function WorksEditor({ project, onChange }: { project: Project; onChange: (recip
   </details>;
 }
 
+/** Строка редактора норм комплектации КНС; количество и сумма считает смета. */
+function FittingRow({ rule, index, onUpdate, onRemove }: {
+  rule: FittingRule;
+  index: number;
+  onUpdate: (rule: FittingRule, patch: Partial<FittingRule>) => void;
+  onRemove: (rule: FittingRule) => void;
+}) {
+  return <tr data-fitting-row={rule.id}>
+    <td className="works-name"><input type="text" value={rule.name} aria-label={`Наименование комплектации ${index + 1}`} onChange={event => onUpdate(rule, { name: event.target.value })} /></td>
+    <td className="works-unit"><input type="text" value={rule.unit} aria-label={`Единица комплектации ${index + 1}`} onChange={event => onUpdate(rule, { unit: event.target.value })} /></td>
+    <td className="works-quantity"><NumberField value={rule.perMeter} placeholder="—" ariaLabel={`Норма на 1 м для комплектации ${index + 1}`} onCommit={raw => onUpdate(rule, { perMeter: raw === '' ? null : nonNegativeOrNull(raw) })} /></td>
+    <td className="works-price"><NumberField value={rule.price} placeholder="—" ariaLabel={`Цена комплектации ${index + 1}`} onCommit={raw => onUpdate(rule, { price: raw === '' ? null : nonNegativeOrNull(raw) })} /></td>
+    <td className="works-note"><input type="text" value={rule.note ?? ''} aria-label={`Примечание комплектации ${index + 1}`} onChange={event => onUpdate(rule, { note: event.target.value })} /></td>
+    <td className="works-remove"><button type="button" aria-label={`Удалить комплектацию ${index + 1}`} title="Удалить позицию" onClick={() => onRemove(rule)}>×</button></td>
+  </tr>;
+}
+
+/**
+ * Редактор норм комплектации КНС (фитинги и крепления): количество каждой позиции
+ * в смете — «норма на 1 м» × итоговый метраж КНС. Нормы задаёт только пользователь;
+ * пустой список означает, что комплектация не считается вовсе.
+ */
+function FittingsEditor({ project, onChange }: { project: Project; onChange: (recipe: (project: Project) => void) => void }) {
+  const fittings = project.fittings ?? [];
+  const updateRule = (target: FittingRule, patch: Partial<FittingRule>): void => {
+    onChange(p => {
+      p.fittings = (p.fittings ?? []).map(item => item.id === target.id ? { ...item, ...patch } : item);
+    });
+  };
+  const addRule = (): void => {
+    onChange(p => {
+      p.fittings = [...(p.fittings ?? []), { id: uid(), name: '', unit: 'шт', perMeter: null, price: null }];
+    });
+  };
+  const removeRule = (target: FittingRule): void => {
+    onChange(p => {
+      const items = (p.fittings ?? []).filter(item => item.id !== target.id);
+      // Пустой список не храним: «комплектация не считается» — это отсутствие поля.
+      if (items.length) p.fittings = items;
+      else delete p.fittings;
+    });
+  };
+  return <details className="works-editor fittings-editor">
+    <summary>Комплектация КНС <span>{fittings.length}</span></summary>
+    <div className="works-controls">
+      <button type="button" className="works-add" onClick={addRule}>＋ Норма</button>
+      <p className="help">Фитинги и крепления: количество в смете — норма на 1 м × итоговый метраж КНС. Пустые норма или цена — «неизвестно», а не 0. Без строк комплектация в смету не входит.</p>
+    </div>
+    <div className="table-scroll"><table className="works-table">
+      <thead><tr><th>Наименование</th><th>Ед.</th><th>Норма на 1 м</th><th>Цена, ₽</th><th>Примечание</th><th><span className="sr-only">Действия</span></th></tr></thead>
+      <tbody>
+        {fittings.map((rule, index) => <FittingRow key={rule.id} rule={rule} index={index} onUpdate={updateRule} onRemove={removeRule} />)}
+        {!fittings.length && <tr><td colSpan={6}>Норм комплектации нет. Добавьте строку — в смете появится раздел «Комплектация КНС».</td></tr>}
+      </tbody>
+    </table></div>
+  </details>;
+}
+
 /** Строка редактора справочника цен. */
 function CatalogRow({ item, index, onUpdate, onRemove }: {
   item: PriceItem;
@@ -364,7 +422,7 @@ export function EstimateScreen({ project, onChange, onMessage, onError }: {
       <div>
         <span className="eyebrow">ДОКУМЕНТАЦИЯ</span>
         <h1>Смета и коммерческое предложение</h1>
-        <p>Стоимость материалов по справочнику цен, работы процентом от материалов или по видам, НДС и округление. Неизвестные цены не подменяются нулём.</p>
+        <p>Стоимость материалов по справочнику цен, работы процентом от материалов или по видам, комплектация КНС — по нормам на 1 м трассы, НДС и округление. Неизвестные цены не подменяются нулём.</p>
       </div>
       <EstimateStatus result={result} catalogDateText={catalogDateText} />
     </div>
@@ -374,6 +432,7 @@ export function EstimateScreen({ project, onChange, onMessage, onError }: {
     <EstimateTotals result={result} />
     <p className="document-note">Смета считается по справочнику цен проекта; ручная цена кабеля приоритетнее справочника. Дата прайса: {catalogDateText}.{noteText ? ` Примечание: ${noteText}.` : ''} Пустые цены не подменяются нулём — они помечены «—» и делают смету неполной.</p>
     <WorksEditor project={project} onChange={onChange} />
+    <FittingsEditor project={project} onChange={onChange} />
     <CatalogEditor project={project} onChange={onChange} onMessage={onMessage} onError={onError} />
   </section>;
 }

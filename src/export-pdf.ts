@@ -62,6 +62,7 @@ export async function buildJournalPdf(project: Project, fonts: JournalFonts, opt
     + (include.has('plans') ? (options.plans?.length ?? 0) : 0)
     + (include.has('photos') && options.photos?.length ? 1 : 0)
     + (include.has('pinPhotos') && options.pinPhotos?.length ? 1 : 0)
+    + (include.has('signaturesSheet') ? 1 : 0)
     + (warnings.length ? 1 : 0);
   // Ёмкость листа оглавления считается по фактической нижней границе контента:
   // со штампом ГОСТ она выше, чем раньше, поэтому шаг 23 pt даёт меньше строк.
@@ -107,7 +108,8 @@ export async function buildJournalPdf(project: Project, fonts: JournalFonts, opt
   }
 
   renderer.totals(project);
-  renderer.signatures(project);
+  const signaturesPage = renderer.signatures(project, include.has('signaturesSheet'));
+  if (signaturesPage !== null) toc.push({ title: 'Лист подписей', page: signaturesPage });
   renderer.drawContents(tocPages, toc);
   renderer.finish(project);
   return document.save();

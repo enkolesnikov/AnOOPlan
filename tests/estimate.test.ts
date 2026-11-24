@@ -4,6 +4,7 @@ import {
   catalogPrice,
   estimate,
   normalizeCatalog,
+  normalizeFittings,
   normalizePriceItem,
   roundMoney,
 } from '../src/estimate';
@@ -461,4 +462,91 @@ test('без новых полей смета считает как 2.9.1: ре�
   assert.equal(result.vat, null);
   assert.equal(result.gross, result.total);
   assert.equal(result.rounding, null);
+});
+
+test('комплектация КНС: без норм раздела нет и итоги прежние, с нормами — раздел и пересчёт', () => {
+  const base = estimate(project());
+  assert.deepEqual(base.sections.map(section => section.kind), ['equipment', 'cable', 'tray', 'work']);
+  assert.equal(base.materials, 15300);
+
+  const p = project();
+  p.fittings = [
+    { id: 'f1', name: 'Заглушка лотка', unit: 'шт', perMeter: 0.4, price: 25 },
+    { id: 'f2', name: 'Крепление стойки', unit: 'шт', perMeter: 2, price: 10, note: 'по проекту' },
+  ];
+  const result = estimate(p);
+  assert.deepEqual(result.sections.map(section => section.kind), ['equipment', 'cable', 'tray', 'fittings', 'work']);
+  const fittings = result.sections[3];
+  assert.equal(fittings.title, 'Комплектация КНС');
+  // Метраж КНС проекта — 10 м (лоток 10 м): 0.4×10=4 шт × 25 ₽, 2×10=20 шт × 10 ₽.
+  assert.equal(fittings.lines[0].quantity, 4);
+  assert.equal(fittings.lines[0].price, 25);
+  assert.equal(fittings.lines[0].total, 100);
+  assert.equal(fittings.lines[0].priceSource, 'manual');
+  assert.equal(fittings.lines[0].note, 'норма 0.4 шт/м');
+  assert.equal(fittings.lines[1].quantity, 20);
+  assert.equal(fittings.lines[1].total, 200);
+  assert.equal(fittings.lines[1].note, 'по проекту · норма 2 шт/м');
+  assert.equal(fittings.total, 300);
+  assert.equal(fittings.complete, true);
+  // Комплектация входит в материалы, а работы процентом — от новой суммы.
+  assert.equal(result.materials, 15600);
+  assert.equal(result.labor, 3900);
+  assert.equal(result.total, 19500);
+  assert.equal(result.complete, true);
+});
+
+test('комплектация КНС: незаданная норма или цена — неизвестно, а не 0', () => {
+  const p = project();
+  p.fittings = [
+    { id: 'f1', name: 'Заглушка лотка', unit: 'шт', perMeter: null, price: 25 },
+    { id: 'f2', name: '', unit: 'шт', perMeter: 1, price: 10 },
+  ];
+  const result = estimate(p);
+  const fittings = result.sections.find(section => section.kind === 'fittings')!;
+  assert.equal(fittings.lines[0].quantity, null, 'без нормы количество неизвестно');
+  assert.equal(fittings.lines[0].total, null);
+  assert.equal(fittings.lines[1].name, 'Позиция 2', 'безымянная строка получает номер');
+  assert.equal(fittings.lines[1].quantity, null, 'безымянная строка не считается');
+  assert.equal(fittings.total, null);
+  assert.equal(fittings.complete, false);
+  assert.equal(result.materials, null);
+  assert.equal(result.complete, false);
+  assert.ok(result.warnings.includes('Смета: неполная строка комплектации «Заглушка лотка»'));
+  assert.ok(result.warnings.includes('Смета: неполная строка комплектации «Позиция 2»'));
+});
+
+test('нормализация комплектации: мусор отбрасывается, дубли id разводятся, миграция сохраняет', () => {
+  assert.deepEqual(normalizeFittings('не массив'), []);
+  assert.deepEqual(normalizeFittings([null, 5, 'строка']), []);
+  const normalized = normalizeFittings([
+    { id: 'f1', name: ' Заглушка ', unit: '', perMeter: '0.4', price: -5, note: 7 },
+    { id: 'f1', name: 'Крепление', unit: 'компл', perMeter: 2, price: 10 },
+  ]);
+  assert.equal(normalized.length, 2);
+  assert.equal(normalized[0].name, 'Заглушка');
+  assert.equal(normalized[0].unit, 'шт', 'пустая единица — «шт»');
+  assert.equal(normalized[0].perMeter, null, 'нечисловая норма — неизвестно, а не 0');
+  assert.equal(normalized[0].price, null, 'отрицательная цена — неизвестно, а не 0');
+  assert.equal(normalized[0].note, undefined, 'нечисловое/нестроковое примечание не хранится');
+  assert.notEqual(normalized[1].id, normalized[0].id, 'дубли id разводятся');
+
+  // Миграция: нормы проходят через загрузку, пустой/битый список не хранится.
+  const p = project();
+  p.fittings = [{ id: 'f1', name: 'Заглушка', unit: 'шт', perMeter: 0.4, price: 25 }];
+  const migrated = migrateProject(JSON.parse(JSON.stringify(p)));
+  assert.deepEqual(migrated.fittings, [{ id: 'f1', name: 'Заглушка', unit: 'шт', perMeter: 0.4, price: 25 }]);
+  const empty = migrateProject(JSON.parse(JSON.stringify({ ...project(), fittings: [] })));
+  assert.equal(empty.fittings, undefined, 'пустой список норм не хранится');
+  const garbage = migrateProject(JSON.parse(JSON.stringify({ ...project(), fittings: 'мусор' })));
+  assert.equal(garbage.fittings, undefined);
+});
+
+test('assertProject отклоняет некорректные нормы комплектации с 422', () => {
+  for (const fittings of ['нормы', [{}], [{ id: '', name: 'X', unit: 'шт', perMeter: 1, price: 1 }], [{ id: 'f', name: 'X', unit: 'шт', perMeter: -1, price: 1 }], [{ id: 'f', name: 'X', unit: 'шт', perMeter: 1, price: Number.NaN }], [{ id: 'f', name: 'X', unit: 'шт', perMeter: 1, price: 1, note: 5 }]]) {
+    const candidate = { ...project(), fittings } as unknown;
+    rejectsProject(candidate, /project\.fittings/);
+  }
+  const valid = { ...project(), fittings: [{ id: 'f1', name: 'Заглушка', unit: 'шт', perMeter: null, price: null }] };
+  assertProject(valid, () => true);
 });

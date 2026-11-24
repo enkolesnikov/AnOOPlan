@@ -342,14 +342,21 @@ export class Renderer {
     this.y -= 30;
   }
 
-  signatures(project: Project): void {
+  /**
+   * Блок подписей. Без `ownSheet` — внизу последнего листа (новый лист только при
+   * нехватке места). С `ownSheet` — всегда отдельный лист «Подписи»; возвращает
+   * номер этого листа для оглавления (иначе null).
+   */
+  signatures(project: Project, ownSheet = false): number | null {
     const compiledBy = (project.document?.compiledBy || '').trim();
     const checkedBy = (project.document?.checkedBy || '').trim();
     const date = (project.document?.date || '').trim() || new Date().toLocaleDateString('ru-RU');
     // Одинокий блок подписей внизу листа лучше, чем почти пустой лист с тремя строками.
     const needed = 98;
-    if (this.y - needed < this.contentBottom) {
+    let page: number | null = null;
+    if (ownSheet || this.y - needed < this.contentBottom) {
       this.addPage();
+      page = ownSheet ? this.pages.length : null;
       this.y -= 2;
       this.page.drawText('Подписи', { x: this.margin, y: this.y - 13, size: 12, font: this.bold, color: BRAND });
       this.y -= 24;
@@ -378,6 +385,7 @@ export class Renderer {
     this.page.drawText(`Дата: ${formatDateRu(date)}`, { x: this.margin, y: this.y, size: 9, font: this.regular, color: BRAND });
     this.page.drawText('Документ сформирован в AnOOPlan', { x: this.margin + this.content - 170, y: this.y, size: 7.5, font: this.regular, color: MUTED });
     this.y -= 18;
+    return page;
   }
 
   /** Фотографии; возвращает номер страницы заголовка или null, если снимков нет. */

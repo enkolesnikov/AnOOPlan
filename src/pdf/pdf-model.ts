@@ -22,7 +22,8 @@ export type JournalSectionId =
   | 'plans'
   | 'photos'
   | 'pinPhotos'
-  | 'changeLog';
+  | 'changeLog'
+  | 'signaturesSheet';
 
 /** Все разделы печатной формы в порядке вывода (титул и оглавление выводятся всегда). */
 export const DEFAULT_JOURNAL_SECTIONS: JournalSectionId[] = [

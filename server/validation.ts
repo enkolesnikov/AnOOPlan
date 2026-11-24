@@ -212,8 +212,24 @@ function assertWorksField(value: unknown): void {
   }
 }
 
-function assertEstimateField(value: unknown): void {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) fail('project.estimate: некорректный процент работ');
+/** Нормы комплектации КНС: массив позиций с валидными нормой на 1 м и ценой (null — неизвестно). */
+function assertFittingsField(value: unknown): void {
+  for (const raw of array(value, 'project.fittings')) {
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) fail('project.fittings: некорректная позиция комплектации');
+    const rule = raw as Record<string, unknown>;
+    const amountOk = (amount: unknown): boolean => amount === null
+      || (typeof amount === 'number' && Number.isFinite(amount) && amount >= 0);
+    const valid = typeof rule.id === 'string' && rule.id.trim() !== ''
+      && typeof rule.name === 'string'
+      && typeof rule.unit === 'string'
+      && amountOk(rule.perMeter)
+      && amountOk(rule.price)
+      && (rule.note === undefined || typeof rule.note === 'string');
+    if (!valid) fail('project.fittings: некорректная позиция комплектации');
+  }
+}
+
+function assertEstimateField(value: unknown): void {  if (!value || typeof value !== 'object' || Array.isArray(value)) fail('project.estimate: некорректный процент работ');
   const estimate = value as Record<string, unknown>;
   if (!(estimate.laborPercent === null
     || (typeof estimate.laborPercent === 'number' && Number.isFinite(estimate.laborPercent) && estimate.laborPercent >= 0))) {
@@ -315,6 +331,7 @@ export function assertProject(input: unknown, pdfExists: (id: string) => boolean
     fail('project.catalogDate: ожидается дата YYYY-MM-DD');
   }
   if (project.estimate !== undefined) assertEstimateField(project.estimate);
+  if (project.fittings !== undefined) assertFittingsField(project.fittings);
   // Документ и лист изменений необязательны: старые проекты без них валидны.
   if (project.document !== undefined) assertDocumentField(project.document);
 }

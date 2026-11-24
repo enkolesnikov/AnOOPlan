@@ -1020,7 +1020,7 @@ if (orgInput) { setInputValue(orgInput, 'ООО Кабель-Тест'); await s
 const sectionCheckboxes = Array.from(document.querySelectorAll('.section-checkbox'));
 check(sectionCheckboxes.length >= 15, `чекбоксов разделов не меньше 15: ${sectionCheckboxes.length}`);
 check(sectionCheckboxes.some(box => (box.parentElement?.textContent || '').includes('Спецификация КНС')), 'есть раздел «Спецификация КНС»');
-check(sectionCheckboxes.length > 0 && sectionCheckboxes.every(input => input.checked), 'по умолчанию выбраны все разделы');
+check(sectionCheckboxes.length > 0 && sectionCheckboxes.every(input => input.checked || (input.parentElement?.textContent || '').includes('Лист подписей')), 'по умолчанию выбраны все разделы, кроме опционального листа подписей');
 check(Boolean(document.querySelector('.print-selected')), 'кнопка «Печать выбранных разделов» есть');
 check(Boolean(document.querySelector('.anooplan-save')), 'кнопка «Сохранить проект .anooplan» есть');
 check(Array.from(document.querySelectorAll('.share-pdf, .share-xlsx, .share-anooplan')).length === 3, 'кнопки «Поделиться» показаны при наличии shareFile');
@@ -1050,7 +1050,7 @@ const freshCheckboxes = Array.from(document.querySelectorAll('.section-checkbox'
 check(freshCheckboxes.length >= 13 && freshCheckboxes.every(input => !input.checked), 'панель печати помнит снятый выбор');
 freshCheckboxes[0].click();
 await sleep(220);
-check((document.querySelector('.print-sections-count')?.textContent || '').includes('1 из 15'), `счётчик выбранных разделов: ${document.querySelector('.print-sections-count')?.textContent || '—'}`);
+check((document.querySelector('.print-sections-count')?.textContent || '').includes('1 из 16'), `счётчик выбранных разделов: ${document.querySelector('.print-sections-count')?.textContent || '—'}`);
 const printBeforeSubset = printCalls.length;
 document.querySelector('.print-selected')?.click();
 await sleep(2600);

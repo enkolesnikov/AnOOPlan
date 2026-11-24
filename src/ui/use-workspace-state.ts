@@ -86,8 +86,9 @@ export function useWorkspaceState() {
   const [staticMode, setStaticMode] = useState(false);
   const [exportOpen, setExportOpen] = useState(false);
   const [sheet, setSheet] = useState<SheetTarget>(null);
-  // Выбранные для печати разделы; по умолчанию — все.
-  const [printSections, setPrintSections] = useState<JournalSectionId[]>(() => JOURNAL_SECTIONS.map(section => section.id));
+  // Выбранные для печати разделы; по умолчанию — все, кроме опционального листа подписей.
+  const [printSections, setPrintSections] = useState<JournalSectionId[]>(() =>
+    JOURNAL_SECTIONS.map(section => section.id).filter(id => id !== 'signaturesSheet'));
   // Формат листа и масштаб таблиц печати: широкие таблицы в портрет не влезают.
   const [printFormat, setPrintFormat] = useState<JournalFormat>('a4l');
   const [printScale, setPrintScale] = useState(1);

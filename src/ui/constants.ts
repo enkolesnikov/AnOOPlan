@@ -34,4 +34,6 @@ export const JOURNAL_SECTIONS: { id: JournalSectionId; label: string }[] = [
   { id: 'photos', label: 'Фото оборудования' },
   { id: 'pinPhotos', label: 'Фото замечаний' },
   { id: 'changeLog', label: 'Лист изменений' },
+  // Не входит в выбор по умолчанию (см. use-workspace-state): лист нужен не всегда.
+  { id: 'signaturesSheet', label: 'Лист подписей' },
 ];

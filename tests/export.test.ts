@@ -697,3 +697,58 @@ test('сегментные размеры КНС: своё сечение вид
   assert.ok(squash(text).includes('100×50 — '), 'PDF: нет сечения трассы');
   assert.ok(squash(text).includes('50×50 — '), 'PDF: нет сечения сегмента');
 });
+
+test('PDF: лист подписей — отдельный раздел по запросу, иначе подписи на листе итогов', async () => {
+  const project = createDemoProject();
+  const plain = await pdfText(await buildJournalPdf(project, fonts, { include: [] }));
+  assert.equal(plain.pages, 3, 'титул, оглавление и страница итогов/подписей');
+  assert.ok(!plain.pageTexts[1].includes('Лист подписей'), 'без выбора листа его нет в оглавлении');
+  assert.ok(plain.pageTexts[2].includes('Составил'), 'подписи остаются на странице итогов');
+
+  const withSheet = await pdfText(await buildJournalPdf(project, fonts, { include: ['signaturesSheet'] }));
+  assert.equal(withSheet.pages, 4, 'добавляется отдельный лист подписей');
+  assert.ok(withSheet.pageTexts[1].includes('Лист подписей'), 'в оглавлении нет листа подписей');
+  const last = withSheet.pageTexts[3];
+  assert.ok(last.includes('Подписи'), 'на отдельном листе нет заголовка');
+  assert.ok(last.includes('Составил') && last.includes('Проверил'), 'на листе нет строк подписей');
+  assert.ok(last.includes('Итого кабеля по журналу'), 'на листе подписей нет итога журнала');
+  // Номер страницы в оглавлении совпадает с фактическим.
+  const contents = withSheet.pageTexts[1];
+  const after = contents.slice(contents.indexOf('Лист подписей') + 'Лист подписей'.length);
+  const match = /^\s*(\d+)/.exec(after);
+  assert.ok(match, 'у листа подписей нет номера страницы в оглавлении');
+  assert.equal(Number(match![1]), 4);
+});
+
+test('PDF: комплектация КНС попадает в смету и меняет оговорку о фитингах', async () => {
+  const project = createDemoProject();
+  project.fittings = [{ id: 'f1', name: 'Заглушка лотка 100', unit: 'шт', perMeter: 0.5, price: 30 }];
+  const { text } = await pdfText(await buildJournalPdf(project, fonts));
+  assert.ok(text.includes('Комплектация КНС'), 'в смете нет раздела комплектации');
+  assert.ok(text.includes('Заглушка лотка 100'), 'в смете нет позиции комплектации');
+  assert.ok(text.includes('фитинги и крепления считаются в смете'), 'оговорка спецификации КНС должна смениться');
+  assert.ok(!text.includes('фитинги и крепления не считаются'), 'при заданных нормах старой оговорки быть не должно');
+  assert.ok(!text.includes('Фитинги и крепления не считаются'), 'и в схеме трасс оговорка должна смениться');
+
+  const plain = await pdfText(await buildJournalPdf(createDemoProject(), fonts));
+  assert.ok(!plain.text.includes('Комплектация КНС'), 'без норм раздела комплектации нет');
+  assert.ok(plain.text.includes('фитинги и крепления не считаются'), 'без норм оговорка прежняя');
+});
+
+test('XLSX: комплектация КНС попадает на лист «Смета» своими строками', async () => {
+  const project = createDemoProject();
+  project.fittings = [{ id: 'f1', name: 'Заглушка лотка 100', unit: 'шт', perMeter: 0.5, price: 30 }];
+  const workbook = XLSX.read(buildWorkbook(exportSheets(project)), { type: 'array' });
+  const sheet = workbook.Sheets['Смета'];
+  const rows = XLSX.utils.sheet_to_json<(string | number | null)[]>(sheet, { header: 1 });
+  const fitting = rows.find(row => row[0] === 'Комплектация КНС' && row[1] === 'Заглушка лотка 100');
+  assert.ok(fitting, 'на листе «Смета» нет строки комплектации');
+  assert.equal(fitting![6], 'вручную');
+  const sectionTotal = rows.find(row => row[1] === 'Итого: Комплектация КНС');
+  assert.ok(sectionTotal, 'нет итога по разделу комплектации');
+  assert.equal(typeof sectionTotal![5], 'number');
+
+  const plain = XLSX.read(buildWorkbook(exportSheets(createDemoProject())), { type: 'array' });
+  const plainRows = XLSX.utils.sheet_to_json<(string | number | null)[]>(plain.Sheets['Смета'], { header: 1 });
+  assert.ok(!plainRows.some(row => row[0] === 'Комплектация КНС'), 'без норм раздела комплектации в XLSX нет');
+});
