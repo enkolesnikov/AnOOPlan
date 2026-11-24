@@ -3,7 +3,7 @@
 // Геометрия задана в системе 24×24; цвет — только заливка (fill-rule="evenodd"), без обводок,
 // чтобы одинаково выглядеть на светлой подложке PDF и на экране.
 
-export type EquipmentIconId = 'camera' | 'cabinet' | 'socket' | 'switch' | 'reader' | 'generic';
+export type EquipmentIconId = 'camera' | 'cabinet' | 'socket' | 'switch' | 'reader' | 'pbx' | 'phone' | 'generic';
 
 export interface EquipmentIconGlyph {
   /** Контуры заливки в системе 24×24; дырки вырезаются правилом evenodd. */
@@ -16,6 +16,8 @@ export const EQUIPMENT_ICON_LABELS: Record<EquipmentIconId, string> = {
   socket: 'Розетка',
   switch: 'Коммутатор',
   reader: 'Считыватель',
+  pbx: 'АТС',
+  phone: 'IP-телефон',
   generic: 'Оборудование',
 };
 
@@ -53,6 +55,21 @@ export const EQUIPMENT_ICON_GLYPHS: Record<EquipmentIconId, EquipmentIconGlyph> 
       'M8 3h8a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2zm1.2 3.2a1.6 1.6 0 1 0 0 3.2 1.6 1.6 0 0 0 0-3.2zM9.4 14.6h5.2v3.2H9.4z',
     ],
   },
+  // АТС: корпус со сквозным окном дисплея, портами и строкой статуса.
+  pbx: {
+    paths: [
+      'M4 6h16a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2zM5.5 8.5h5v3h-5z',
+      'M12.5 8.5h1.8v1.8h-1.8zM15.8 8.5h1.8v1.8h-1.8zM12.5 11.5h1.8v1.8h-1.8zM15.8 11.5h1.8v1.8h-1.8zM5.5 14h13v1.6h-13z',
+    ],
+  },
+  // IP-телефон: база со сквозным окном экрана, трубка слева и кнопки под экраном.
+  phone: {
+    paths: [
+      'M5 9h14a2 2 0 0 1 2 2v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2zM11 11.5h7v3h-7z',
+      'M4 3h3a1.5 1.5 0 0 1 1.5 1.5v7A1.5 1.5 0 0 1 7 13H4a1.5 1.5 0 0 1-1.5-1.5v-7A1.5 1.5 0 0 1 4 3z',
+      'M11 16.5h2v1.5h-2zM14 16.5h2v1.5h-2zM17 16.5h1.5v1.5H17z',
+    ],
+  },
   // Универсальное оборудование: прежний маркер «квадрат с плюсом», но плюс — сквозной.
   generic: {
     paths: [
@@ -80,6 +97,8 @@ export const EQUIPMENT_ICON_DEFAULT_COLORS: Record<EquipmentIconId, string> = {
   socket: '#e78c22',
   switch: '#008e94',
   reader: '#3f6ad8',
+  pbx: '#2f9e63',
+  phone: '#dc5071',
   generic: '#122936',
 };
 
@@ -91,6 +110,9 @@ export function equipmentIcon(type: string): EquipmentIconId {
   if (value.includes('розет')) return 'socket';
   if (value.includes('коммутатор')) return 'switch';
   if (value.includes('считыв')) return 'reader';
+  // «АТС» и «телефон» — после шкафа: «шкаф АТС» остаётся шкафом.
+  if (value.includes('атс') || value.includes('pbx')) return 'pbx';
+  if (value.includes('телефон') || value.includes('phone')) return 'phone';
   return 'generic';
 }
 

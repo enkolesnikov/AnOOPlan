@@ -1,4 +1,4 @@
-import type { ChangeEntry, Dimension, Project, Segment } from './model';
+import type { Building, ChangeEntry, Dimension, Project, Segment } from './model';
 import { normalizeEquipmentColor } from './equipment-icons';
 import { isCatalogDate, normalizeCatalog, normalizeFittings, normalizeWorks } from './estimate';
 import { SECTION_DIM_KEYS, normalizeRouteColor } from './route-kinds';
@@ -94,7 +94,30 @@ function normalizeFloor(value: unknown): Project['floors'][number] {
     height: Number.isFinite(height) && height > 0 ? height : 700,
   };
   if (typeof value.pdfId === 'string') floor.pdfId = value.pdfId;
+  // Привязка к зданию необязательна; существование здания проверяется в migrateProject.
+  if (typeof value.buildingId === 'string' && value.buildingId) floor.buildingId = value.buildingId;
   return floor;
+}
+
+/**
+ * Здания проекта: записи без непустого id/name отбрасываются, дубли id разводятся
+ * суффиксом, как в normalizeFittings. Пустой список не хранится: «зданий нет» —
+ * это отсутствие поля, а не массив-заглушка.
+ */
+function normalizeBuildings(value: unknown): Building[] {
+  if (!Array.isArray(value)) return [];
+  const used = new Set<string>();
+  const buildings: Building[] = [];
+  for (const entry of value) {
+    if (!isRecord(entry)) continue;
+    let id = stringValue(entry.id);
+    if (!id) continue;
+    while (used.has(id)) id = `${id}-д`;
+    used.add(id);
+    const name = stringValue(entry.name) || 'Здание';
+    buildings.push({ id, name });
+  }
+  return buildings;
 }
 
 function normalizeEquipment(value: unknown): Project['equipment'][number] {
@@ -355,5 +378,18 @@ export function migrateProject(input: unknown): Project {
   // Нормы комплектации КНС необязательны; пустой список не храним — «не считаются».
   const fittings = normalizeFittings(raw.fittings);
   if (fittings.length) project.fittings = fittings;
+  // Здания необязательны; пустой список не храним. Привязка этажа к зданию
+  // сохраняется только при существующем здании: висячая ссылка отбрасывается,
+  // а не превращается в фантомное здание.
+  const buildings = normalizeBuildings(raw.buildings);
+  if (buildings.length) {
+    project.buildings = buildings;
+    const known = new Set(buildings.map(building => building.id));
+    for (const floor of project.floors) {
+      if (floor.buildingId && !known.has(floor.buildingId)) delete floor.buildingId;
+    }
+  } else {
+    for (const floor of project.floors) delete floor.buildingId;
+  }
   return project;
 }

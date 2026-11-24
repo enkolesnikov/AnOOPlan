@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
-import type { MouseEvent } from 'react';
+import type { MouseEvent, ReactNode } from 'react';
+import { createUuid as uid } from '../compat';
 import { createDemoProject } from '../demo';
 import { readDiagnostics } from '../diagnostics';
 import { listStoredProjects } from '../project-store';
@@ -9,6 +10,7 @@ import { number } from './format';
 import { routeColor, routeKindOf } from '../route-kinds';
 import { routeAngleStats, routeLength, routeSummary } from '../engine';
 import { freshFloor } from './project-factory';
+import { groupFloorsByBuilding } from './floor-groups';
 import { matchesQuery, searchCaption } from './search';
 import { structureCounts } from './sidebar-counts';
 import { EQUIPMENT_KITS, kitEquipment } from '../kits';
@@ -139,6 +141,40 @@ function SearchBox({ ui }: { ui: AppUi }) {
   </div>;
 }
 
+/** Заголовок группы этажей одного здания: переименование и удаление (этажи остаются без здания). */
+function BuildingHeader({ ui, building, count }: { ui: AppUi; building: { id: string; name: string }; count: number }) {
+  const { mutate } = ui;
+  return <div className="building-row" data-building={building.id}>
+    <input value={building.name} aria-label={`Название здания ${building.name}`} onChange={event => mutate(p => { const item = p.buildings?.find(entry => entry.id === building.id); if (item) item.name = event.target.value; }, 'Переименование здания')} />
+    <span>{count} эт.</span>
+    <button type="button" aria-label={`Удалить здание ${building.name}`} title="Удалить здание (этажи останутся без здания)" onClick={() => {
+      if (!window.confirm(`Удалить здание «${building.name}»? Этажи останутся без привязки к зданию.`)) return;
+      mutate(p => {
+        p.buildings = (p.buildings ?? []).filter(entry => entry.id !== building.id);
+        if (!p.buildings.length) delete p.buildings;
+        for (const floor of p.floors) if (floor.buildingId === building.id) delete floor.buildingId;
+      }, 'Удаление здания');
+    }}>×</button>
+  </div>;
+}
+
+/** Этажи вкладки: плоский список или группы по зданиям, когда здания есть. */
+function floorRows(ui: AppUi, project: Project, floors: Project['floors'], limit: number): ReactNode[] {
+  const sliced = pageSlice(floors, limit);
+  // Нумерация этажей глобальная по отфильтрованному списку: не сбрасывается в каждой группе.
+  const order = new Map(floors.map((item, index) => [item.id, index]));
+  const row = (item: Project['floors'][number]) => <FloorRow key={item.id} ui={ui} floor={item} index={order.get(item.id) ?? 0} />;
+  if (!(project.buildings ?? []).length) return sliced.map(row);
+  const parts: ReactNode[] = [];
+  for (const group of groupFloorsByBuilding(project, sliced)) {
+    parts.push(group.building
+      ? <BuildingHeader key={group.building.id} ui={ui} building={group.building} count={group.total} />
+      : <div key="no-building" className="building-row muted"><span>Без здания</span><span>{group.floors.length} эт.</span></div>);
+    parts.push(...group.floors.map(row));
+  }
+  return parts;
+}
+
 /** Список объектов активной вкладки с фильтром и порционной отрисовкой. */
 function ObjectList({ ui }: { ui: AppUi }) {
   const { tab, project, listPressDown, moveLongPress, cancelLongPress, search } = ui;
@@ -154,7 +190,7 @@ function ObjectList({ ui }: { ui: AppUi }) {
   const total = structureCounts(project)[tab];
   const caption = searchCaption(search, found, total);
   const emptyText = search.trim() ? `Ничего не найдено по «${search.trim()}».` : 'Объектов пока нет.';
-  const rows = tab === 'floors' ? pageSlice(floors, limit).map((item, index) => <FloorRow key={item.id} ui={ui} floor={item} index={index} />)
+  const rows = tab === 'floors' ? floorRows(ui, project, floors, limit)
     : tab === 'equipment' ? pageSlice(equipment, limit).map(item => <EquipmentRow key={item.id} ui={ui} item={item} />)
       : tab === 'routes' ? pageSlice(routes, limit).map(item => <RouteRow key={item.id} ui={ui} item={item} />)
         : tab === 'pins' ? pageSlice(pins, limit).map(item => <PinRow key={item.id} ui={ui} item={item} />)
@@ -216,6 +252,7 @@ function SidebarActions({ ui }: { ui: AppUi }) {
   if (tab === 'floors') {
     return <div className="sidebar-actions">
       <button onClick={() => { const item = freshFloor(`Этаж ${project.floors.length + 1}`); mutate(p => p.floors.push(item)); setFloorId(item.id); setSelection(null); }}>＋ Добавить этаж</button>
+      <button onClick={() => { mutate(p => { p.buildings = [...(p.buildings ?? []), { id: uid(), name: `Здание ${(p.buildings?.length ?? 0) + 1}` }]; }, 'Новое здание'); }}>＋ Здание</button>
       <button onClick={() => upload.current?.click()} disabled={!floor || busy}>↑ Загрузить PDF</button>
     </div>;
   }

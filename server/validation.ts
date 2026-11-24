@@ -36,6 +36,7 @@ interface ValidationContext {
   floorIds: Set<string>;
   equipmentIds: Set<string>;
   segmentIds: Set<string>;
+  buildingIds: Set<string>;
   vertices: Map<string, string>;
   claim: Claim;
   pdfExists: (id: string) => boolean;
@@ -84,6 +85,11 @@ function assertFloor(floor: Row, context: ValidationContext): void {
   if (!Number.isInteger(floor.page)) fail('Номер страницы должен быть целым');
   number(floor.width, 'floor.width', false, 0);
   number(floor.height, 'floor.height', false, 0);
+  // Привязка к зданию необязательна, но должна ссылаться на существующее здание.
+  if (floor.buildingId !== undefined && floor.buildingId !== null) {
+    text(floor.buildingId, 'floor.buildingId', true);
+    if (!context.buildingIds.has(floor.buildingId)) fail(`Здание не найдено: ${floor.buildingId}`);
+  }
   if (floor.pdfId === undefined) return;
   text(floor.pdfId, 'floor.pdfId', true);
   // data:-подложка встроена в проект; всё остальное, включая idb:, сервер должен
@@ -212,6 +218,15 @@ function assertWorksField(value: unknown): void {
   }
 }
 
+/** Здания проекта: массив записей с непустыми id и name. Пустой массив допустим. */
+function assertBuildingsField(value: unknown, claim: Claim): void {
+  for (const raw of array(value, 'project.buildings')) {
+    const building = object(raw, 'building');
+    claim(building.id, 'building.id');
+    text(building.name, 'building.name', true);
+  }
+}
+
 /** Нормы комплектации КНС: массив позиций с валидными нормой на 1 м и ценой (null — неизвестно). */
 function assertFittingsField(value: unknown): void {
   for (const raw of array(value, 'project.fittings')) {
@@ -296,11 +311,17 @@ export function assertProject(input: unknown, pdfExists: (id: string) => boolean
     floorIds: new Set<string>(),
     equipmentIds: new Set<string>(),
     segmentIds: new Set<string>(),
+    buildingIds: new Set<string>(),
     vertices: new Map<string, string>(),
     claim,
     pdfExists,
   };
 
+  // Здания проверяются до этажей: этаж ссылается на существующее здание.
+  if (project.buildings !== undefined) {
+    assertBuildingsField(project.buildings, claim);
+    for (const building of project.buildings as Row[]) context.buildingIds.add(building.id);
+  }
   for (const floor of floors) assertFloor(floor, context);
   assertUniqueNumbers(equipment, 'equipment');
   assertUniqueNumbers(routes, 'routes');

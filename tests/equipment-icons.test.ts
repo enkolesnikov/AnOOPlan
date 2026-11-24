@@ -26,6 +26,13 @@ test('тип оборудования превращается в иконку, 
     ['Коммутатор PoE', 'switch'],
     ['Считыватель', 'reader'],
     ['Считыватель карт', 'reader'],
+    ['АТС', 'pbx'],
+    ['Мини-АТС офисная', 'pbx'],
+    ['IP-АТС', 'pbx'],
+    ['Шкаф АТС', 'cabinet'],
+    ['IP-телефон', 'phone'],
+    ['Телефон', 'phone'],
+    ['Телефон SIP', 'phone'],
     ['Датчик', 'generic'],
     ['', 'generic'],
     ['   ', 'generic'],
@@ -39,12 +46,14 @@ test('подписи иконок на русском, для неизвестн
   assert.equal(equipmentIconLabel('Розетка'), 'Розетка');
   assert.equal(equipmentIconLabel('Коммутатор'), 'Коммутатор');
   assert.equal(equipmentIconLabel('Считыватель'), 'Считыватель');
+  assert.equal(equipmentIconLabel('АТС'), 'АТС');
+  assert.equal(equipmentIconLabel('IP-телефон'), 'IP-телефон');
   assert.equal(equipmentIconLabel('Датчик'), 'Оборудование');
   assert.equal(equipmentIconLabel(''), 'Оборудование');
 });
 
 test('у каждой иконки есть непустые контуры в системе 24×24', () => {
-  const icons: EquipmentIconId[] = ['camera', 'cabinet', 'socket', 'switch', 'reader', 'generic'];
+  const icons: EquipmentIconId[] = ['camera', 'cabinet', 'socket', 'switch', 'reader', 'pbx', 'phone', 'generic'];
   for (const icon of icons) {
     const glyph = EQUIPMENT_ICON_GLYPHS[icon];
     assert.ok(glyph, `нет глифа ${icon}`);
@@ -70,6 +79,16 @@ test('пресеты — 8 валидных уникальных цветов #r
     seen.add(preset);
     assert.equal(normalizeEquipmentColor(preset), preset, 'пресет должен нормализоваться в себя');
   }
+});
+
+test('АТС и IP-телефон имеют различимые цвета по умолчанию из палитры пресетов', () => {
+  const pbx = equipmentColor({ type: 'АТС' });
+  const phone = equipmentColor({ type: 'IP-телефон' });
+  for (const color of [pbx, phone]) {
+    assert.match(color, HEX);
+    assert.ok((EQUIPMENT_COLOR_PRESETS as readonly string[]).includes(color));
+  }
+  assert.notEqual(pbx, phone);
 });
 
 test('цвета по умолчанию валидны и различают камеру, шкаф и розетку', () => {

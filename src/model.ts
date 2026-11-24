@@ -1,5 +1,9 @@
 export interface Point { x:number; y:number }
-export interface Floor { id:string; name:string; elevation:number|null; metersPerUnit:number|null; pdfId?:string; page:number; width:number; height:number }
+/** Здание проекта: группа этажей. Здания необязательны — старые проекты их не имеют. */
+export interface Building { id:string; name:string }
+export interface Floor { id:string; name:string; elevation:number|null; metersPerUnit:number|null; pdfId?:string; page:number; width:number; height:number;
+  /** Здание, к которому относится этаж. null/undefined — этаж без здания. */
+  buildingId?:string|null }
 export interface Equipment {
   id:string; number:string; name:string; type:string; floorId:string; x:number; y:number;
   height:number|null; note:string; properties:Record<string,string>; photos?:string[];
@@ -143,6 +147,8 @@ export interface FittingRule {
 export interface Project {
   schemaVersion:1|2; id:string; name:string; floors:Floor[]; equipment:Equipment[];
   routes:Route[]; cables:Cable[]; pins:Pin[]; dimensions?:Dimension[]; updatedAt:string; document?:ProjectDocument;
+  /** Здания проекта: группы этажей. Отсутствие — проект без деления на здания. */
+  buildings?: Building[];
   /** Справочник цен проекта. Отсутствие трактуется как пустой справочник. */
   catalog?: PriceItem[];
   /** Дата актуальности прайса (YYYY-MM-DD), показывается в смете и КП. */
