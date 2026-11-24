@@ -31,7 +31,11 @@
 - **Доступность:** системный размер шрифта Android (textZoom 85–160 %), тёмная тема, высокий контраст,
   reduced-motion; бюджет памяти рендера плана — 8 Мпикс с предупреждением.
 - Подпись: SHA-256 сертификата `6431374cf6a7d385c4c47f0f2bf54fcb5ee5b2c7120f057b18c4062af92fe097`.
-- Текущий релиз: [v3.0.1](https://github.com/enkolesnikov/AnOOPlan/releases/tag/v3.0.1) —
+- Текущий релиз: [v3.1.0 «Оболочка и приёмка»](https://github.com/enkolesnikov/AnOOPlan/releases/tag/v3.1.0) —
+  подписанный APK `AnOOPlan-3.1.0.apk` (versionCode 51, 1 628 963 Б,
+  SHA-256 `900eba54e785e60d0dc25037c0a2fe64bc4cce8eec66df3959a0a3dd8d6398bc` — скачанного ассета),
+  заметки — [RELEASE-NOTES-3.1.0.md](RELEASE-NOTES-3.1.0.md).
+- Предыдущий релиз: [v3.0.1](https://github.com/enkolesnikov/AnOOPlan/releases/tag/v3.0.1) —
   подписанный APK `AnOOPlan-3.0.1.apk` (versionCode 50, 1 628 963 Б,
   SHA-256 `2ee311d2d08af8522a93fadc40468e69a308761e7b01acc9198ba3409448c80e`),
   заметки — [RELEASE-NOTES-3.0.1.md](RELEASE-NOTES-3.0.1.md).
@@ -554,9 +558,12 @@ APK всегда работает в режиме «Браузер»: запро
    в этой задаче не выполнялась.
    **Public API, проверено 2026-11-24:** appId `2063784529`; версия 2.8.5 (versionCode 44) —
    `ACTIVE`, то есть опубликована; версия 3.0.1 (versionCode 50, versionId `2064976383`) —
-   `MODERATION`, `publishType=INSTANTLY`, то есть ещё не опубликована. Владелец обновил `whatsNew`
+   `MODERATION`, `publishType=INSTANTLY`, то есть ещё не опубликована (повторная проверка
+   в день релиза 3.1.0 — статус не изменился). Владелец обновил `whatsNew`
    через консоль 2026-11-24; API подтвердил точное совпадение с разделом «Кратко для RuStore».
    После правки версия повторно отправлена на модерацию и остаётся в статусе `MODERATION`.
+   **AAB 3.1.0 (versionCode 51) собран** (`build/AnOOPlan-3.1.0.aab`, 1 606 409 Б); в RuStore
+   не загружен — загрузка только по явному поручению владельца (клиент read-only).
    Для чтения состояния добавлен
    `scripts/rustore-api.mjs`: `node scripts/rustore-api.mjs check-key`, `... apps`, `... versions`.
    Приватный API-ключ и его ID хранятся соответственно в `keystore/rustore/api-private-key.txt` и
