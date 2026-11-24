@@ -14,8 +14,8 @@
 - Сайт: <https://enkolesnikov.github.io/AnOOPlan/> — лендинг с возможностями и скриншотами.
 - Веб-версия: <https://enkolesnikov.github.io/AnOOPlan/app/> — та же сборка, что и APK; публикуется
   автоматически при изменениях приложения (ручной `workflow_dispatch` сохранён).
-- Текущая версия: **3.1.0**, versionCode 51, `com.anooplan.app`, minSdk 24, targetSdk 35.
-  WebView 98+, **562** юнит-теста + смоук happy-dom + 11 E2E + замер perf 2000 сегментов.
+- Текущая версия: **3.2.0**, versionCode 52, `com.anooplan.app`, minSdk 24, targetSdk 35.
+  WebView 98+, **578** юнит-тестов + смоук happy-dom + 11 E2E + замер perf 2000 сегментов.
 - Возможности: PDF-планы и калибровка, оборудование с иконками и цветом, трассы, кабели и автопрокладка,
   журнал, справочник цен и смета с коммерческим предложением, печатные формы (титул, оглавление,
   штамп ГОСТ, лист изменений), печать выбранных разделов, обмен PDF/XLSX и проектом `.anooplan`,
@@ -31,12 +31,15 @@
 - **Доступность:** системный размер шрифта Android (textZoom 85–160 %), тёмная тема, высокий контраст,
   reduced-motion; бюджет памяти рендера плана — 8 Мпикс с предупреждением.
 - Подпись: SHA-256 сертификата `6431374cf6a7d385c4c47f0f2bf54fcb5ee5b2c7120f057b18c4062af92fe097`.
-- Текущий релиз: [v3.1.0 «Оболочка и приёмка»](https://github.com/enkolesnikov/AnOOPlan/releases/tag/v3.1.0) —
-  подписанный APK `AnOOPlan-3.1.0.apk` (versionCode 51, 1 628 963 Б, сборка раннера
+- Текущий релиз: [v3.2.0 «Полная смета»](https://github.com/enkolesnikov/AnOOPlan/releases/tag/v3.2.0) —
+  подписанный APK `AnOOPlan-3.2.0.apk` (versionCode 52, 1 633 059 Б, сборка раннера
   `android-release.yml` по тегу; SHA-256 скачанного ассета
-  `cbb2903fabb5d1f42d94c2ae72d31d36d225d1081b53c66addbc3440f1ac8f11`),
-  заметки — [RELEASE-NOTES-3.1.0.md](RELEASE-NOTES-3.1.0.md).
-- Предыдущий релиз: [v3.0.1](https://github.com/enkolesnikov/AnOOPlan/releases/tag/v3.0.1) —
+  `36b3e4ba5740635560e09e5c361b76c917034bae01ec5b1b3b4d79c8c5c350ef`),
+  заметки — [RELEASE-NOTES-3.2.0.md](RELEASE-NOTES-3.2.0.md).
+- Предыдущий релиз: [v3.1.0 «Оболочка и приёмка»](https://github.com/enkolesnikov/AnOOPlan/releases/tag/v3.1.0) —
+  APK `AnOOPlan-3.1.0.apk` (versionCode 51, 1 628 963 Б, SHA-256 ассета
+  `cbb2903fabb5d1f42d94c2ae72d31d36d225d1081b53c66addbc3440f1ac8f11`).
+- Ранее: [v3.0.1](https://github.com/enkolesnikov/AnOOPlan/releases/tag/v3.0.1) —
   подписанный APK `AnOOPlan-3.0.1.apk` (versionCode 50, 1 628 963 Б,
   SHA-256 `2ee311d2d08af8522a93fadc40468e69a308761e7b01acc9198ba3409448c80e`),
   заметки — [RELEASE-NOTES-3.0.1.md](RELEASE-NOTES-3.0.1.md).
@@ -55,6 +58,35 @@
   отчёт — [REPORT-2.10.0.md](REPORT-2.10.0.md).
 - Предыдущий релиз: [v2.9.1 «Точность и скорость»](https://github.com/enkolesnikov/AnOOPlan/releases/tag/v2.9.1) —
   APK `AnOOPlan-2.9.1.apk` (versionCode 46, 1 612 488 Б, SHA-256 `926779d9…ca48d9`).
+
+### Состояние на 2026-11-24 (3.2.0, релиз)
+
+- **3.2.0 «Полная смета» выпущен** (коммит `4d4022e`, тег `v3.2.0`):
+  - `project.fittings?: FittingRule[]` — пользовательские нормы комплектации КНС
+    (норма на 1 м × итоговый метраж из `specificationKnS`); раздел «Комплектация КНС»
+    в `estimate()` появляется только при заданных нормах — без них результат бит-в-бит
+    прежний (страж — тест в `tests/estimate.test.ts`). Редактор норм — `FittingsEditor`
+    на экране сметы (кнопка «＋ Норма», НЕ «＋ Позиция» — иначе конфликт с кнопкой
+    справочника в `buttonByText`). Серверная валидация — `assertFittingsField`.
+  - Лист «Подписи»: `JournalSectionId.signaturesSheet`, НЕ в `DEFAULT_JOURNAL_SECTIONS`;
+    стартовый выбор панели печати фильтрует его (`use-workspace-state.ts`). При включении
+    `Renderer.signatures(project, ownSheet=true)` всегда открывает новый лист и возвращает
+    его номер для оглавления; `export-pdf.ts` резервирует +1 запись оглавления.
+  - Оговорки «фитинги и крепления не считаются» в схеме трасс и спецификации КНС условные
+    (`fittingsActive` в `pdf-sections.ts`); смоук обновлён: 16 разделов, лист подписей
+    по умолчанию не выбран.
+- **Урок релиза 3.2.0: `git tag -a -F notes.md` СРЕЗАЕТ строки, начинающиеся с `#`**
+  (cleanup=strip для аннотаций) — markdown-заголовки из заметок теряются, workflow берёт
+  аннотацию как body релиза. Поэтому после «Android Release» body релиза правится из файла
+  (`PATCH /releases/{id}` содержимым RELEASE-NOTES) — так и сделано в 3.2.0.
+- **Приёмка 3.2.0 на эмуляторе:** APK 1 633 059 Б установлен, интерфейс рендерится,
+  E2E «сбой → восстановление» PASS; скриншоты приложены к релизу (2 шт).
+  ЛОВУШКА: свежезагруженный swiftshader-эмулятор показывает ANR-диалог systemui,
+  перехватывающий фокус, — снимается `am broadcast -a android.intent.action.CLOSE_SYSTEM_DIALOGS`.
+- **RuStore на 2026-11-24:** 3.0.1 (versionCode 50) всё ещё `MODERATION`; 2.8.5 (44) — `ACTIVE`.
+  AAB 3.2.0 (`build/AnOOPlan-3.2.0.aab`, 1 607 462 Б) собран, не загружен — ждёт поручения.
+- **578 юнит-тестов** (1 штатный skip), смоук, tsc/ESLint, покрытие 93,4/88,2/94,8 %,
+  бюджеты (JS 498,6/600 КБ, CSS 45,8/60 КБ), секреты — зелёные.
 
 ### Состояние на 2026-11-24 (3.1.0, релиз)
 
