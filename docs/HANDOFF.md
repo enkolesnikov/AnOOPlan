@@ -14,8 +14,8 @@
 - Сайт: <https://enkolesnikov.github.io/AnOOPlan/> — лендинг с возможностями и скриншотами.
 - Веб-версия: <https://enkolesnikov.github.io/AnOOPlan/app/> — та же сборка, что и APK; публикуется
   автоматически при изменениях приложения (ручной `workflow_dispatch` сохранён).
-- Текущая версия: **3.2.0**, versionCode 52, `com.anooplan.app`, minSdk 24, targetSdk 35.
-  WebView 98+, **578** юнит-тестов + смоук happy-dom + 11 E2E + замер perf 2000 сегментов.
+- Текущая версия: **3.3.0**, versionCode 53, `com.anooplan.app`, minSdk 24, targetSdk 35.
+  WebView 98+, **580** юнит-тестов + смоук happy-dom + 11 E2E + замер perf 2000 сегментов.
 - Возможности: PDF-планы и калибровка, оборудование с иконками и цветом, трассы, кабели и автопрокладка,
   журнал, справочник цен и смета с коммерческим предложением, печатные формы (титул, оглавление,
   штамп ГОСТ, лист изменений), печать выбранных разделов, обмен PDF/XLSX и проектом `.anooplan`,
@@ -31,7 +31,12 @@
 - **Доступность:** системный размер шрифта Android (textZoom 85–160 %), тёмная тема, высокий контраст,
   reduced-motion; бюджет памяти рендера плана — 8 Мпикс с предупреждением.
 - Подпись: SHA-256 сертификата `6431374cf6a7d385c4c47f0f2bf54fcb5ee5b2c7120f057b18c4062af92fe097`.
-- Текущий релиз: [v3.2.0 «Полная смета»](https://github.com/enkolesnikov/AnOOPlan/releases/tag/v3.2.0) —
+- Текущий релиз: [v3.3.0 «Здания и телефония»](https://github.com/enkolesnikov/AnOOPlan/releases/tag/v3.3.0) —
+  подписанный APK `AnOOPlan-3.3.0.apk` (versionCode 53, 1 633 059 Б, сборка раннера
+  `android-release.yml` по тегу; SHA-256 скачанного ассета
+  `c241b690ad1993f756103c08bdde062ea3f5312b68e108302194f6de537ad0e9`),
+  заметки — [RELEASE-NOTES-3.3.0.md](RELEASE-NOTES-3.3.0.md).
+- Предыдущий релиз: [v3.2.0 «Полная смета»](https://github.com/enkolesnikov/AnOOPlan/releases/tag/v3.2.0) —
   подписанный APK `AnOOPlan-3.2.0.apk` (versionCode 52, 1 633 059 Б, сборка раннера
   `android-release.yml` по тегу; SHA-256 скачанного ассета
   `36b3e4ba5740635560e09e5c361b76c917034bae01ec5b1b3b4d79c8c5c350ef`),
@@ -58,6 +63,27 @@
   отчёт — [REPORT-2.10.0.md](REPORT-2.10.0.md).
 - Предыдущий релиз: [v2.9.1 «Точность и скорость»](https://github.com/enkolesnikov/AnOOPlan/releases/tag/v2.9.1) —
   APK `AnOOPlan-2.9.1.apk` (versionCode 46, 1 612 488 Б, SHA-256 `926779d9…ca48d9`).
+
+### Состояние на 2026-11-24 (3.3.0, релиз)
+
+- **3.3.0 «Здания и телефония» выпущен** (коммит фичи `3ae00f1`, версия `c4eb1e9`, тег `v3.3.0`):
+  - Здания: `Project.buildings?: Building[]`, `Floor.buildingId?: string|null` — необязательные
+    поля; `normalizeBuildings` в `src/migrations.ts` (дубли id — суффикс `-д`, пустой список не
+    хранится, висячие привязки этажей отбрасываются). Сервер: `assertBuildingsField` + проверка
+    ссылки этажа (422 «Здание не найдено»). Группировка — чистый `src/ui/floor-groups.ts`
+    (`groupFloorsByBuilding`), сайдбар рисует заголовки `.building-row` (инпут переименования +
+    удаление, этажи сохраняются); `floorSelect` — `optgroup` при наличии зданий.
+  - АТС/IP-телефон: иконки `pbx`/`phone` в `src/equipment-icons.ts` (цвета `#2f9e63`/`#dc5071`);
+    `equipmentIcon` матчит «атс»/«pbx» и «телефон»/«phone» ПОСЛЕ «шкаф» — «Шкаф АТС» остаётся
+    шкафом. Чипы типов в `properties-panel.tsx` дополнены.
+  - Релиз только GitHub (поручение владельца): AAB для RuStore НЕ собирался.
+- **Приёмка 3.3.0 на эмуляторе:** APK установлен, интерфейс рендерится; скриншоты (группировка
+  по зданиям, иконки АТС/IP-телефона) приложены к релизу. Приёмка велась через CDP WebView
+  (`adb forward tcp:9333 localabstract:webview_devtools_remote_<pid>`, `json/list`,
+  `Runtime.evaluate` с DOM-кликами; сокет у мёртвого pid висит и отвечает тишиной — сверять
+  pid приложения). Временные скрипты — в `build/` (не в git).
+- **580 юнит-тестов** (1 штатный skip), смоук, tsc/ESLint, покрытие 93,4/88,3/94,9 %,
+  бюджеты (JS 500,1/600 КБ, CSS 45,8/60 КБ), секреты — зелёные.
 
 ### Состояние на 2026-11-24 (3.2.0, релиз)
 

@@ -11,22 +11,22 @@ PDF-план здания, расставьте оборудование (кам
 </p>
 
 <p align="center">
-  <a href="https://github.com/enkolesnikov/AnOOPlan/releases/latest"><img alt="Скачать APK" src="https://img.shields.io/badge/скачать-APK_3.2.0-2ea043?logo=android&logoColor=white"></a>
+  <a href="https://github.com/enkolesnikov/AnOOPlan/releases/latest"><img alt="Скачать APK" src="https://img.shields.io/badge/скачать-APK_3.3.0-2ea043?logo=android&logoColor=white"></a>
   <a href="https://enkolesnikov.github.io/AnOOPlan/app/"><img alt="Веб-версия" src="https://img.shields.io/badge/веб--версия-открыть-38c6c9"></a>
   <a href="https://enkolesnikov.github.io/AnOOPlan/"><img alt="Сайт" src="https://img.shields.io/badge/сайт-открыть-122936"></a>
   <a href="docs/HANDOFF.md"><img alt="Документация" src="https://img.shields.io/badge/документация-HANDOFF-6e7781"></a>
 </p>
 
-<p align="center"><b>Версия 3.2.0 · APK 1 633 059 Б (1,6 МБ) · Android 7.0+</b></p>
+<p align="center"><b>Версия 3.3.0 · APK 1 633 059 Б (1,6 МБ) · Android 7.0+</b></p>
 
 <p align="center"><img src="docs/store/screenshots/01-plan.png" width="240" alt="План этажа с кабельными трассами и длинами сегментов"></p>
 
 ## Скачать и установить
 
 - **APK:** [последний релиз](https://github.com/enkolesnikov/AnOOPlan/releases/latest) —
-  `AnOOPlan-3.2.0.apk`, около **1,6 МБ** (1 633 059 Б), Android 7.0+ (minSdk 24, targetSdk 35,
+  `AnOOPlan-3.3.0.apk`, около **1,6 МБ** (1 633 059 Б), Android 7.0+ (minSdk 24, targetSdk 35,
   WebView 98+), без интернета и аналитики. SHA-256:
-  `36b3e4ba5740635560e09e5c361b76c917034bae01ec5b1b3b4d79c8c5c350ef`.
+  `c241b690ad1993f756103c08bdde062ea3f5312b68e108302194f6de537ad0e9`.
 - **Сайт:** [enkolesnikov.github.io/AnOOPlan](https://enkolesnikov.github.io/AnOOPlan/) —
   возможности, скриншоты и загрузка.
 - **Веб-версия:** [enkolesnikov.github.io/AnOOPlan/app/](https://enkolesnikov.github.io/AnOOPlan/app/) —
@@ -79,6 +79,18 @@ PDF-план здания, расставьте оборудование (кам
 - Локальный сервер (`npm start`) по умолчанию слушает `127.0.0.1`; LAN-режим требует токен
   `ANOOPLAN_TOKEN`, токен из ссылки сохраняется в session-cookie.
 - `npm audit`: 0 high; 9 moderate — только dev-цепочка ESLint (`minimatch`), в APK не входит.
+
+## Что нового в 3.3.0
+
+Заметки — [RELEASE-NOTES-3.3.0.md](docs/RELEASE-NOTES-3.3.0.md).
+
+- **Несколько зданий в проекте:** кнопка «＋ Здание» на вкладке «Этажи», этажи группируются
+  по зданиям; здание переименовывается прямо в списке, удаление здания оставляет этажи
+  «без здания». Выбор здания — в свойствах этажа; списки этажей группируются по зданиям.
+- **АТС и IP-телефон:** новые типы оборудования с собственными значками на плане и в PDF
+  (зелёная АТС с портами, розовый аппарат с трубкой) и чипами быстрого выбора типа.
+- Проекты без зданий открываются и работают ровно как раньше — деление на здания
+  необязательно.
 
 ## Что нового в 3.2.0
 
@@ -208,11 +220,11 @@ Dev-сервер по умолчанию слушает `127.0.0.1`. Для до
 
 APK — нативная оболочка (WebView) вокруг той же статической сборки, без Gradle:
 
-- `com.anooplan.app`, versionCode 52, версия 3.2.0;
+- `com.anooplan.app`, versionCode 53, версия 3.3.0;
 - ассеты отдаются по origin `https://appassets.local/`, поэтому работают localStorage, IndexedDB
   и `crypto.randomUUID()`;
 - экспорт PDF/XLSX/CSV/`.anooplan` собирается на телефоне и сохраняется через MediaStore;
-- сборка: `npm run build:apk` → `build/AnOOPlan-3.2.0.apk`; инструменты — в `tools/`, без Gradle.
+- сборка: `npm run build:apk` → `build/AnOOPlan-3.3.0.apk`; инструменты — в `tools/`, без Gradle.
 
 ## Документация
 
