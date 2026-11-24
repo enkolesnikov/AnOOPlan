@@ -26,7 +26,7 @@ PDF-план здания, расставьте оборудование (кам
 - **APK:** [последний релиз](https://github.com/enkolesnikov/AnOOPlan/releases/latest) —
   `AnOOPlan-3.1.0.apk`, около **1,6 МБ** (1 628 963 Б), Android 7.0+ (minSdk 24, targetSdk 35,
   WebView 98+), без интернета и аналитики. SHA-256:
-  `900eba54e785e60d0dc25037c0a2fe64bc4cce8eec66df3959a0a3dd8d6398bc`.
+  `cbb2903fabb5d1f42d94c2ae72d31d36d225d1081b53c66addbc3440f1ac8f11`.
 - **Сайт:** [enkolesnikov.github.io/AnOOPlan](https://enkolesnikov.github.io/AnOOPlan/) —
   возможности, скриншоты и загрузка.
 - **Веб-версия:** [enkolesnikov.github.io/AnOOPlan/app/](https://enkolesnikov.github.io/AnOOPlan/app/) —

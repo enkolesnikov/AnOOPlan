@@ -32,8 +32,9 @@
   reduced-motion; бюджет памяти рендера плана — 8 Мпикс с предупреждением.
 - Подпись: SHA-256 сертификата `6431374cf6a7d385c4c47f0f2bf54fcb5ee5b2c7120f057b18c4062af92fe097`.
 - Текущий релиз: [v3.1.0 «Оболочка и приёмка»](https://github.com/enkolesnikov/AnOOPlan/releases/tag/v3.1.0) —
-  подписанный APK `AnOOPlan-3.1.0.apk` (versionCode 51, 1 628 963 Б,
-  SHA-256 `900eba54e785e60d0dc25037c0a2fe64bc4cce8eec66df3959a0a3dd8d6398bc` — скачанного ассета),
+  подписанный APK `AnOOPlan-3.1.0.apk` (versionCode 51, 1 628 963 Б, сборка раннера
+  `android-release.yml` по тегу; SHA-256 скачанного ассета
+  `cbb2903fabb5d1f42d94c2ae72d31d36d225d1081b53c66addbc3440f1ac8f11`),
   заметки — [RELEASE-NOTES-3.1.0.md](RELEASE-NOTES-3.1.0.md).
 - Предыдущий релиз: [v3.0.1](https://github.com/enkolesnikov/AnOOPlan/releases/tag/v3.0.1) —
   подписанный APK `AnOOPlan-3.0.1.apk` (versionCode 50, 1 628 963 Б,
@@ -79,6 +80,16 @@
   `PERF_PORT=4185` — 4175 на машине занят системным preview клиента.
 - **S-11 закрыт:** еженедельный gitleaks (`fetch-depth: 0`) сканирует всю историю;
   полный прогон 2026-11-23 на `f548a29` — 0 находок ([REPORT-SECURITY.md](REPORT-SECURITY.md)).
+- **Урок релиза 3.1.0: релиз создаётся ТОЛЬКО тегом, руками — нельзя.** Пуш тега `v*` запускает
+  `android-release.yml`: полный quality gate → сборка APK на раннере тем же keystore →
+  `gh release edit --notes <аннотация тега>` и `gh release upload --clobber`. Ручной
+  `gh release create`/загрузка своего APK будут перезаписаны, а локальный APK отличается
+  от раннерного (другая среда) — в 3.1.0 так и вышло, в документы чуть не ушёл SHA
+  локальной сборки. Правильный порядок: зелёный CI на main → аннотированный тег
+  (аннотация станет заметками релиза — либо правим body после workflow) → push тега →
+  дождаться «Android Release» → SHA-256 брать из скачанного ассета (в релизе уже лежит
+  готовый `AnOOPlan-X.Y.Z.apk.sha256` от раннера — сверить с ним). Приёмку на эмуляторе
+  делать на локальном APK из того же коммита + финальный запуск скачанного ассета.
 - **562 юнит-теста** (1 штатный skip), смоук, tsc/ESLint, бюджеты (JS 498,6/600 КБ,
   CSS 45,8/60 КБ), секреты — зелёные.
 
