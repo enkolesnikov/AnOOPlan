@@ -10,12 +10,17 @@ import { HISTORY_LIMIT, canCoalesce, pushLimited } from './ui/history';
  * `label` задаёт подпись действия. Повторные изменения с той же подписью в окне
  * GROUP_WINDOW_MS (набор числа/текста) склеиваются в один шаг undo: Ctrl+Z
  * отменяет ввод целиком, а не по символу.
+ *
+ * `onDataChange(derived)` вызывается после каждой мутации/восстановления:
+ * `derived: false` — правка метаданных (например, название проекта), которая не
+ * влияет на проверки, расчёты кабелей и итоги, и их тяжёлый пересчёт не нужен.
  */
 export function useProjectHistory(
   projectRef: MutableRefObject<Project>,
   setProject: Dispatch<SetStateAction<Project>>,
   setError: (message: string) => void,
   onRestore: () => void,
+  onDataChange?: (derived: boolean) => void,
 ) {
   const [undo, setUndo] = useState<Project[]>([]);
   const [redo, setRedo] = useState<Project[]>([]);
@@ -23,7 +28,7 @@ export function useProjectHistory(
   const [redoLabels, setRedoLabels] = useState<string[]>([]);
   const lastAction = useRef<{ label: string | undefined; at: number } | null>(null);
 
-  function commit(next: Project | ((project: Project) => Project), label?: string): void {
+  function commit(next: Project | ((project: Project) => Project), label?: string, options?: { derived?: boolean }): void {
     const previous = projectRef.current;
     const value = typeof next === 'function' ? next(clone(previous)) : next;
     const now = Date.now();
@@ -39,10 +44,11 @@ export function useProjectHistory(
     projectRef.current = value;
     setProject(value);
     setError('');
+    onDataChange?.(options?.derived !== false);
   }
 
-  function mutate(fn: (project: Project) => void, label?: string): void {
-    commit(project => { fn(project); return project; }, label);
+  function mutate(fn: (project: Project) => void, label?: string, options?: { derived?: boolean }): void {
+    commit(project => { fn(project); return project; }, label, options);
   }
 
   function history(back: boolean): void {
@@ -69,6 +75,7 @@ export function useProjectHistory(
     projectRef.current = restored;
     lastAction.current = null;
     onRestore();
+    onDataChange?.(true);
   }
 
   function record(previous: Project, label = 'Загрузка'): void {
@@ -77,6 +84,7 @@ export function useProjectHistory(
     setRedo([]);
     setRedoLabels([]);
     lastAction.current = null;
+    onDataChange?.(true);
   }
 
   function reset(): void {

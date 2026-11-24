@@ -51,12 +51,13 @@ test('JS-мост проверяет origin страницы перед дейс
 });
 
 test('WebView не открывает file/content и блокирует чужие схемы', () => {
-  const activity = squash(read('android/java/com/anooplan/app/MainActivity.java'));
-  assert.match(activity, /settings\.setAllowFileAccess\(false\)/);
-  assert.match(activity, /settings\.setAllowContentAccess\(false\)/);
-  assert.match(activity, /settings\.setAllowFileAccessFromFileURLs\(false\)/);
-  assert.match(activity, /settings\.setAllowUniversalAccessFromFileURLs\(false\)/);
-  assert.doesNotMatch(activity, /setAllowContentAccess\(true\)/);
+  // Настройки WebView с 3.1.0 живут в WebViewConfigurator (декомпозиция MainActivity).
+  const configurator = squash(read('android/java/com/anooplan/app/WebViewConfigurator.java'));
+  assert.match(configurator, /settings\.setAllowFileAccess\(false\)/);
+  assert.match(configurator, /settings\.setAllowContentAccess\(false\)/);
+  assert.match(configurator, /settings\.setAllowFileAccessFromFileURLs\(false\)/);
+  assert.match(configurator, /settings\.setAllowUniversalAccessFromFileURLs\(false\)/);
+  assert.doesNotMatch(configurator, /setAllowContentAccess\(true\)/);
 
   const server = squash(read('android/java/com/anooplan/app/AssetServer.java'));
   assert.match(server, /onPageStarted\(/);

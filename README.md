@@ -11,20 +11,20 @@ PDF-план здания, расставьте оборудование (кам
 </p>
 
 <p align="center">
-  <a href="https://github.com/enkolesnikov/AnOOPlan/releases/latest"><img alt="Скачать APK" src="https://img.shields.io/badge/скачать-APK_3.0.1-2ea043?logo=android&logoColor=white"></a>
+  <a href="https://github.com/enkolesnikov/AnOOPlan/releases/latest"><img alt="Скачать APK" src="https://img.shields.io/badge/скачать-APK_3.1.0-2ea043?logo=android&logoColor=white"></a>
   <a href="https://enkolesnikov.github.io/AnOOPlan/app/"><img alt="Веб-версия" src="https://img.shields.io/badge/веб--версия-открыть-38c6c9"></a>
   <a href="https://enkolesnikov.github.io/AnOOPlan/"><img alt="Сайт" src="https://img.shields.io/badge/сайт-открыть-122936"></a>
   <a href="docs/HANDOFF.md"><img alt="Документация" src="https://img.shields.io/badge/документация-HANDOFF-6e7781"></a>
 </p>
 
-<p align="center"><b>Версия 3.0.1 · APK 1 628 963 Б (1,6 МБ) · Android 7.0+</b></p>
+<p align="center"><b>Версия 3.1.0 · APK 1 628 963 Б (1,6 МБ) · Android 7.0+</b></p>
 
 <p align="center"><img src="docs/store/screenshots/01-plan.png" width="240" alt="План этажа с кабельными трассами и длинами сегментов"></p>
 
 ## Скачать и установить
 
 - **APK:** [последний релиз](https://github.com/enkolesnikov/AnOOPlan/releases/latest) —
-  `AnOOPlan-3.0.1.apk`, около **1,6 МБ** (1 628 963 Б), Android 7.0+ (minSdk 24, targetSdk 35,
+  `AnOOPlan-3.1.0.apk`, около **1,6 МБ** (1 628 963 Б), Android 7.0+ (minSdk 24, targetSdk 35,
   WebView 98+), без интернета и аналитики. SHA-256:
   `2ee311d2d08af8522a93fadc40468e69a308761e7b01acc9198ba3409448c80e`.
 - **Сайт:** [enkolesnikov.github.io/AnOOPlan](https://enkolesnikov.github.io/AnOOPlan/) —
@@ -80,14 +80,17 @@ PDF-план здания, расставьте оборудование (кам
   `ANOOPLAN_TOKEN`, токен из ссылки сохраняется в session-cookie.
 - `npm audit`: 0 high; 9 moderate — только dev-цепочка ESLint (`minimatch`), в APK не входит.
 
-## Что нового в 3.0.1 (патч)
+## Что нового в 3.1.0
 
-Заметки — [RELEASE-NOTES-3.0.1.md](docs/RELEASE-NOTES-3.0.1.md).
+Заметки — [RELEASE-NOTES-3.1.0.md](docs/RELEASE-NOTES-3.1.0.md).
 
-- **Запуск на Android 15:** устранён белый экран — нативный мост больше не вызывает
-  `WebView.getUrl()` с потока JavaBridge; URL передаётся из главного потока.
-- **Учебный проект:** устаревшая копия (без цен и сечений КНС) автоматически заменяется
-  актуальной при загрузке — «Ведомости» без замечаний.
+- **Надёжность при сбоях:** сценарий «система выгрузила приложение на несохранённом проекте →
+  черновик восстановился после перезапуска» теперь проверяется автоматически на эмуляторе
+  перед каждым выпуском; факт восстановления виден в диагностике на экране «О программе».
+- **Ввод на больших проектах:** переименование проекта больше не запускает фоновые пересчёты
+  на каждую букву — на планах из тысяч сегментов ввод стал заметно легче.
+- **Внутри:** нативная оболочка разобрана на модули (`MainActivity` 651 → 163 строки),
+  история git проверяется сканером секретов целиком, а не только рабочие файлы.
 
 ## Что нового в 3.0.0 «Поле и надёжность»
 
@@ -193,11 +196,11 @@ Dev-сервер по умолчанию слушает `127.0.0.1`. Для до
 
 APK — нативная оболочка (WebView) вокруг той же статической сборки, без Gradle:
 
-- `com.anooplan.app`, versionCode 50, версия 3.0.1;
+- `com.anooplan.app`, versionCode 51, версия 3.1.0;
 - ассеты отдаются по origin `https://appassets.local/`, поэтому работают localStorage, IndexedDB
   и `crypto.randomUUID()`;
 - экспорт PDF/XLSX/CSV/`.anooplan` собирается на телефоне и сохраняется через MediaStore;
-- сборка: `npm run build:apk` → `build/AnOOPlan-3.0.1.apk`; инструменты — в `tools/`, без Gradle.
+- сборка: `npm run build:apk` → `build/AnOOPlan-3.1.0.apk`; инструменты — в `tools/`, без Gradle.
 
 ## Документация
 

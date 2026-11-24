@@ -76,6 +76,13 @@ export function useWorkspaceState() {
   const heavyProjectRef = useRef(project);
   if (!dragging) heavyProjectRef.current = project;
   const heavyProject = dragging ? heavyProjectRef.current : project;
+  // Редакция инженерных данных: растёт только при мутациях, влияющих на проверки,
+  // расчёты кабелей, заполнение лотков и итоги (commit/mutate, undo/redo, загрузка).
+  // Правки метаданных (derived: false — например, название проекта) и кадры
+  // перетаскивания редакцию не двигают, поэтому тяжёлые пересчёты не идут
+  // на каждый символ и на каждый кадр жеста (замер 3.1.0: до разделения ввод
+  // на 2000 сегментах стоил ~100 мс на символ — полный validateProject + кабели).
+  const [dataRev, setDataRev] = useState(0);
   const [staticMode, setStaticMode] = useState(false);
   const [exportOpen, setExportOpen] = useState(false);
   const [sheet, setSheet] = useState<SheetTarget>(null);
@@ -124,11 +131,18 @@ export function useWorkspaceState() {
   const photoOwner = equipment ?? pin;
   const cableSectionResult = cable ? cableSection(cable) : null;
   const calculation = cable ? calculateCable(project, cable) : null;
-  const issues = useMemo(() => [...validateProject(heavyProject), ...domainWarnings(heavyProject)], [heavyProject]);
-  const cableCalcs = useMemo(() => new Map(heavyProject.cables.map(c => [c.id, calculateCable(heavyProject, c)])), [heavyProject]);
-  // Заполнение лотков тяжелее остальных расчётов, поэтому считается один раз на проект:
+  // Тяжёлые производные считаются один раз на редакцию данных (dataRev), а не на
+  // смену идентичности объекта: commit глубоко клонирует проект на каждую мутацию,
+  // поэтому ключ по объекту пересчитывал всё даже при правке названия. Читаем
+  // через projectRef — в момент пересчёта там всегда актуальный проект.
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- ключ намеренно редакция данных, а не объект проекта (см. комментарий выше)
+  const issues = useMemo(() => [...validateProject(projectRef.current), ...domainWarnings(projectRef.current)], [dataRev]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- ключ намеренно редакция данных, а не объект проекта
+  const cableCalcs = useMemo(() => new Map(projectRef.current.cables.map(c => [c.id, calculateCable(projectRef.current, c)])), [dataRev]);
+  // Заполнение лотков тяжелее остальных расчётов, поэтому считается один раз на редакцию:
   // строки сегментов затем переиспользуются в свойствах трассы и кабеля.
-  const fill = useMemo(() => trayFill(heavyProject), [heavyProject]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- ключ намеренно редакция данных, а не объект проекта
+  const fill = useMemo(() => trayFill(projectRef.current), [dataRev]);
   const cableFill = useMemo(() => {
     if (!cable) return null;
     const ids = new Set(cable.segmentIds);
@@ -144,8 +158,9 @@ export function useWorkspaceState() {
     ? routeFillKnown.reduce((best, row) => ((row.fillPercent ?? 0) > (best.fillPercent ?? 0) ? row : best))
     : null;
   const totals = useMemo(() => {
-    let meters = 0, metersComplete = true, cost = 0, costComplete = heavyProject.cables.length > 0;
-    for (const cable of heavyProject.cables) {
+    const cables = projectRef.current.cables;
+    let meters = 0, metersComplete = true, cost = 0, costComplete = cables.length > 0;
+    for (const cable of cables) {
       // Итоги берут готовый расчёт из cableCalcs: повторный calculateCable не нужен.
       const calculation = cableCalcs.get(cable.id);
       if (!calculation) continue;
@@ -153,12 +168,15 @@ export function useWorkspaceState() {
       if (calculation.cost === null) costComplete = false; else cost += calculation.cost;
     }
     return { meters, metersComplete, cost, costComplete };
-  }, [heavyProject, cableCalcs]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- ключ намеренно редакция данных, а не объект проекта
+  }, [dataRev, cableCalcs]);
   const issueCount = Array.isArray(issues) ? issues.length : 0;
 
   const { undo, redo, undoLabel, redoLabel, commit, mutate, history, reset: resetHistory, record: recordHistory } = useProjectHistory(projectRef, setProject, setError, () => {
     setSelection(null);
     setDraft([]);
+  }, (derived: boolean) => {
+    if (derived) setDataRev(rev => rev + 1);
   });
   const { pdfPages, renderPlan, pdfError, pdfNote } = usePdfBackground({
     floor, enabled: view === 'plan', viewRef, zoom, pan, canvas, stage, mutate,
@@ -178,6 +196,7 @@ export function useWorkspaceState() {
       return;
     }
     setProject(p); projectRef.current = p; setSaved(exists ? JSON.stringify(p) : ''); setPersisted(exists);
+    setDataRev(rev => rev + 1);
     setFloorId(p.floors[0]?.id || ''); resetHistory(); setSelection(null); setMulti(null); setDraft([]); setMeasure([]); setCalibration([]); setCableSegments([]); setView('plan'); setTool('select'); setError('');
   }
   return {

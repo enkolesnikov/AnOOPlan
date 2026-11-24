@@ -61,10 +61,11 @@ test('безопасность и надёжность: localhost по умол�
   assert.match(server, /process\.env\.HOST \|\| '127\.0\.0\.1'/);
   const exporter = read('src/ui/use-export.ts');
   assert.doesNotMatch(exporter, /\/export\?format/);
-  const activity = read('android/java/com/anooplan/app/MainActivity.java');
-  const saveAndExit = activity.slice(activity.indexOf('private void saveAndExit()'), activity.indexOf('protected void onResume()'));
-  assert.doesNotMatch(saveAndExit, /postDelayed/);
-  assert.match(saveAndExit, /__anooplanSaveAndExit/);
+  // С 3.1.0 «сохранить и выйти» живёт в ExitController (декомпозиция MainActivity).
+  const exit = read('android/java/com/anooplan/app/ExitController.java');
+  assert.match(exit, /void saveAndExit\(/);
+  assert.doesNotMatch(exit, /postDelayed/);
+  assert.match(exit, /__anooplanSaveAndExit/);
 });
 
 test('цепочка поставки: checksums инструментов и полный release gate', () => {

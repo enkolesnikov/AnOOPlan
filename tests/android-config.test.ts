@@ -43,17 +43,19 @@ test('fetch-tools скачивает platform 35 и build-tools 35', () => {
   assert.match(script, /build-tools_r\$\{BT_MAJOR\}_linux\.zip/);
 });
 
-test('Android 15 edge-to-edge: MainActivity учитывает системные insets', () => {
-  const activity = read('android/java/com/anooplan/app/MainActivity.java');
-  assert.match(activity, /Build\.VERSION\.SDK_INT >= 35/);
-  assert.match(activity, /setDecorFitsSystemWindows\(false\)/);
-  assert.match(activity, /OnApplyWindowInsetsListener/);
-  assert.match(activity, /WindowInsets\.Type\.systemBars\(\)/);
-  assert.match(activity, /WindowInsets\.Type\.ime\(\)/);
-  assert.match(activity, /setPadding\(/);
+test('Android 15 edge-to-edge: оболочка учитывает системные insets', () => {
+  // С 3.1.0 окно и insets настраивает WebViewConfigurator (декомпозиция MainActivity).
+  const configurator = read('android/java/com/anooplan/app/WebViewConfigurator.java');
+  assert.match(configurator, /Build\.VERSION\.SDK_INT >= 35/);
+  assert.match(configurator, /setDecorFitsSystemWindows\(false\)/);
+  assert.match(configurator, /OnApplyWindowInsetsListener/);
+  assert.match(configurator, /WindowInsets\.Type\.systemBars\(\)/);
+  assert.match(configurator, /WindowInsets\.Type\.ime\(\)/);
+  assert.match(configurator, /setPadding\(/);
   // WebView игнорирует padding, поэтому insets применяются к FrameLayout-контейнеру.
-  assert.match(activity, /FrameLayout root = new FrameLayout/);
-  assert.match(activity, /root\.addView\(webView/);
+  assert.match(configurator, /FrameLayout root = new FrameLayout/);
+  assert.match(configurator, /root\.addView\(webView/);
+  const activity = read('android/java/com/anooplan/app/MainActivity.java');
   assert.match(activity, /setContentView\(root\)/);
 });
 
@@ -86,11 +88,13 @@ test('обмен: ACTION_SEND, провайдер файлов и открыти
   // Повторное открытие файла при запущенном приложении не создаёт второй экземпляр.
   assert.match(manifest, /android:launchMode="singleTop"/);
 
+  // С 3.1.0 приём .anooplan из системы делает SharedProjectReceiver (декомпозиция).
+  const shared = read('android/java/com/anooplan/app/SharedProjectReceiver.java');
+  assert.match(shared, /Intent\.ACTION_VIEW/);
+  assert.match(shared, /Intent\.ACTION_SEND/);
+  assert.match(shared, /__anooplanOpenSharedProject/);
+  assert.match(shared, /MAX_PROJECT_FILE_BYTES/);
   const activity = read('android/java/com/anooplan/app/MainActivity.java');
-  assert.match(activity, /Intent\.ACTION_VIEW/);
-  assert.match(activity, /Intent\.ACTION_SEND/);
-  assert.match(activity, /__anooplanOpenSharedProject/);
-  assert.match(activity, /MAX_PROJECT_FILE_BYTES/);
   assert.match(activity, /onNewIntent/);
   assert.match(activity, /onPageFinished/);
 
@@ -139,16 +143,19 @@ function contrastRatio(first: string, second: string): number {
   return (light + 0.05) / (dark + 0.05);
 }
 
-test('доступность: MainActivity масштабирует текст по системному fontScale', () => {
+test('доступность: оболочка масштабирует текст по системному fontScale', () => {
+  // С 3.1.0 логика — в TextZoom.java, применение — в WebViewConfigurator (декомпозиция).
   const activity = read('android/java/com/anooplan/app/MainActivity.java');
+  const configurator = read('android/java/com/anooplan/app/WebViewConfigurator.java');
+  const zoom = read('android/java/com/anooplan/app/TextZoom.java');
   // fontScale — из конфигурации Android, setTextZoom получает вычисленный процент.
   assert.match(activity, /getResources\(\)\.getConfiguration\(\)\.fontScale/);
-  assert.match(activity, /settings\.setTextZoom\(\s*textZoomPercent\(/);
-  assert.doesNotMatch(activity, /setTextZoom\(100\)/, 'жёсткий setTextZoom(100) игнорировал системный шрифт');
-  assert.match(activity, /Math\.round\(fontScale \* 100f\)/);
-  assert.match(activity, /Math\.min\(TEXT_ZOOM_MAX, Math\.max\(TEXT_ZOOM_MIN/, 'значение зажимается в 85–160 %');
+  assert.match(configurator, /settings\.setTextZoom\(\s*textZoomPercent\(/);
+  assert.doesNotMatch(configurator + activity, /setTextZoom\(100\)/, 'жёсткий setTextZoom(100) игнорировал системный шрифт');
+  assert.match(zoom, /Math\.round\(fontScale \* 100f\)/);
+  assert.match(zoom, /Math\.min\(TEXT_ZOOM_MAX, Math\.max\(TEXT_ZOOM_MIN/, 'значение зажимается в 85–160 %');
   assert.match(
-    activity,
+    zoom,
     /Float\.isNaN\(fontScale\)[\s\S]*Float\.isInfinite\(fontScale\)[\s\S]*TEXT_ZOOM_DEFAULT/,
     'некорректный fontScale даёт 100 %',
   );
@@ -156,9 +163,9 @@ test('доступность: MainActivity масштабирует текст �
   const script = read('src/a11y.ts');
   for (const name of ['TEXT_ZOOM_MIN', 'TEXT_ZOOM_MAX', 'TEXT_ZOOM_DEFAULT']) {
     const pattern = new RegExp(`${name}\\s*=\\s*(\\d+)`);
-    const javaValue = pattern.exec(activity)?.[1];
-    assert.ok(javaValue, `${name} не найден в MainActivity.java`);
-    assert.equal(javaValue, pattern.exec(script)?.[1], `${name} совпадает в MainActivity.java и src/a11y.ts`);
+    const javaValue = pattern.exec(zoom)?.[1];
+    assert.ok(javaValue, `${name} не найден в TextZoom.java`);
+    assert.equal(javaValue, pattern.exec(script)?.[1], `${name} совпадает в TextZoom.java и src/a11y.ts`);
   }
 });
 
@@ -230,6 +237,16 @@ test('стили: высокий контраст, forced-colors и reduced-moti
   assert.ok(reduced.includes('animation-duration'));
   assert.ok(reduced.includes('transition-duration'));
   assert.ok(reduced.includes('scroll-behavior'));
+});
+
+test('техдолг 3.1.0: MainActivity разобран на помощников (≤200 строк)', () => {
+  const activity = read('android/java/com/anooplan/app/MainActivity.java');
+  const lines = activity.split('\n').length;
+  assert.ok(lines <= 200, `MainActivity.java: ${lines} строк, цель ≤ 200 после декомпозиции`);
+  for (const helper of ['TextZoom', 'WebViewConfigurator', 'JsDialogClient',
+    'SharedProjectReceiver', 'ExitController', 'PrintJobs']) {
+    assert.ok(read(`android/java/com/anooplan/app/${helper}.java`).length > 0, `${helper}.java на месте`);
+  }
 });
 
 test('стили: textZoom — min-height и переносы вместо обрезки', () => {
