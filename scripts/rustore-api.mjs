@@ -12,7 +12,16 @@ import { fileURLToPath } from 'node:url';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const API_ROOT = process.env.RUSTORE_API_ROOT || 'https://public-api.rustore.ru';
-if (!['https://public-api.rustore.ru', 'https://public-api-m.rustore.ru'].includes(API_ROOT)) {
+// Сравниваем разобранный origin, а не подстроку (CodeQL js/incomplete-url-substring-sanitization):
+// произвольный хост не должен пройти за счёт вхождения имени домена внутрь URL.
+const ALLOWED_API_ORIGINS = new Set(['https://public-api.rustore.ru', 'https://public-api-m.rustore.ru']);
+let apiOrigin;
+try {
+  apiOrigin = new URL(API_ROOT).origin;
+} catch {
+  throw new Error('RUSTORE_API_ROOT должен быть валидным URL официального RuStore Public API.');
+}
+if (!ALLOWED_API_ORIGINS.has(apiOrigin)) {
   throw new Error('RUSTORE_API_ROOT допускает только официальные домены RuStore Public API.');
 }
 const PACKAGE_NAME = 'com.anooplan.app';
